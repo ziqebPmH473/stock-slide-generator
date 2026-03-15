@@ -78,7 +78,7 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 
 /* -- 指数スライド -- */
 /* 指数間の縦の行間は row-gap で調整（現在0px）、列間は column-gap（現在20px）*/
-.idx-grid { display:grid; grid-template-columns:1fr 1fr; row-gap:0; column-gap:20px; }
+.idx-grid { display:grid; grid-template-columns:1fr 1fr; row-gap:0px; column-gap:20px; }
 .idx-cell { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:28px 24px; }
 .idx-val  { font-size:100px; font-weight:900; color:#1a1a2e; line-height:1; letter-spacing:-.01em; }
 /* 数値と指数名の間隔は margin-top で調整 */
@@ -109,7 +109,7 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 
 /* -- 表紙スライド -- */
 /* タイトルの margin-bottom は TITLE_GAP.表紙（JS定数）で制御 */
-.cover-title { font-size:64px; font-weight:900; color:#1a1a2e; line-height:1.3; }
+.cover-title { font-size:60px; font-weight:900; color:#1a1a2e; line-height:1.3; }
 .cover-body  { font-size:22px; color:#555; line-height:1.9; }
 </style>
 </head>
@@ -243,9 +243,9 @@ const TITLE_GAP = {
   指数:     10,
   上昇率:   60,
   下落率:   60,
-  寄与度:   15,
+  寄与度:   20,
   売買代金: 60,
-  業種:     15,
+  業種:     20,
   ニュース: 36,  // 画像あり・なし共通
 };
 
@@ -403,8 +403,8 @@ function slideKoyo(data){
   <div class="s-group">
     <div class="s-title" style="margin-bottom:${TITLE_GAP.寄与度}px">日経平均寄与度ランキング</div>
     <div class="split-outer">
-      <div><div class="s-sub">プラス寄与度トップ5</div><table class="tbl">${koyoThead}<tbody>${rows(plus)}</tbody></table></div>
-      <div><div class="s-sub">マイナス寄与度トップ5</div><table class="tbl">${koyoThead}<tbody>${rows(minus)}</tbody></table></div>
+      <div><div class="s-sub">プラス寄与</div><table class="tbl">${koyoThead}<tbody>${rows(plus)}</tbody></table></div>
+      <div><div class="s-sub">マイナス寄与</div><table class="tbl">${koyoThead}<tbody>${rows(minus)}</tbody></table></div>
     </div>
   </div>
 </div>`;
@@ -438,8 +438,8 @@ function slideGyoshu(data){
   <div class="s-group">
     <div class="s-title" style="margin-bottom:${TITLE_GAP.業種}px">業種別変動率ランキング</div>
     <div class="split-outer">
-      <div><div class="s-sub">上位5業種</div><table class="tbl">${gyoshuThead}<tbody>${rows(top)}</tbody></table></div>
-      <div><div class="s-sub">下位5業種</div><table class="tbl">${gyoshuThead}<tbody>${rows(bot)}</tbody></table></div>
+      <div><div class="s-sub">上位</div><table class="tbl">${gyoshuThead}<tbody>${rows(top)}</tbody></table></div>
+      <div><div class="s-sub">下位</div><table class="tbl">${gyoshuThead}<tbody>${rows(bot)}</tbody></table></div>
     </div>
   </div>
 </div>`;
