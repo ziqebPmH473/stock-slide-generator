@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>相場レポート スライド生成ツール</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+/* ===== APP UI ===== */
+:root { --bg:#0f172a; --panel:#1e293b; --border:#334155; --text:#e2e8f0; --muted:#94a3b8; --accent:#3b82f6; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--bg); color:var(--text); font-family:'Helvetica Neue',Arial,'Hiragino Sans',sans-serif; min-height:100vh; padding:16px; }
+h1 { font-size:20px; font-weight:700; margin-bottom:4px; }
+.sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+.card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:12px; }
+.card h2 { font-size:13px; font-weight:600; color:var(--muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:.05em; }
+textarea { background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px 12px; border-radius:6px; font-size:13px; width:100%; font-family:'Courier New',monospace; resize:vertical; min-height:260px; line-height:1.5; margin-top:8px; }
+.btn { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:12px 24px; font-size:15px; font-weight:600; cursor:pointer; width:100%; margin-bottom:8px; }
+.btn:hover { background:#2563eb; }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+.btn-sm { background:#1e3a5f; border:1px solid var(--border); color:var(--text); border-radius:6px; padding:6px 14px; font-size:13px; cursor:pointer; }
+.btn-sm:hover { background:#1a3a6b; }
+.btn-sm.danger { background:#3b1f1f; border-color:#7f1d1d; color:#fca5a5; }
+.btn-sm.danger:hover { background:#4c1f1f; }
+#status { font-size:13px; color:var(--muted); text-align:center; min-height:20px; margin-top:4px; }
+.ta-actions { display:flex; gap:8px; margin-bottom:4px; }
+.drop-zone { border:2px dashed var(--border); border-radius:8px; padding:20px; text-align:center; transition:border-color .2s,background .2s; }
+.drop-zone.drag-over { border-color:var(--accent); background:rgba(59,130,246,.07); }
+.drop-zone p { color:var(--muted); font-size:13px; margin-bottom:10px; }
+.drop-zone label { cursor:pointer; }
+.img-thumb { max-height:64px; max-width:120px; border-radius:4px; margin:0 auto 8px; display:block; }
+#imgMeta { font-size:12px; color:var(--muted); margin-top:6px; }
+.preview-wrap { display:flex; flex-direction:row; flex-wrap:wrap; gap:8px; }
+.preview-slide-wrap { position:relative; overflow:hidden; border:1px solid var(--border); border-radius:4px; }
+details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bottom:4px; }
+.fmt { background:#0a1628; border:1px solid var(--border); border-radius:6px; padding:12px; font-size:11px; color:var(--muted); font-family:monospace; white-space:pre; overflow-x:auto; max-height:260px; overflow-y:auto; margin-top:4px; }
+
+/* ===== SLIDE STYLES ===== */
+.slide {
+  width:1280px; height:720px; background:#ffffff; overflow:hidden;
+  position:relative; display:flex; flex-direction:column; justify-content:center;
+  font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic','Meiryo',Arial,sans-serif;
+}
+
+/*
+  タイトル＋コンテンツをひとまとめにして垂直中央に配置するグループ。
+  ・水平余白は padding:0 80px で調整（左右の余白）。
+  ・上下余白はスライド(justify-content:center)が自動均等配置するため変更不要。
+*/
+.s-group { padding:0 80px; width:100%; }
+
+/*
+  スライドタイトル。
+  ・タイトルと内容の間隔は TITLE_GAP 定数（JS側、全スライド共通）で調整。
+  ・文字サイズは font-size で調整。
+*/
+.s-title {
+  font-size:68px; font-weight:900; color:#1a1a2e;
+  line-height:1.1; flex-shrink:0;
+}
+
+/* プラスの色（青）*/
+.pos { color:#1d4ed8; }
+/* マイナスの色（赤）*/
+.neg { color:#dc2626; }
+
+/* -- テーブル共通 -- */
+/* table-layout:fixed で左右スライドの列幅を一致させる */
+.tbl { width:100%; table-layout:fixed; border-collapse:separate; border-spacing:0; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; font-size:21px; }
+.tbl th { font-weight:700; color:#111; background:#fff; padding:16px 24px; text-align:left; border-bottom:2px solid #e2e8f0; }
+.tbl td { padding:14px 24px; color:#222; border-bottom:1px solid #f1f5f9; }
+.tbl tbody tr:last-child td { border-bottom:none; }
+.tbl tbody tr:nth-child(even) td { background:#f8fafc; }
+
+/* -- 指数スライド -- */
+/* 指数間の縦の行間は row-gap で調整（現在0px）、列間は column-gap（現在20px）*/
+.idx-grid { display:grid; grid-template-columns:1fr 1fr; row-gap:0; column-gap:20px; }
+.idx-cell { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:28px 24px; }
+.idx-val  { font-size:100px; font-weight:900; color:#1a1a2e; line-height:1; letter-spacing:-.01em; }
+/* 数値と指数名の間隔は margin-top で調整 */
+.idx-name { font-size:26px; font-weight:700; color:#555; margin-top:20px; }
+.idx-chg  { font-size:24px; font-weight:600; margin-top:6px; }
+
+/* -- 分割スライド（寄与度・業種）のサブ見出し -- */
+.s-sub { font-size:26px; font-weight:700; color:#1a1a2e; margin-bottom:14px; }
+.split-outer { display:grid; grid-template-columns:1fr 1fr; gap:44px; }
+
+/* -- 画像付きスライド共通（ニュース・表紙）-- */
+/* 左に画像460px、右にコンテンツ。コンテンツは justify-content:center で垂直中央 */
+.img-slide-layout { display:flex; height:720px; }
+.img-slide-img { width:460px; flex-shrink:0; overflow:hidden; background-size:cover; background-position:center; background-repeat:no-repeat; }
+.img-slide-right { flex:1; padding:0 56px 0 52px; display:flex; flex-direction:column; justify-content:center; }
+
+/* -- ニューススライド -- */
+/* タイトルの margin-bottom は TITLE_GAP.ニュース（JS定数）で制御 */
+.news-main-title { font-size:52px; font-weight:900; color:#1a1a2e; flex-shrink:0; }
+.news-items-right { display:flex; flex-direction:column; gap:14px; }
+
+/* -- ニュース項目（共通） -- */
+.news-item { padding-bottom:14px; border-bottom:1px solid #f1f5f9; }
+.news-item:last-child { border-bottom:none; padding-bottom:0; }
+.news-item-title { font-size:21px; font-weight:700; color:#1a1a2e; margin-bottom:5px; }
+.news-item-body  { font-size:16px; color:#555; line-height:1.65; }
+.news-items-full { display:flex; flex-direction:column; gap:12px; }
+
+/* -- 表紙スライド -- */
+/* タイトルの margin-bottom は TITLE_GAP.表紙（JS定数）で制御 */
+.cover-title { font-size:64px; font-weight:900; color:#1a1a2e; line-height:1.3; }
+.cover-body  { font-size:22px; color:#555; line-height:1.9; }
+</style>
+</head>
+<body>
+
+<h1>📊 相場レポート スライド生成ツール</h1>
+<p class="sub">テキストを貼り付けると自動でプレビューを表示します。</p>
+
+<div class="card">
+  <h2>テキストデータ（NotebookLM形式）</h2>
+  <details>
+    <summary>入力フォーマットを確認する</summary>
+    <pre class="fmt">日付: 2026/03/15  ← ZIP ファイル名に使用（省略可）
+
+[表紙]
+相場レポート 2026年3月15日   ← 1行目がタイトル
+本日の日本株式市場は全体的に上昇。  ← 2行目以降が本文（複数行可）
+日経平均は+170円と小幅続伸。
+
+[指数]
+日経平均|58,753.39|+170.27|+0.29%
+TOPIX|3,880.34|+37.18|+0.97%
+東証スタンダードTOP20|1,612.59|+2.74|+0.17%
+東証グロースCore|875.24|+15.98|+1.86%
+
+[上昇率]
+東邦チタニウム|5727|2,291|+400|+21.15%
+テクセンドフォトマスク|429A|3,375|+479|+16.54%
+ＳＨＩＦＴ|3697|691.2|+87.2|+14.44%
+Appier G|4180|818|+96|+13.30%
+ユニチカ|3103|1,617|+189|+13.24%
+
+[下落率]
+楽天銀行|5838|6,878|-1,080|-13.57%
+松屋|8237|2,548|-318|-11.10%
+ヨコオ|6800|3,415|-330|-8.81%
+日東紡績|3110|25,470|-2,210|-7.98%
+大和冷機工業|6459|1,804|-151|-7.72%
+
+[寄与度]
+ソフトバンクG|9984|+129.16
+ファナック|6954|+46.46
+リクルートHD|6098|+46.13
+ＴＤＫ|6762|+26.32
+フジクラ|5803|+21.39
+---
+アドバンテスト|6857|-131.03
+東京エレクトロン|8035|-92.25
+ダイキン工業|6367|-27.74
+イビデン|4062|-23.60
+住友電気工業|5802|-15.88
+
+[売買代金]
+キオクシアHD|285A|21,240|-225|-1.05%|5,946億円
+フジクラ|5803|27,465|+640|+2.39%|4,425億円
+アドバンテスト|6857|28,125|-490|-1.71%|3,246億円
+ＪＸ金属|5016|4,142|-3|-0.07%|3,189億円
+ディスコ|6146|79,070|-930|-1.16%|2,103億円
+
+[業種]
+サービス業|+3.29%|20.4倍
+銀行業|+3.28%|15.3倍
+海運業|+2.81%|10.9倍
+情報・通信業|+2.60%|26.3倍
+保険業|+2.36%|18.3倍
+---
+小売業|-1.39%|33.6倍
+ガラス・土石|-1.02%|76.6倍
+非鉄金属|-0.87%|26.6倍
+食料品|-0.63%|28.8倍
+鉄鋼|-0.24%|16.8倍
+
+[ニュース]
+エヌビディア　11-1月期決算|純利益前年同期比+94%、売上高+73%でいずれも過去最高。2-4月期見通し約780億ドル。
+楽天G　フィンテック事業再編協議再開|楽天銀行・カード・証券をHDとして集約する組織再編を想定し、協議再開を公表。
+高市首相　IMF提言・消費税・日銀政策に言及|飲食料品の消費税2年間停止案を一定評価。日銀政策について2%物価目標の安定実現に向けた運営に期待。
+内閣府　12月景気動向指数改定値|一致指数前月比0.6ポイント低下の114.3。基調判断「足踏みを示している」を据え置き。</pre>
+  </details>
+  <div class="ta-actions">
+    <button class="btn-sm" onclick="pasteText()">📋 貼り付け</button>
+    <button class="btn-sm danger" onclick="clearText()">✕ クリア</button>
+  </div>
+  <textarea id="mainInput" placeholder="上記フォーマットでテキストを貼り付けてください" oninput="debouncedPreview()"></textarea>
+</div>
+
+<div class="card">
+  <h2>表紙画像（任意・スライド左側に表示）</h2>
+  <div id="coverDropZone" class="drop-zone">
+    <img id="coverImgThumb" class="img-thumb" src="" alt="" style="display:none">
+    <p id="coverDropMsg">画像をここにドロップ、または</p>
+    <label for="coverImg" class="btn-sm">ファイルを選択</label>
+    <input type="file" id="coverImg" accept="image/*" style="display:none" onchange="onFileInput(this,'cover')">
+    <div id="coverImgMeta"></div>
+    <button id="coverImgClearBtn" class="btn-sm danger" style="display:none;margin-top:8px" onclick="clearImg('cover')">✕ 画像を削除</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>ニュース画像（任意・スライド左側に表示）</h2>
+  <div id="newsDropZone" class="drop-zone">
+    <img id="newsImgThumb" class="img-thumb" src="" alt="" style="display:none">
+    <p id="newsDropMsg">画像をここにドロップ、または</p>
+    <label for="newsImg" class="btn-sm">ファイルを選択</label>
+    <input type="file" id="newsImg" accept="image/*" style="display:none" onchange="onFileInput(this,'news')">
+    <div id="newsImgMeta"></div>
+    <button id="newsImgClearBtn" class="btn-sm danger" style="display:none;margin-top:8px" onclick="clearImg('news')">✕ 画像を削除</button>
+  </div>
+</div>
+
+<button class="btn" id="downloadBtn" onclick="downloadZip()">⬇ ダウンロード</button>
+<div id="status"></div>
+
+<div class="card" id="previewCard" style="display:none">
+  <h2>プレビュー（テキスト変更で自動更新）</h2>
+  <div class="preview-wrap" id="previewArea"></div>
+</div>
+
+<div id="renderTarget" style="position:fixed;left:-3000px;top:0;pointer-events:none;"></div>
+
+<script>
+const SLIDE_W = 1280, SLIDE_H = 720;
+
+// ===== タイトルと内容の間隔（スライドごと, margin-bottom px） =====
+// ※プレビューは縮小表示のため小さな変化は見えにくい。PNG出力で確認推奨。
+// ※指数スライドは idx-cell の padding-top(28px) も視覚的な余白に加算される
+const TITLE_GAP = {
+  表紙:     24,
+  指数:     10,
+  上昇率:   60,
+  下落率:   60,
+  寄与度:   15,
+  売買代金: 60,
+  業種:     15,
+  ニュース: 36,  // 画像あり・なし共通
+};
+
+// ===== 銘柄名の自動縮小しきい値 [17px, 14px] (全角換算文字幅) =====
+// wide  : 上昇率・下落率・売買代金（銘柄名列が広い）
+// narrow: 寄与度・業種（スライドを2分割するため銘柄名列が狭い）
+const NAME_SHRINK = {
+  wide:   [36, 48],
+  narrow: [18, 22],
+};
+
+// ==================== NEWS IMAGE ====================
+let newsImgUrl  = null;
+let coverImgUrl = null;
+
+function setImg(file, type){
+  if(!file || !file.type.startsWith('image/')) return;
+  const pfx = type==='cover' ? 'cover' : 'news';
+  const r = new FileReader();
+  r.onload = e => {
+    if(type==='cover') coverImgUrl = e.target.result;
+    else               newsImgUrl  = e.target.result;
+    document.getElementById(pfx+'ImgThumb').src = e.target.result;
+    document.getElementById(pfx+'ImgThumb').style.display = 'block';
+    document.getElementById(pfx+'DropMsg').textContent = '別の画像に変更：';
+    document.getElementById(pfx+'ImgMeta').textContent = file.name;
+    document.getElementById(pfx+'ImgClearBtn').style.display = '';
+    debouncedPreview();
+  };
+  r.readAsDataURL(file);
+}
+function onFileInput(el, type){ if(el.files[0]) setImg(el.files[0], type); }
+function clearImg(type){
+  const pfx = type==='cover' ? 'cover' : 'news';
+  if(type==='cover') coverImgUrl = null; else newsImgUrl = null;
+  document.getElementById(pfx+'Img').value = '';
+  document.getElementById(pfx+'ImgThumb').style.display = 'none';
+  document.getElementById(pfx+'ImgThumb').src = '';
+  document.getElementById(pfx+'DropMsg').textContent = '画像をここにドロップ、または';
+  document.getElementById(pfx+'ImgMeta').textContent = '';
+  document.getElementById(pfx+'ImgClearBtn').style.display = 'none';
+  debouncedPreview();
+}
+function initDropZone(id, type){
+  const z = document.getElementById(id);
+  z.addEventListener('dragover',  e => { e.preventDefault(); z.classList.add('drag-over'); });
+  z.addEventListener('dragleave', ()  => z.classList.remove('drag-over'));
+  z.addEventListener('drop', e => { e.preventDefault(); z.classList.remove('drag-over'); setImg(e.dataTransfer.files[0], type); });
+}
+initDropZone('coverDropZone','cover');
+initDropZone('newsDropZone','news');
+
+// ==================== UTILS ====================
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function colorClass(v){ const s=String(v).trim(); return s.startsWith('+')?'pos':s.startsWith('-')?'neg':''; }
+function col(v){ const c=colorClass(v); return c?`<span class="${c}">${esc(v)}</span>`:esc(v); }
+function nameStyle(name, capacity='wide'){
+  const w=[...name].reduce((a,c)=>a+(c.charCodeAt(0)>255?2:1),0);
+  const [t1,t2]=NAME_SHRINK[capacity]||NAME_SHRINK.wide;
+  if(w>t2) return ' style="font-size:14px"';
+  if(w>t1) return ' style="font-size:17px"';
+  return '';
+}
+
+// ==================== PARSER ====================
+function parseInput(text){
+  const data={date:'',sections:{}};
+  let cur=null;
+  for(const raw of text.split('\n')){
+    const t=raw.trim();
+    if(!t) continue;
+    if(t.startsWith('日付:') || t.startsWith('日付：')){ data.date=t.replace(/^日付[：:]\s*/,'').trim(); continue; }
+    if(/^\[.+\]$/.test(t)){ cur=t.slice(1,-1); if(!data.sections[cur]) data.sections[cur]=[]; continue; }
+    if(cur!==null) data.sections[cur].push(t);
+  }
+  return data;
+}
+
+function getDateStr(data){
+  if(data.date) return data.date.replace(/[\/\-]/g,'');
+  const d=new Date();
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// ==================== SLIDE BUILDERS ====================
+
+function slideCover(data, imgUrl){
+  const lines = data.sections['表紙'] || [];
+  const title = lines[0] || '';
+  const body  = lines.slice(1).join('\n');
+  if(imgUrl){
+    return `<div class="slide" id="s-cover">
+  <div class="img-slide-layout">
+    <div class="img-slide-img" style="background-image:url('${imgUrl}');"></div>
+    <div class="img-slide-right">
+      <div class="cover-title" style="margin-bottom:${TITLE_GAP.表紙}px">${esc(title)}</div>
+      <div class="cover-body">${esc(body).replace(/\n/g,'<br>')}</div>
+    </div>
+  </div>
+</div>`;
+  } else {
+    return `<div class="slide" id="s-cover">
+  <div class="s-group">
+    <div class="cover-title" style="margin-bottom:${TITLE_GAP.表紙}px">${esc(title)}</div>
+    <div class="cover-body">${esc(body).replace(/\n/g,'<br>')}</div>
+  </div>
+</div>`;
+  }
+}
+
+function slideIndices(data){
+  const lines=data.sections['指数']||[];
+  const cells=lines.map(l=>{
+    const [name,val,chg,pct]=l.split('|');
+    return `<div class="idx-cell">
+  <div class="idx-val">${esc(val)}</div>
+  <div class="idx-name">${esc(name)}</div>
+  <div class="idx-chg ${colorClass(chg)}">${esc(chg)}（${esc(pct)}）</div>
+</div>`;
+  }).join('');
+  return `<div class="slide" id="s-indices">
+  <div class="s-group">
+    <div class="s-title" style="margin-bottom:${TITLE_GAP.指数}px">国内主要株価指数</div>
+    <div class="idx-grid">${cells}</div>
+  </div>
+</div>`;
+}
+
+function slideRank(data,section,title){
+  const lines=data.sections[section]||[];
+  const rows=lines.map(l=>{
+    const [name,code,price,chgAmt,chgPct]=l.split('|');
+    return `<tr><td${nameStyle(name||'','wide')}>${esc(name)}</td><td>${esc(code)}</td><td>${esc(price)}円</td><td>${col(`${chgAmt}（${chgPct}）`)}</td></tr>`;
+  }).join('');
+  return `<div class="slide" id="s-${section}">
+  <div class="s-group">
+    <div class="s-title" style="margin-bottom:${TITLE_GAP[section]}px">${esc(title)}</div>
+    <table class="tbl">
+      <thead><tr><th style="width:42%">銘柄名</th><th style="width:12%">コード</th><th style="width:18%">株価</th><th style="width:28%">前日比</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>
+</div>`;
+}
+
+function slideKoyo(data){
+  const lines=data.sections['寄与度']||[];
+  const sep=lines.indexOf('---');
+  const plus=sep>=0?lines.slice(0,sep):lines;
+  const minus=sep>=0?lines.slice(sep+1):[];
+  const rows=arr=>arr.map(l=>{ const [name,code,val]=l.split('|'); return `<tr><td${nameStyle(name||'','narrow')}>${esc(name)}</td><td>${esc(code)}</td><td>${col(val)}</td></tr>`; }).join('');
+  const koyoThead=`<thead><tr><th style="width:46%">銘柄名</th><th style="width:22%">コード</th><th style="width:32%">寄与度</th></tr></thead>`;
+  return `<div class="slide" id="s-koyo">
+  <div class="s-group">
+    <div class="s-title" style="margin-bottom:${TITLE_GAP.寄与度}px">日経平均寄与度ランキング</div>
+    <div class="split-outer">
+      <div><div class="s-sub">プラス寄与度トップ5</div><table class="tbl">${koyoThead}<tbody>${rows(plus)}</tbody></table></div>
+      <div><div class="s-sub">マイナス寄与度トップ5</div><table class="tbl">${koyoThead}<tbody>${rows(minus)}</tbody></table></div>
+    </div>
+  </div>
+</div>`;
+}
+
+function slideBaibai(data){
+  const lines=data.sections['売買代金']||[];
+  const rows=lines.map(l=>{
+    const [name,code,price,chgAmt,chgPct,vol]=l.split('|');
+    return `<tr><td${nameStyle(name||'','wide')}>${esc(name)}</td><td>${esc(code)}</td><td>${esc(price)}円</td><td>${col(`${chgAmt}（${chgPct}）`)}</td><td>${esc(vol)}</td></tr>`;
+  }).join('');
+  return `<div class="slide" id="s-baibai">
+  <div class="s-group">
+    <div class="s-title" style="margin-bottom:${TITLE_GAP.売買代金}px">売買代金ランキング</div>
+    <table class="tbl">
+      <thead><tr><th style="width:32%">銘柄名</th><th style="width:10%">コード</th><th style="width:18%">株価</th><th style="width:24%">前日比</th><th style="width:16%">売買代金</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>
+</div>`;
+}
+
+function slideGyoshu(data){
+  const lines=data.sections['業種']||[];
+  const sep=lines.indexOf('---');
+  const top=sep>=0?lines.slice(0,sep):lines;
+  const bot=sep>=0?lines.slice(sep+1):[];
+  const rows=arr=>arr.map(l=>{ const [name,rate,per]=l.split('|'); return `<tr><td${nameStyle(name||'','narrow')}>${esc(name)}</td><td>${col(rate)}</td><td>${esc(per)}</td></tr>`; }).join('');
+  const gyoshuThead=`<thead><tr><th style="width:56%">業種名</th><th style="width:22%">変動率</th><th style="width:22%">PER</th></tr></thead>`;
+  return `<div class="slide" id="s-gyoshu">
+  <div class="s-group">
+    <div class="s-title" style="margin-bottom:${TITLE_GAP.業種}px">業種別変動率ランキング</div>
+    <div class="split-outer">
+      <div><div class="s-sub">上位5業種</div><table class="tbl">${gyoshuThead}<tbody>${rows(top)}</tbody></table></div>
+      <div><div class="s-sub">下位5業種</div><table class="tbl">${gyoshuThead}<tbody>${rows(bot)}</tbody></table></div>
+    </div>
+  </div>
+</div>`;
+}
+
+function slideNews(data, imgUrl){
+  const lines=(data.sections['ニュース']||[]).slice(0,5);
+  const items=lines.map(l=>{
+    const bar=l.indexOf('|');
+    const title=bar>=0?l.slice(0,bar):l;
+    const body=bar>=0?l.slice(bar+1):'';
+    return `<div class="news-item"><div class="news-item-title">${esc(title)}</div><div class="news-item-body">${esc(body)}</div></div>`;
+  }).join('');
+
+  if(imgUrl){
+    return `<div class="slide" id="s-news">
+  <div class="img-slide-layout">
+    <div class="img-slide-img" style="background-image:url('${imgUrl}');"></div>
+    <div class="img-slide-right">
+      <div class="news-main-title" style="margin-bottom:${TITLE_GAP.ニュース}px">本日のニュース</div>
+      <div class="news-items-right">${items}</div>
+    </div>
+  </div>
+</div>`;
+  } else {
+    return `<div class="slide" id="s-news">
+  <div class="s-group">
+    <div class="s-title" style="margin-bottom:${TITLE_GAP.ニュース}px">本日のニュース</div>
+    <div class="news-items-full">${items}</div>
+  </div>
+</div>`;
+  }
+}
+
+// ==================== BUILD ALL ====================
+function buildSlides(data){
+  return [
+    { html:slideCover(data, coverImgUrl),                        name:'01_表紙' },
+    { html:slideIndices(data),                                   name:'02_国内主要株価指数' },
+    { html:slideRank(data,'上昇率','株価上昇率ランキング'),       name:'04_株価上昇率ランキング' },
+    { html:slideRank(data,'下落率','株価下落率ランキング'),       name:'05_株価下落率ランキング' },
+    { html:slideKoyo(data),                                      name:'06_日経平均寄与度ランキング' },
+    { html:slideBaibai(data),                                    name:'07_売買代金ランキング' },
+    { html:slideGyoshu(data),                                    name:'08_業種別変動率ランキング' },
+    { html:slideNews(data, newsImgUrl),                          name:'09_本日のニュース' },
+  ];
+}
+
+// ==================== LIVE PREVIEW ====================
+let previewTimer=null;
+function debouncedPreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(renderPreview, 700); }
+
+function renderPreview(){
+  const text=document.getElementById('mainInput').value.trim();
+  const area=document.getElementById('previewArea');
+  if(!text){ area.innerHTML=''; document.getElementById('previewCard').style.display='none'; return; }
+
+  const data=parseInput(text);
+  const slides=buildSlides(data);
+
+  // 全スライドを2行に収める列数を計算。狭い画面では最低2列まで落とす
+  const containerW = area.clientWidth || (window.innerWidth - 64);
+  const gap = 8;
+  const targetCols = Math.ceil(slides.length / 2);        // 2行に収めるための列数
+  const minItemW = 180;                                    // 1スライドの最小幅
+  const maxCols = Math.max(2, Math.floor((containerW + gap) / (minItemW + gap)));
+  const cols = Math.min(targetCols, maxCols);
+  const itemW = Math.floor((containerW - gap * (cols - 1)) / cols);
+  const scale = itemW / SLIDE_W;
+  const itemH = Math.round(SLIDE_H * scale);
+
+  area.innerHTML='';
+  document.getElementById('previewCard').style.display='block';
+
+  for(const s of slides){
+    const wrap=document.createElement('div');
+    wrap.className='preview-slide-wrap';
+    wrap.style.cssText=`width:${itemW}px;height:${itemH}px;`;
+    const inner=document.createElement('div');
+    inner.style.cssText=`position:absolute;top:0;left:0;width:${SLIDE_W}px;height:${SLIDE_H}px;transform:scale(${scale});transform-origin:top left;pointer-events:none;`;
+    inner.innerHTML=s.html;
+    wrap.appendChild(inner);
+    area.appendChild(wrap);
+  }
+}
+
+window.addEventListener('resize',()=>{ if(document.getElementById('mainInput').value.trim()) debouncedPreview(); });
+
+// ==================== DOWNLOAD ====================
+async function downloadZip(){
+  const btn=document.getElementById('downloadBtn');
+  const status=document.getElementById('status');
+  btn.disabled=true;
+  try {
+    const text=document.getElementById('mainInput').value.trim();
+    if(!text){ status.textContent='テキストを入力してください'; btn.disabled=false; return; }
+
+    const data=parseInput(text);
+    const slides=buildSlides(data);
+    const container=document.getElementById('renderTarget');
+    container.innerHTML=slides.map(s=>s.html).join('');
+    await new Promise(r=>setTimeout(r,400));
+
+    const zip=new JSZip();
+    const els=container.querySelectorAll('.slide');
+    for(let i=0;i<els.length;i++){
+      status.textContent=`レンダリング中 ${i+1}/${els.length}...`;
+      const canvas=await html2canvas(els[i],{width:SLIDE_W,height:SLIDE_H,scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false});
+      const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+      zip.file(slides[i].name+'.png',blob);
+    }
+    status.textContent='ZIPを作成中...';
+    const zipBlob=await zip.generateAsync({type:'blob'});
+    const url=URL.createObjectURL(zipBlob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=`相場レポートスライド_${getDateStr(data)}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+    status.textContent=`完了！ ${els.length}枚のスライドをダウンロードしました。`;
+  } catch(e){ console.error(e); status.textContent='エラー: '+e.message; }
+  btn.disabled=false;
+}
+
+// ==================== CLIPBOARD ====================
+async function pasteText(){
+  try {
+    const t=await navigator.clipboard.readText();
+    document.getElementById('mainInput').value=t;
+    debouncedPreview();
+  } catch(e){
+    document.getElementById('mainInput').focus();
+    const s=document.getElementById('status');
+    s.textContent='Ctrl+V（またはCmd+V）で貼り付けてください';
+    setTimeout(()=>s.textContent='',4000);
+  }
+}
+function clearText(){
+  if(!confirm('テキストをクリアしますか？')) return;
+  document.getElementById('mainInput').value='';
+  document.getElementById('previewArea').innerHTML='';
+  document.getElementById('previewCard').style.display='none';
+  document.getElementById('status').textContent='';
+}
+</script>
+</body>
+</html>
