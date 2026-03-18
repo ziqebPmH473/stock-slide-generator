@@ -8,7 +8,10 @@
       "Bash(taskkill //PID 396 //F)",
       "Bash(where serve:*)",
       "Bash(npx.cmd serve:*)",
-      "Bash(taskkill //PID 22464 //F)"
+      "Bash(taskkill //PID 22464 //F)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }
