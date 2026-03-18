@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>サムネイル生成ツール</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@100;300;400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+/* ===== APP UI ===== */
+:root { --bg:#0f172a; --panel:#1e293b; --border:#334155; --text:#e2e8f0; --muted:#94a3b8; --accent:#3b82f6; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--bg); color:var(--text); font-family:'Helvetica Neue',Arial,'Hiragino Sans',sans-serif; min-height:100vh; padding:16px; max-width:860px; margin:0 auto; }
+h1 { font-size:20px; font-weight:700; margin-bottom:4px; }
+.sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+.card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:12px; }
+.card h2 { font-size:13px; font-weight:600; color:var(--muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:.05em; }
+textarea { background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px 12px; border-radius:6px; font-size:14px; width:100%; font-family:'Courier New',monospace; resize:vertical; min-height:60px; line-height:1.5; margin-top:8px; }
+.btn { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:12px 24px; font-size:15px; font-weight:600; cursor:pointer; width:100%; margin-bottom:8px; }
+.btn:hover { background:#2563eb; }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+.btn-sm { background:#1e3a5f; border:1px solid var(--border); color:var(--text); border-radius:6px; padding:6px 14px; font-size:13px; cursor:pointer; }
+.btn-sm:hover { background:#1a3a6b; }
+.btn-sm.danger { background:#3b1f1f; border-color:#7f1d1d; color:#fca5a5; }
+.btn-sm.danger:hover { background:#4c1f1f; }
+#status { font-size:13px; color:var(--muted); text-align:center; min-height:20px; margin-top:4px; }
+.ta-actions { display:flex; gap:8px; margin-bottom:4px; }
+.drop-zone { border:2px dashed var(--border); border-radius:8px; padding:8px 10px; text-align:center; transition:border-color .2s,background .2s; }
+.drop-zone.drag-over { border-color:var(--accent); background:rgba(59,130,246,.07); }
+.drop-zone p { color:var(--muted); font-size:12px; margin-bottom:4px; }
+.img-thumb { max-height:32px; max-width:80px; border-radius:3px; margin:0 auto 3px; display:block; }
+.img-meta { font-size:11px; color:var(--muted); margin-top:4px; }
+.preview-wrap { margin-top:12px; }
+.preview-slide-wrap { position:relative; overflow:hidden; border:1px solid var(--border); border-radius:6px; width:100%; }
+
+/* ===== SLIDE STYLES ===== */
+.slide {
+  width:1280px; height:720px; background:#ffffff; overflow:hidden;
+  position:relative; display:flex; flex-direction:column; justify-content:center;
+  font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic','Meiryo',Arial,sans-serif;
+}
+</style>
+</head>
+<body>
+
+<h1>🖼 サムネイル生成ツール</h1>
+<p class="sub">テキストを入力するとプレビューが自動更新されます。</p>
+
+<div class="card">
+  <h2>サムネイルテキスト</h2>
+  <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">「：」で上段・中段・下段を区切る。色指定: <span style="color:#ff914d">*オレンジ*</span>　<span style="color:#5ce1e6">#水色#</span>　<span style="color:#ffde59">%黄色%</span></p>
+  <div style="display:flex;align-items:center;gap:16px;margin-bottom:10px;">
+    <label style="font-size:13px;cursor:pointer;display:flex;align-items:center;gap:5px;">
+      <input type="radio" name="preset" value="note" checked onchange="applyPreset('note')"> note
+    </label>
+    <label style="font-size:13px;cursor:pointer;display:flex;align-items:center;gap:5px;">
+      <input type="radio" name="preset" value="youtube" onchange="applyPreset('youtube')"> YouTube
+    </label>
+  </div>
+  <div class="ta-actions">
+    <button class="btn-sm danger" onclick="clearThumb()">✕ クリア</button>
+  </div>
+  <textarea id="thumbInput" oninput="debouncedPreview()">日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%</textarea>
+</div>
+
+<div class="card">
+  <h2>背景画像（黒帯に透過表示）</h2>
+  <div id="bgDropZone" class="drop-zone">
+    <img id="bgImgThumb" class="img-thumb" src="" alt="" style="display:none">
+    <p id="bgDropMsg">ドロップ、または</p>
+    <label for="bgImgInput" class="btn-sm">ファイルを選択</label>
+    <input type="file" id="bgImgInput" accept="image/*" style="display:none" onchange="onBgFileInput(this)">
+    <div id="bgImgMeta" class="img-meta"></div>
+    <button id="bgImgClearBtn" class="btn-sm danger" style="display:none;margin-top:6px" onclick="clearBgImg()">✕ 削除</button>
+  </div>
+  <div style="display:flex;gap:24px;margin-top:12px;flex-wrap:wrap;">
+    <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;">
+      透過率: <span id="bgOpacityVal">3</span>%
+      <input type="range" id="bgOpacitySlider" min="0" max="50" step="1" value="4" oninput="updateBgOpacity(this.value)" style="width:120px;cursor:pointer;">
+    </label>
+    <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;">
+      拡大率: <span id="bgScaleVal">110</span>%
+      <input type="range" id="bgScaleSlider" min="100" max="200" step="1" value="110" oninput="updateBgScale(this.value)" style="width:120px;cursor:pointer;">
+    </label>
+  </div>
+</div>
+
+<button class="btn" id="downloadBtn" onclick="downloadThumb()">⬇ ダウンロード</button>
+<div id="status"></div>
+
+<div class="card" id="previewCard" style="display:none">
+  <h2>プレビュー（テキスト変更で自動更新）</h2>
+  <div class="preview-wrap">
+    <div class="preview-slide-wrap" id="previewSlideWrap">
+      <div id="previewInner"></div>
+    </div>
+  </div>
+</div>
+
+<div id="renderTarget" style="position:fixed;left:-3000px;top:0;pointer-events:none;"></div>
+
+<script>
+const SLIDE_W = 1280, SLIDE_H = 720;
+
+// ===== サムネイル設定 =====
+// ここを変更してサムネイルの見た目を調整できます
+const THUMB = {
+  fontMid:       200,    // 中段 基本フォントサイズ (px) ← 文字数が多い場合は自動縮小
+  fontTopBot:    140,    // 上下段 基本フォントサイズ (px)
+  fontWeightTop: 700,    // 上段の太さ (100〜900, Noto Sans JPは400/700/900が有効)
+  fontWeightMid: 900,    // 中段の太さ
+  fontWeightBot: 700,    // 下段の太さ
+  shadowColor: '#004aad',// ドロップシャドウの色（全段共通）
+  shadowX:       6,      // シャドウX方向オフセット (px, 正=右)
+  shadowY:       9,      // シャドウY方向オフセット (px, 正=下)
+  shadowAlpha:   0.4,    // シャドウ不透明度 (0〜1)
+  hTop:          235,    // 上段の高さ (px)
+  hMid:          250,    // 中段の高さ (px)
+  hBot:          235,    // 下段の高さ (px) ← hTop+hMid+hBot=720になるよう調整
+  paddingX:      40,     // 上下段の左右余白 (px)
+  paddingXMid:   20,     // 中段の左右余白 (px, 小さくすると文字が端に近づく)
+  offsetTop:     5,    // 上段縦位置オフセット (px, 正=下へ, 負=上へ)
+  offsetMid:     -10,    // 中段縦位置オフセット (px, 正=下へ, 負=上へ)
+  offsetBot:     -25,    // 下段縦位置オフセット (px, 正=下へ, 負=上へ)
+  bgOpacity:     0.04,   // 背景画像の不透明度 (0〜1) ← UIスライダーで変更可
+  bgScale:       110,    // 背景画像の拡大率 (%) ← UIスライダーで変更可
+};
+
+// ===== プリセット（縦位置） =====
+const PRESETS = {
+  note:    { offsetTop: 5, offsetMid: -10, offsetBot: -25 }, // noteは上下を内側に寄せる
+  youtube: { offsetTop: -10, offsetMid: -10, offsetBot: -10 }, // YouTube標準
+};
+
+function applyPreset(name){
+  const p = PRESETS[name];
+  THUMB.offsetTop = p.offsetTop;
+  THUMB.offsetMid = p.offsetMid;
+  THUMB.offsetBot = p.offsetBot;
+  renderPreview();
+}
+
+// ==================== BACKGROUND IMAGE ====================
+let bgImgUrl = null;
+
+function onBgFileInput(el){ if(el.files[0]) setBgImg(el.files[0]); }
+
+function setBgImg(file){
+  if(!file || !file.type.startsWith('image/')) return;
+  const r=new FileReader();
+  r.onload=e=>{
+    bgImgUrl=e.target.result;
+    document.getElementById('bgImgThumb').src=e.target.result;
+    document.getElementById('bgImgThumb').style.display='block';
+    document.getElementById('bgDropMsg').textContent='別の画像に変更：';
+    document.getElementById('bgImgMeta').textContent=file.name;
+    document.getElementById('bgImgClearBtn').style.display='';
+    renderPreview();
+  };
+  r.readAsDataURL(file);
+}
+
+function updateBgOpacity(v){
+  THUMB.bgOpacity=v/100;
+  document.getElementById('bgOpacityVal').textContent=v;
+  renderPreview();
+}
+
+function updateBgScale(v){
+  THUMB.bgScale=Number(v);
+  document.getElementById('bgScaleVal').textContent=v;
+  renderPreview();
+}
+
+function clearBgImg(){
+  bgImgUrl=null;
+  document.getElementById('bgImgInput').value='';
+  document.getElementById('bgImgThumb').style.display='none';
+  document.getElementById('bgImgThumb').src='';
+  document.getElementById('bgDropMsg').textContent='ドロップ、または';
+  document.getElementById('bgImgMeta').textContent='';
+  document.getElementById('bgImgClearBtn').style.display='none';
+  renderPreview();
+}
+
+const bgZone=document.getElementById('bgDropZone');
+bgZone.addEventListener('dragover', e=>{ e.preventDefault(); bgZone.classList.add('drag-over'); });
+bgZone.addEventListener('dragleave', ()=>bgZone.classList.remove('drag-over'));
+bgZone.addEventListener('drop', e=>{ e.preventDefault(); bgZone.classList.remove('drag-over'); setBgImg(e.dataTransfer.files[0]); });
+
+// ==================== THUMBNAIL MARKUP ====================
+function parseThumbnailMarkup(text){
+  const segs=[];
+  const re=/(\*[^*]+\*|#[^#]+#|%[^%]+%)/g;
+  let last=0, m;
+  while((m=re.exec(text))!==null){
+    if(m.index>last) segs.push({text:text.slice(last,m.index),color:null});
+    const inner=m[0].slice(1,-1);
+    const marker=m[0][0];
+    const color=marker==='*'?'#ff914d':marker==='#'?'#5ce1e6':'#ffde59';
+    segs.push({text:inner,color});
+    last=m.index+m[0].length;
+  }
+  if(last<text.length) segs.push({text:text.slice(last),color:null});
+  return segs;
+}
+
+function thumbCharWidth(segs){
+  return segs.reduce((a,seg)=>a+[...seg.text].reduce((b,c)=>b+(c.charCodeAt(0)>255?2:1),0),0);
+}
+
+function thumbFontSize(charWidth, base, padX){
+  if(!charWidth) return base;
+  const usable=SLIDE_W-(padX??THUMB.paddingX)*2;
+  return Math.max(40,Math.min(base,Math.floor(2*usable/charWidth)));
+}
+
+function hexToRgba(hex,alpha){
+  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function segsToHtml(segs,defaultColor){
+  const shadow=`${THUMB.shadowX}px ${THUMB.shadowY}px 0px ${hexToRgba(THUMB.shadowColor,THUMB.shadowAlpha)}`;
+  return segs.map(seg=>{
+    const c=seg.color||defaultColor;
+    return `<span style="color:${c};text-shadow:${shadow}">${esc(seg.text)}</span>`;
+  }).join('');
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function slideThumb(text){
+  const parts=text.split(/[：:]/);
+  const topText=parts[0]||'';
+  const midText=parts[1]||'';
+  const botText=parts[2]||'';
+  const topSegs=parseThumbnailMarkup(topText);
+  const midSegs=parseThumbnailMarkup(midText);
+  const botSegs=parseThumbnailMarkup(botText);
+  const topFs=thumbFontSize(thumbCharWidth(topSegs),THUMB.fontTopBot,THUMB.paddingX);
+  const midFs=thumbFontSize(thumbCharWidth(midSegs),THUMB.fontMid,THUMB.paddingXMid);
+  const botFs=thumbFontSize(thumbCharWidth(botSegs),THUMB.fontTopBot,THUMB.paddingX);
+  const topHtml=segsToHtml(topSegs,'#ffffff');
+  const midHtml=segsToHtml(midSegs,'#004aad');
+  const botHtml=segsToHtml(botSegs,'#ffffff');
+  const ff=`'Noto Sans JP',sans-serif`;
+  const bgLayer=bgImgUrl
+    ? `<div style="position:absolute;inset:0;z-index:1;background-image:url('${bgImgUrl}');background-size:cover;background-position:center;opacity:${THUMB.bgOpacity};transform:scale(${THUMB.bgScale/100});transform-origin:center;"></div>`
+    : '';
+  return `<div class="slide" id="s-thumb">
+  <!-- スライド全体の黒背景 -->
+  <div style="position:absolute;inset:0;background:#000;z-index:0;"></div>
+  <!-- 背景画像（スライド全体中央配置、z-index:1） -->
+  ${bgLayer}
+  <!-- コンテンツ層（z-index:2）上下段は透明、中段のみ白で画像を隠す -->
+  <div style="position:relative;z-index:2;display:flex;flex-direction:column;height:720px;">
+    <div style="height:${THUMB.hTop}px;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+      <div style="font-size:${topFs}px;font-weight:${THUMB.fontWeightTop};line-height:1;white-space:nowrap;font-family:${ff};transform:translateY(${THUMB.offsetTop}px);">${topHtml}</div>
+    </div>
+    <div style="background:#fff;height:${THUMB.hMid}px;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+      <div style="font-size:${midFs}px;font-weight:${THUMB.fontWeightMid};line-height:1;white-space:nowrap;font-family:${ff};transform:translateY(${THUMB.offsetMid}px);">${midHtml}</div>
+    </div>
+    <div style="height:${THUMB.hBot}px;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+      <div style="font-size:${botFs}px;font-weight:${THUMB.fontWeightBot};line-height:1;white-space:nowrap;font-family:${ff};transform:translateY(${THUMB.offsetBot}px);">${botHtml}</div>
+    </div>
+  </div>
+</div>`;
+}
+
+// ==================== PREVIEW ====================
+let previewTimer=null;
+function debouncedPreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(renderPreview,700); }
+
+function renderPreview(){
+  const text=document.getElementById('thumbInput').value.trim();
+  const card=document.getElementById('previewCard');
+  if(!text){ card.style.display='none'; return; }
+
+  const html=slideThumb(text);
+  const wrap=document.getElementById('previewSlideWrap');
+  const containerW=wrap.clientWidth||800;
+  const scale=containerW/SLIDE_W;
+  const itemH=Math.round(SLIDE_H*scale);
+
+  wrap.style.height=itemH+'px';
+  const inner=document.getElementById('previewInner');
+  inner.style.cssText=`position:absolute;top:0;left:0;width:${SLIDE_W}px;height:${SLIDE_H}px;transform:scale(${scale});transform-origin:top left;pointer-events:none;`;
+  inner.innerHTML=html;
+  card.style.display='block';
+}
+
+window.addEventListener('resize', renderPreview);
+
+// ==================== DOWNLOAD ====================
+async function downloadThumb(){
+  const text=document.getElementById('thumbInput').value.trim();
+  if(!text){ document.getElementById('status').textContent='テキストを入力してください'; return; }
+  const btn=document.getElementById('downloadBtn');
+  const status=document.getElementById('status');
+  btn.disabled=true;
+  status.textContent='レンダリング中...';
+  try {
+    const container=document.getElementById('renderTarget');
+    container.innerHTML=slideThumb(text);
+    await new Promise(r=>setTimeout(r,300));
+    const el=container.querySelector('.slide');
+    const canvas=await html2canvas(el,{width:SLIDE_W,height:SLIDE_H,scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false});
+    const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+    const d=new Date();
+    const dateStr=`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=`00_サムネイル_${dateStr}.png`; a.click();
+    URL.revokeObjectURL(url);
+    container.innerHTML='';
+    status.textContent='✓ ダウンロードしました';
+    setTimeout(()=>status.textContent='',3000);
+  } catch(e){ document.getElementById('status').textContent='エラー: '+e.message; }
+  btn.disabled=false;
+}
+
+function clearThumb(){
+  document.getElementById('thumbInput').value='';
+  document.getElementById('previewCard').style.display='none';
+  document.getElementById('status').textContent='';
+}
+
+// 初期プレビュー（noteプリセット適用）+ フォントロード後に再描画
+applyPreset('note');
+document.fonts.ready.then(() => applyPreset('note'));
+</script>
+</body>
+</html>
