@@ -254,7 +254,9 @@ const SLIDE_W = 1280, SLIDE_H = 720;
 const THUMB = {
   fontMid:     200,      // 中段 基本フォントサイズ (px) ← 文字数が多い場合は自動縮小
   fontTopBot:  140,      // 上下段 基本フォントサイズ (px)
-  fontWeight:  700,      // 文字の太さ (100〜900, Noto Sans JPは400/700/900が有効)
+  fontWeightTop: 700,    // 上段の太さ (100〜900, Noto Sans JPは400/700/900が有効)
+  fontWeightMid: 900,    // 中段の太さ
+  fontWeightBot: 700,    // 下段の太さ
   shadowColor: '#004aad',// ドロップシャドウの色（全段共通）
   shadowX:     6,       // シャドウX方向オフセット (px, 正=右)
   shadowY:     9,       // シャドウY方向オフセット (px, 正=下)
@@ -425,13 +427,13 @@ function slideThumb(text){
   return `<div class="slide" id="s-thumb">
   <div style="display:flex;flex-direction:column;height:720px;">
     <div style="background:#000;height:${THUMB.hTop}px;display:flex;align-items:center;justify-content:center;overflow:hidden;">
-      <div style="font-size:${topFs}px;font-weight:${THUMB.fontWeight};line-height:1;white-space:nowrap;font-family:${ff};transform:translateY(${THUMB.offsetTop}px);">${topHtml}</div>
+      <div style="font-size:${topFs}px;font-weight:${THUMB.fontWeightTop};line-height:1;white-space:nowrap;font-family:${ff};transform:translateY(${THUMB.offsetTop}px);">${topHtml}</div>
     </div>
     <div style="background:#fff;height:${THUMB.hMid}px;display:flex;align-items:center;justify-content:center;overflow:hidden;">
-      <div style="font-size:${midFs}px;font-weight:${THUMB.fontWeight};line-height:1;white-space:nowrap;font-family:${ff};transform:translateY(${THUMB.offsetMid}px);">${midHtml}</div>
+      <div style="font-size:${midFs}px;font-weight:${THUMB.fontWeightMid};line-height:1;white-space:nowrap;font-family:${ff};transform:translateY(${THUMB.offsetMid}px);">${midHtml}</div>
     </div>
     <div style="background:#000;height:${THUMB.hBot}px;display:flex;align-items:center;justify-content:center;overflow:hidden;">
-      <div style="font-size:${botFs}px;font-weight:${THUMB.fontWeight};line-height:1;white-space:nowrap;font-family:${ff};transform:translateY(${THUMB.offsetBot}px);">${botHtml}</div>
+      <div style="font-size:${botFs}px;font-weight:${THUMB.fontWeightBot};line-height:1;white-space:nowrap;font-family:${ff};transform:translateY(${THUMB.offsetBot}px);">${botHtml}</div>
     </div>
   </div>
 </div>`;
