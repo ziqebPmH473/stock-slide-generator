@@ -103,8 +103,8 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 /* -- ニュース項目（共通） -- */
 .news-item { padding-bottom:14px; border-bottom:1px solid #f1f5f9; }
 .news-item:last-child { border-bottom:none; padding-bottom:0; }
-.news-item-title { font-size:24px; font-weight:700; color:#1a1a2e; margin-bottom:5px; }
-.news-item-body  { font-size:18px; color:#444; font-weight:600; line-height:1.65; }
+.news-item-title { font-size:20px; font-weight:700; color:#1a1a2e; margin-bottom:5px; }
+.news-item-body  { font-size:16px; color:#444; font-weight:600; line-height:1.65; }
 .news-items-full { display:flex; flex-direction:column; gap:12px; }
 
 /* -- 表紙スライド -- */
@@ -253,8 +253,8 @@ const TITLE_GAP = {
 // wide  : 上昇率・下落率・売買代金（銘柄名列が広い）
 // narrow: 寄与度・業種（スライドを2分割するため銘柄名列が狭い）
 const NAME_SHRINK = {
-  wide:   [30, 36 ,46],
-  narrow: [17, 19 ,24],
+  wide:   [30, 34 ,46],
+  narrow: [16, 18 ,21],
 };
 
 // ==================== NEWS IMAGE ====================
@@ -434,7 +434,7 @@ function slideGyoshu(data){
   const top=sep>=0?lines.slice(0,sep):lines;
   const bot=sep>=0?lines.slice(sep+1):[];
   const rows=arr=>arr.map(l=>{ const [name,rate,per]=l.split('|'); return `<tr><td${nameStyle(name||'','narrow')}>${esc(name)}</td><td>${col(rate)}</td><td>${esc(per)}</td></tr>`; }).join('');
-  const gyoshuThead=`<thead><tr><th style="width:56%">業種名</th><th style="width:22%">変動率</th><th style="width:22%">PER</th></tr></thead>`;
+  const gyoshuThead=`<thead><tr><th style="width:50%">業種名</th><th style="width:25%">変動率</th><th style="width:25%">PER</th></tr></thead>`;
   return `<div class="slide" id="s-gyoshu">
   <div class="s-group">
     <div class="s-title" style="margin-bottom:${TITLE_GAP.業種}px">業種別変動率ランキング</div>
