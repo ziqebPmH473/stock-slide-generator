@@ -206,7 +206,7 @@ Appier G|4180|818|+96|+13.30%
   <div class="ta-actions">
     <button class="btn-sm danger" onclick="clearThumb()">✕ クリア</button>
   </div>
-  <textarea id="thumbInput" placeholder="例: 日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%" style="min-height:60px;" oninput="debouncedPreview()"></textarea>
+  <textarea id="thumbInput" style="min-height:60px;" oninput="debouncedPreview()">日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%</textarea>
 </div>
 
 <div class="card">
@@ -652,8 +652,9 @@ async function downloadSlide(s){
     const canvas=await html2canvas(el,{width:SLIDE_W,height:SLIDE_H,scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false});
     const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
     const url=URL.createObjectURL(blob);
+    const dateStr=getDateStr(parseInput(document.getElementById('mainInput').value));
     const a=document.createElement('a');
-    a.href=url; a.download=s.name+'.png'; a.click();
+    a.href=url; a.download=s.name+'_'+dateStr+'.png'; a.click();
     URL.revokeObjectURL(url);
     status.textContent=`✓ ${s.name}.png をダウンロードしました`;
     setTimeout(()=>status.textContent='',3000);
