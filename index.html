@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>東証マーケット振り返り スライド生成ツール</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@100;300;400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -35,7 +37,10 @@ textarea { background:var(--bg); border:1px solid var(--border); color:var(--tex
 .img-thumb { max-height:32px; max-width:80px; border-radius:3px; margin:0 auto 3px; display:block; }
 .img-meta { font-size:11px; color:var(--muted); margin-top:4px; }
 .preview-wrap { display:flex; flex-direction:row; flex-wrap:wrap; gap:8px; }
-.preview-slide-wrap { position:relative; overflow:hidden; border:1px solid var(--border); border-radius:4px; }
+.preview-slide-wrap { position:relative; overflow:hidden; border:1px solid var(--border); border-radius:4px; cursor:pointer; }
+.preview-slide-wrap::after { content:'⬇ ダウンロード'; position:absolute; bottom:0; left:0; right:0; background:rgba(59,130,246,.85); color:#fff; font-size:10px; text-align:center; padding:3px 0; opacity:0; transition:opacity .15s; pointer-events:none; }
+.preview-slide-wrap:hover { border-color:var(--accent); }
+.preview-slide-wrap:hover::after { opacity:1; }
 details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bottom:4px; }
 .fmt { background:#0a1628; border:1px solid var(--border); border-radius:6px; padding:12px; font-size:11px; color:var(--muted); font-family:monospace; white-space:pre; overflow-x:auto; max-height:260px; overflow-y:auto; margin-top:4px; }
 
@@ -196,6 +201,15 @@ Appier G|4180|818|+96|+13.30%
 </div>
 
 <div class="card">
+  <h2>サムネイル（スライド 0 枚目）</h2>
+  <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">「：」で上段・中段・下段を区切る。色指定: <span style="color:#ff914d">*オレンジ*</span>　<span style="color:#5ce1e6">#水色#</span>　<span style="color:#ffde59">%黄色%</span></p>
+  <div class="ta-actions">
+    <button class="btn-sm danger" onclick="clearThumb()">✕ クリア</button>
+  </div>
+  <textarea id="thumbInput" placeholder="例: 日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%" style="min-height:60px;" oninput="debouncedPreview()"></textarea>
+</div>
+
+<div class="card">
   <div class="img-cards">
     <div class="img-card">
       <h3>表紙画像（右側に表示）</h3>
@@ -234,6 +248,25 @@ Appier G|4180|818|+96|+13.30%
 
 <script>
 const SLIDE_W = 1280, SLIDE_H = 720;
+
+// ===== サムネイル設定 =====
+// ここを変更してサムネイルの見た目を調整できます
+const THUMB = {
+  fontMid:     200,      // 中段 基本フォントサイズ (px) ← 文字数が多い場合は自動縮小
+  fontTopBot:  140,      // 上下段 基本フォントサイズ (px)
+  fontWeight:  700,      // 文字の太さ (100〜900, Noto Sans JPは400/700/900が有効)
+  shadowColor: '#004aad',// ドロップシャドウの色（全段共通）
+  shadowX:     6,       // シャドウX方向オフセット (px, 正=右)
+  shadowY:     9,       // シャドウY方向オフセット (px, 正=下)
+  shadowAlpha: 0.4,      // シャドウ不透明度 (0〜1)
+  hTop:        235,      // 上段の高さ (px)
+  hMid:        250,      // 中段の高さ (px)
+  hBot:        235,      // 下段の高さ (px) ← hTop+hMid+hBot=720になるよう調整
+  paddingX:    40,       // 左右余白 (px, 小さくすると文字が端に近づく)
+  offsetTop:   -10,        // 上段縦位置オフセット (px, 正=下へ, 負=上へ)
+  offsetMid:   -10,        // 中段縦位置オフセット (px, 正=下へ, 負=上へ)
+  offsetBot:   -10,        // 下段縦位置オフセット (px, 正=下へ, 負=上へ)
+};
 
 // ===== タイトルと内容の間隔（スライドごと, margin-bottom px） =====
 // ※プレビューは縮小表示のため小さな変化は見えにくい。PNG出力で確認推奨。
@@ -298,6 +331,47 @@ function initDropZone(id, type){
 initDropZone('coverDropZone','cover');
 initDropZone('newsDropZone','news');
 
+// ==================== THUMBNAIL MARKUP ====================
+function parseThumbnailMarkup(text){
+  const segs=[];
+  const re=/(\*[^*]+\*|#[^#]+#|%[^%]+%)/g;
+  let last=0, m;
+  while((m=re.exec(text))!==null){
+    if(m.index>last) segs.push({text:text.slice(last,m.index),color:null});
+    const inner=m[0].slice(1,-1);
+    const marker=m[0][0];
+    const color=marker==='*'?'#ff914d':marker==='#'?'#5ce1e6':'#ffde59';
+    segs.push({text:inner,color});
+    last=m.index+m[0].length;
+  }
+  if(last<text.length) segs.push({text:text.slice(last),color:null});
+  return segs;
+}
+
+function thumbCharWidth(segs){
+  return segs.reduce((a,seg)=>a+[...seg.text].reduce((b,c)=>b+(c.charCodeAt(0)>255?2:1),0),0);
+}
+
+function thumbFontSize(charWidth,base){
+  if(!charWidth) return base;
+  // charWidthは全角=2,半角=1で換算。全角1文字=1emなので2単位=font-size px
+  const usable=SLIDE_W-THUMB.paddingX*2;
+  return Math.max(40,Math.min(base,Math.floor(2*usable/charWidth)));
+}
+
+function hexToRgba(hex,alpha){
+  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function segsToHtml(segs,defaultColor){
+  const shadow=`${THUMB.shadowX}px ${THUMB.shadowY}px 0px ${hexToRgba(THUMB.shadowColor,THUMB.shadowAlpha)}`;
+  return segs.map(seg=>{
+    const c=seg.color||defaultColor;
+    return `<span style="color:${c};text-shadow:${shadow}">${esc(seg.text)}</span>`;
+  }).join('');
+}
+
 // ==================== UTILS ====================
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function colorClass(v){ const s=String(v).trim(); return s.startsWith('+')?'pos':s.startsWith('-')?'neg':''; }
@@ -332,6 +406,36 @@ function getDateStr(data){
 }
 
 // ==================== SLIDE BUILDERS ====================
+
+function slideThumb(text){
+  const parts=text.split(/[：:]/);
+  const topText=parts[0]||'';
+  const midText=parts[1]||'';
+  const botText=parts[2]||'';
+  const topSegs=parseThumbnailMarkup(topText);
+  const midSegs=parseThumbnailMarkup(midText);
+  const botSegs=parseThumbnailMarkup(botText);
+  const topFs=thumbFontSize(thumbCharWidth(topSegs),THUMB.fontTopBot);
+  const midFs=thumbFontSize(thumbCharWidth(midSegs),THUMB.fontMid);
+  const botFs=thumbFontSize(thumbCharWidth(botSegs),THUMB.fontTopBot);
+  const topHtml=segsToHtml(topSegs,'#ffffff');
+  const midHtml=segsToHtml(midSegs,'#004aad');
+  const botHtml=segsToHtml(botSegs,'#ffffff');
+  const ff=`'Noto Sans JP',sans-serif`;
+  return `<div class="slide" id="s-thumb">
+  <div style="display:flex;flex-direction:column;height:720px;">
+    <div style="background:#000;height:${THUMB.hTop}px;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+      <div style="font-size:${topFs}px;font-weight:${THUMB.fontWeight};line-height:1;white-space:nowrap;font-family:${ff};transform:translateY(${THUMB.offsetTop}px);">${topHtml}</div>
+    </div>
+    <div style="background:#fff;height:${THUMB.hMid}px;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+      <div style="font-size:${midFs}px;font-weight:${THUMB.fontWeight};line-height:1;white-space:nowrap;font-family:${ff};transform:translateY(${THUMB.offsetMid}px);">${midHtml}</div>
+    </div>
+    <div style="background:#000;height:${THUMB.hBot}px;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+      <div style="font-size:${botFs}px;font-weight:${THUMB.fontWeight};line-height:1;white-space:nowrap;font-family:${ff};transform:translateY(${THUMB.offsetBot}px);">${botHtml}</div>
+    </div>
+  </div>
+</div>`;
+}
 
 function slideCover(data, imgUrl){
   const lines = data.sections['表紙'] || [];
@@ -477,7 +581,10 @@ function slideNews(data, imgUrl){
 
 // ==================== BUILD ALL ====================
 function buildSlides(data){
-  return [
+  const thumbText=document.getElementById('thumbInput').value.trim();
+  const slides=[];
+  if(thumbText) slides.push({html:slideThumb(thumbText),name:'00_サムネイル'});
+  slides.push(
     { html:slideCover(data, coverImgUrl),                        name:'01_表紙' },
     { html:slideIndices(data),                                   name:'02_国内主要株価指数' },
     { html:slideRank(data,'上昇率','株価上昇率ランキング'),       name:'04_株価上昇率ランキング' },
@@ -486,7 +593,8 @@ function buildSlides(data){
     { html:slideBaibai(data),                                    name:'07_売買代金ランキング' },
     { html:slideGyoshu(data),                                    name:'08_業種別変動率ランキング' },
     { html:slideNews(data, newsImgUrl),                          name:'09_本日のニュース' },
-  ];
+  );
+  return slides;
 }
 
 // ==================== LIVE PREVIEW ====================
@@ -495,8 +603,9 @@ function debouncedPreview(){ clearTimeout(previewTimer); previewTimer=setTimeout
 
 function renderPreview(){
   const text=document.getElementById('mainInput').value.trim();
+  const thumbText=document.getElementById('thumbInput').value.trim();
   const area=document.getElementById('previewArea');
-  if(!text){ area.innerHTML=''; document.getElementById('previewCard').style.display='none'; return; }
+  if(!text && !thumbText){ area.innerHTML=''; document.getElementById('previewCard').style.display='none'; return; }
 
   const data=parseInput(text);
   const slides=buildSlides(data);
@@ -519,6 +628,8 @@ function renderPreview(){
     const wrap=document.createElement('div');
     wrap.className='preview-slide-wrap';
     wrap.style.cssText=`width:${itemW}px;height:${itemH}px;`;
+    wrap.title=s.name+'.png をダウンロード';
+    wrap.addEventListener('click',()=>downloadSlide(s));
     const inner=document.createElement('div');
     inner.style.cssText=`position:absolute;top:0;left:0;width:${SLIDE_W}px;height:${SLIDE_H}px;transform:scale(${scale});transform-origin:top left;pointer-events:none;`;
     inner.innerHTML=s.html;
@@ -530,6 +641,26 @@ function renderPreview(){
 window.addEventListener('resize',()=>{ if(document.getElementById('mainInput').value.trim()) debouncedPreview(); });
 
 // ==================== DOWNLOAD ====================
+async function downloadSlide(s){
+  const status=document.getElementById('status');
+  const container=document.getElementById('renderTarget');
+  container.innerHTML=s.html;
+  await new Promise(r=>setTimeout(r,200));
+  status.textContent=`${s.name} をレンダリング中...`;
+  try {
+    const el=container.querySelector('.slide');
+    const canvas=await html2canvas(el,{width:SLIDE_W,height:SLIDE_H,scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false});
+    const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=s.name+'.png'; a.click();
+    URL.revokeObjectURL(url);
+    status.textContent=`✓ ${s.name}.png をダウンロードしました`;
+    setTimeout(()=>status.textContent='',3000);
+  } catch(e){ status.textContent='エラー: '+e.message; }
+  container.innerHTML='';
+}
+
 async function downloadZip(){
   const btn=document.getElementById('downloadBtn');
   const status=document.getElementById('status');
@@ -584,6 +715,10 @@ function clearText(){
   document.getElementById('previewArea').innerHTML='';
   document.getElementById('previewCard').style.display='none';
   document.getElementById('status').textContent='';
+}
+function clearThumb(){
+  document.getElementById('thumbInput').value='';
+  debouncedPreview();
 }
 </script>
 </body>

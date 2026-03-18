@@ -3,9 +3,10 @@
   "configurations": [
     {
       "name": "slide-gen",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["serve", "-p", "3456", "."],
-      "port": 3456
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["-e", "const s=require('node:http'),fs=require('node:fs'),path=require('node:path');s.createServer((req,res)=>{const f=path.join(process.cwd(),req.url==='/'?'index.html':req.url);try{const d=fs.readFileSync(f);const ct=f.endsWith('.html')?'text/html':'application/octet-stream';res.writeHead(200,{'Content-Type':ct,'Access-Control-Allow-Origin':'*'});res.end(d);}catch(e){res.writeHead(404);res.end('');}}).listen(3456,()=>console.log('ready'));"],
+      "port": 3456,
+      "autoPort": false
     }
   ]
 }
