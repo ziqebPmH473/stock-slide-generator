@@ -587,14 +587,14 @@ function buildSlides(data){
   const slides=[];
   if(thumbText) slides.push({html:slideThumb(thumbText),name:'00_サムネイル'});
   slides.push(
-    { html:slideCover(data, coverImgUrl),                        name:'01_表紙' },
-    { html:slideIndices(data),                                   name:'02_国内主要株価指数' },
-    { html:slideRank(data,'上昇率','株価上昇率ランキング'),       name:'04_株価上昇率ランキング' },
-    { html:slideRank(data,'下落率','株価下落率ランキング'),       name:'05_株価下落率ランキング' },
-    { html:slideKoyo(data),                                      name:'06_日経平均寄与度ランキング' },
-    { html:slideBaibai(data),                                    name:'07_売買代金ランキング' },
-    { html:slideGyoshu(data),                                    name:'08_業種別変動率ランキング' },
-    { html:slideNews(data, newsImgUrl),                          name:'09_本日のニュース' },
+    { html:slideCover(data, coverImgUrl),                        name:'zz_表紙' },
+    { html:slideIndices(data),                                   name:'01_国内主要株価指数' },
+    { html:slideRank(data,'上昇率','株価上昇率ランキング'),       name:'05_株価上昇率ランキング' },
+    { html:slideRank(data,'下落率','株価下落率ランキング'),       name:'06_株価下落率ランキング' },
+    { html:slideKoyo(data),                                      name:'03_日経平均寄与度ランキング' },
+    { html:slideBaibai(data),                                    name:'04_売買代金ランキング' },
+    { html:slideGyoshu(data),                                    name:'02_業種別変動率ランキング' },
+    { html:slideNews(data, newsImgUrl),                          name:'07_本日のニュース' },
   );
   return slides;
 }
