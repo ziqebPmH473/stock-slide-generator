@@ -591,9 +591,9 @@ function buildSlides(data){
     { html:slideIndices(data),                                   name:'01_国内主要株価指数' },
     { html:slideRank(data,'上昇率','株価上昇率ランキング'),       name:'05_株価上昇率ランキング' },
     { html:slideRank(data,'下落率','株価下落率ランキング'),       name:'06_株価下落率ランキング' },
-    { html:slideKoyo(data),                                      name:'03_日経平均寄与度ランキング' },
+    { html:slideKoyo(data),                                      name:'02_日経平均寄与度ランキング' },
     { html:slideBaibai(data),                                    name:'04_売買代金ランキング' },
-    { html:slideGyoshu(data),                                    name:'02_業種別変動率ランキング' },
+    { html:slideGyoshu(data),                                    name:'03_業種別変動率ランキング' },
     { html:slideNews(data, newsImgUrl),                          name:'07_本日のニュース' },
   );
   return slides;
@@ -681,6 +681,7 @@ async function downloadZip(){
     const zip=new JSZip();
     const els=container.querySelectorAll('.slide');
     for(let i=0;i<els.length;i++){
+      if(slides[i].name==='zz_表紙') continue;
       status.textContent=`レンダリング中 ${i+1}/${els.length}...`;
       const canvas=await html2canvas(els[i],{width:SLIDE_W,height:SLIDE_H,scale:2,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false});
       const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
@@ -694,7 +695,7 @@ async function downloadZip(){
     a.download=`相場レポートスライド_${getDateStr(data)}.zip`;
     a.click();
     URL.revokeObjectURL(url);
-    status.textContent=`完了！ ${els.length}枚のスライドをダウンロードしました。`;
+    status.textContent=`完了！ ${els.length-1}枚のスライドをダウンロードしました。`;
   } catch(e){ console.error(e); status.textContent='エラー: '+e.message; }
   btn.disabled=false;
 }
