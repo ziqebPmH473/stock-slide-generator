@@ -135,12 +135,12 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 </head>
 <body>
 
-<h1>📊 東証マーケット振り返り スライド生成ツール</h1>
+<h1>📊 マーケット振り返り スライド作成</h1>
 <p class="sub">テキストを貼り付けると自動でプレビューを表示します。</p>
 
 <div class="card ap-card">
   <div class="ap-header">
-    <strong style="color:var(--text);font-size:12px;">AIプロンプト（日次）</strong>
+    <strong style="color:var(--text);font-size:12px;">プロンプト</strong>
     <input type="date" id="apBaseDate">
     <span id="apDateInfo"></span>
     <button class="btn-mini" onclick="apResetAll()" style="margin-left:auto;color:#fca5a5;border-color:#7f1d1d;">🔄 全リセット</button>
@@ -371,7 +371,7 @@ function apUpdateDates(baseDateStr){
   apToday = apFormatDate(today);
   apPrevBizDay = apFormatDate(prev);
   const info = document.getElementById('apDateInfo');
-  if (info) info.textContent = `→ 基準日: ${apToday} / 前営業日: ${apPrevBizDay}`;
+  if (info) info.textContent = `${apToday}/${apPrevBizDay}`;
 }
 
 function apReplaceVariables(text, vars){
