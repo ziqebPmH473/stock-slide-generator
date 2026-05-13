@@ -122,14 +122,14 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 .ap-card h2 { margin-bottom:6px !important; }
 .ap-header { display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:11px; color:var(--muted); }
 .ap-header input[type="date"] { background:var(--bg); border:1px solid var(--border); color:var(--text); padding:2px 4px; border-radius:3px; font-size:11px; }
-.ap-row { display:flex; align-items:center; gap:4px; margin-bottom:4px; flex-wrap:wrap; }
-.ap-tag { font-size:10px; font-weight:700; color:var(--muted); min-width:14px; }
-.ap-textbox { background:var(--bg); border:1px solid var(--border); color:var(--text); padding:3px 6px; border-radius:4px; font-size:11px; flex:1; min-width:0; font-family:'Courier New',monospace; height:24px !important; min-height:24px !important; line-height:1.3; resize:none; transition:height .15s; margin-top:0; }
-.ap-textbox:focus { height:48px !important; min-height:48px !important; resize:vertical; outline:1px solid var(--accent); }
-.btn-prompt { background:#1e3a5f; border:1px solid var(--border); color:var(--text); border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer; transition:background .15s; white-space:nowrap; }
+.ap-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+.ap-tag { font-size:11px; font-weight:700; color:var(--muted); min-width:16px; }
+.ap-textbox { background:var(--bg); border:1px solid var(--border); color:var(--text); padding:6px 10px; border-radius:5px; font-size:12px; flex:1; min-width:0; font-family:'Courier New',monospace; height:32px !important; min-height:32px !important; line-height:1.3; resize:none; transition:height .15s; margin-top:0; }
+.ap-textbox:focus { height:80px !important; min-height:80px !important; resize:vertical; outline:1px solid var(--accent); }
+.btn-prompt { background:#1e3a5f; border:1px solid var(--border); color:var(--text); border-radius:5px; padding:6px 12px; font-size:12px; min-height:32px; cursor:pointer; transition:background .15s; white-space:nowrap; }
 .btn-prompt:hover { background:#1a3a6b; }
 .btn-prompt.copied { background:#16a34a !important; border-color:#16a34a; color:#fff; }
-.btn-mini { background:transparent; border:1px solid var(--border); color:var(--muted); border-radius:3px; padding:2px 6px; font-size:10px; cursor:pointer; flex-shrink:0; }
+.btn-mini { background:transparent; border:1px solid var(--border); color:var(--muted); border-radius:4px; padding:3px 7px; font-size:12px; min-height:24px; min-width:28px; cursor:pointer; flex-shrink:0; }
 .btn-mini:hover { background:#1e3a5f; color:var(--text); }
 </style>
 </head>
@@ -449,13 +449,19 @@ function apFactCheckFix(btn){
   apCopyWithFeedback(`指摘箇所を指示の内容に沿って修正し、全文出力してください。\nただし、指摘していない箇所は一切変更しないでください。`, btn);
 }
 
+function apSetValue(id, val){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.value = val;
+  el.dispatchEvent(new Event('input', {bubbles:true}));
+}
 async function apPasteTextbox(id){
   try {
     const text = await navigator.clipboard.readText();
-    document.getElementById(id).value = text;
+    apSetValue(id, text);
   } catch(e){ alert('クリップボードの読み取りに失敗しました'); }
 }
-function apClearTextarea(id){ document.getElementById(id).value = ''; }
+function apClearTextarea(id){ apSetValue(id, ''); }
 
 const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thumbInput'];
 const THUMB_DEFAULT = '日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%';
@@ -489,21 +495,19 @@ function apResetAll(){
   apDoReset();
 }
 function apDoReset(){
+  apClearStorage();
   for (const id of ['apTextbox1','apFcReport','apTextbox2','mainInput']){
-    const el = document.getElementById(id);
-    if (el) el.value = '';
+    apSetValue(id, '');
   }
-  const thumb = document.getElementById('thumbInput');
-  if (thumb) thumb.value = THUMB_DEFAULT;
+  apSetValue('thumbInput', THUMB_DEFAULT);
   if (typeof clearImg === 'function'){
     try { clearImg('cover'); } catch(e){}
     try { clearImg('news'); } catch(e){}
   }
-  apClearStorage();
   if (typeof debouncedPreview === 'function') debouncedPreview();
 }
 
-(function apInit(){
+function apInit(){
   const now = new Date();
   const iso = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   // 日付が変わっていたら自動リセット
@@ -523,7 +527,7 @@ function apDoReset(){
   }
   apUpdateDates(iso);
   if (typeof debouncedPreview === 'function') debouncedPreview();
-})();
+}
 
 const SLIDE_W = 1280, SLIDE_H = 720;
 
@@ -982,7 +986,7 @@ async function downloadZip(){
 async function pasteText(){
   try {
     const t=await navigator.clipboard.readText();
-    document.getElementById('mainInput').value=t;
+    apSetValue('mainInput', t);
     debouncedPreview();
   } catch(e){
     document.getElementById('mainInput').focus();
@@ -993,15 +997,17 @@ async function pasteText(){
 }
 function clearText(){
   if(!confirm('テキストをクリアしますか？')) return;
-  document.getElementById('mainInput').value='';
+  apSetValue('mainInput', '');
   document.getElementById('previewArea').innerHTML='';
   document.getElementById('previewCard').style.display='none';
   document.getElementById('status').textContent='';
 }
 function clearThumb(){
-  document.getElementById('thumbInput').value='';
+  apSetValue('thumbInput', '');
   debouncedPreview();
 }
+
+apInit();
 </script>
 </body>
 </html>
