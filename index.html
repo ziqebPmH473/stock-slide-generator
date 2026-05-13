@@ -116,6 +116,21 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 /* タイトルの margin-bottom は TITLE_GAP.表紙（JS定数）で制御 */
 .cover-title { font-size:60px; font-weight:900; color:#1a1a2e; line-height:1.3; }
 .cover-body  { font-size:22px; color:#444; font-weight:600; line-height:1.9; }
+
+/* ===== AI PROMPT CARD（モバイル想定・スクロール&余分なボタン無し） ===== */
+.ap-card { padding:8px 10px !important; }
+.ap-card h2 { margin-bottom:6px !important; }
+.ap-header { display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:11px; color:var(--muted); }
+.ap-header input[type="date"] { background:var(--bg); border:1px solid var(--border); color:var(--text); padding:2px 4px; border-radius:3px; font-size:11px; }
+.ap-row { display:flex; align-items:center; gap:4px; margin-bottom:4px; flex-wrap:wrap; }
+.ap-tag { font-size:10px; font-weight:700; color:var(--muted); min-width:14px; }
+.ap-textbox { background:var(--bg); border:1px solid var(--border); color:var(--text); padding:3px 6px; border-radius:4px; font-size:11px; flex:1; min-width:0; font-family:'Courier New',monospace; height:24px !important; min-height:24px !important; line-height:1.3; resize:none; transition:height .15s; margin-top:0; }
+.ap-textbox:focus { height:48px !important; min-height:48px !important; resize:vertical; outline:1px solid var(--accent); }
+.btn-prompt { background:#1e3a5f; border:1px solid var(--border); color:var(--text); border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer; transition:background .15s; white-space:nowrap; }
+.btn-prompt:hover { background:#1a3a6b; }
+.btn-prompt.copied { background:#16a34a !important; border-color:#16a34a; color:#fff; }
+.btn-mini { background:transparent; border:1px solid var(--border); color:var(--muted); border-radius:3px; padding:2px 6px; font-size:10px; cursor:pointer; flex-shrink:0; }
+.btn-mini:hover { background:#1e3a5f; color:var(--text); }
 </style>
 </head>
 <body>
@@ -123,10 +138,55 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 <h1>📊 東証マーケット振り返り スライド生成ツール</h1>
 <p class="sub">テキストを貼り付けると自動でプレビューを表示します。</p>
 
-<div class="card">
-  <h2>テキストデータ（NotebookLM形式）</h2>
-  <details>
-    <summary>入力フォーマットを確認する</summary>
+<div class="card ap-card">
+  <div class="ap-header">
+    <strong style="color:var(--text);font-size:12px;">AIプロンプト（日次）</strong>
+    <input type="date" id="apBaseDate">
+    <span id="apDateInfo"></span>
+    <button class="btn-mini" onclick="apResetAll()" style="margin-left:auto;color:#fca5a5;border-color:#7f1d1d;">🔄 全リセット</button>
+  </div>
+
+  <div class="ap-row">
+    <span class="ap-tag">①</span>
+    <button class="btn-prompt" onclick="apCopy('urls', this)">URL</button>
+    <button class="btn-prompt" onclick="apCopy('rank', this)">分析RANK</button>
+    <button class="btn-prompt" onclick="apCopy('namerank', this)">名称RANK</button>
+  </div>
+  <div class="ap-row">
+    <span class="ap-tag">→</span>
+    <button class="btn-mini" onclick="apPasteTextbox('apTextbox1')">📋</button>
+    <button class="btn-mini" onclick="apClearTextarea('apTextbox1')">✕</button>
+    <textarea id="apTextbox1" class="ap-textbox" placeholder="①分析RANK の結果をここに貼付"></textarea>
+  </div>
+  <div class="ap-row">
+    <span class="ap-tag">②</span>
+    <button class="btn-prompt" onclick="apCopy('top10ReasonNewsNG', this)">*理由ニュース</button>
+  </div>
+  <div class="ap-row">
+    <span class="ap-tag">③</span>
+    <button class="btn-prompt" onclick="apFactCheck(this)">✅FactCK</button>
+    <button class="btn-prompt" onclick="apFactCheckFix(this)">🔧修正</button>
+  </div>
+  <div class="ap-row">
+    <span class="ap-tag">→</span>
+    <button class="btn-mini" onclick="apPasteTextbox('apFcReport')">📋</button>
+    <button class="btn-mini" onclick="apClearTextarea('apFcReport')">✕</button>
+    <textarea id="apFcReport" class="ap-textbox" placeholder="③ファクトチェック対象のレポートをここに貼付"></textarea>
+  </div>
+  <div class="ap-row">
+    <span class="ap-tag">④</span>
+    <button class="btn-prompt" onclick="apCopy('voiceNew', this)">音声</button>
+    <button class="btn-prompt" onclick="apCopy('infografic', this)">まとめ画像</button>
+    <button class="btn-prompt" onclick="apCopy('presen1', this)">ツール文章</button>
+  </div>
+  <div class="ap-row" style="align-items:flex-start;margin-top:6px;">
+    <span class="ap-tag">→</span>
+    <button class="btn-mini" onclick="pasteText()">📋</button>
+    <button class="btn-mini" onclick="clearText()">✕</button>
+    <textarea id="mainInput" placeholder="④ツール文章 プロンプトの出力をここに貼付（スライド生成用・NotebookLM形式）" oninput="debouncedPreview()" style="min-height:120px;flex:1;min-width:0;"></textarea>
+  </div>
+  <details style="margin-top:4px;">
+    <summary style="font-size:11px;color:var(--accent);">入力フォーマットを確認する</summary>
     <pre class="fmt">日付: 2026/03/15  ← ZIP ファイル名に使用（省略可）
 
 [表紙]
@@ -193,35 +253,23 @@ Appier G|4180|818|+96|+13.30%
 高市首相　IMF提言・消費税・日銀政策に言及|飲食料品の消費税2年間停止案を一定評価。日銀政策について2%物価目標の安定実現に向けた運営に期待。
 内閣府　12月景気動向指数改定値|一致指数前月比0.6ポイント低下の114.3。基調判断「足踏みを示している」を据え置き。</pre>
   </details>
-  <div class="ta-actions">
-    <button class="btn-sm" onclick="pasteText()">📋 貼り付け</button>
-    <button class="btn-sm danger" onclick="clearText()">✕ クリア</button>
-  </div>
-  <textarea id="mainInput" placeholder="上記フォーマットでテキストを貼り付けてください" oninput="debouncedPreview()"></textarea>
-</div>
 
-<div class="card">
-  <h2>サムネイル（スライド 0 枚目）</h2>
-  <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">「：」で上段・中段・下段を区切る。色指定: <span style="color:#ff914d">*オレンジ*</span>　<span style="color:#5ce1e6">#水色#</span>　<span style="color:#ffde59">%黄色%</span></p>
-  <div class="ta-actions">
-    <button class="btn-sm danger" onclick="clearThumb()">✕ クリア</button>
+  <div class="ap-row" style="margin-top:6px;">
+    <span class="ap-tag">④</span>
+    <button class="btn-prompt" onclick="apCopy('reportKk', this)">全情報</button>
   </div>
-  <textarea id="thumbInput" style="min-height:60px;" oninput="debouncedPreview()">日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%</textarea>
-</div>
-
-<div class="card">
-  <div class="img-cards">
-    <div class="img-card">
-      <h3>表紙画像（右側に表示）</h3>
-      <div id="coverDropZone" class="drop-zone">
-        <img id="coverImgThumb" class="img-thumb" src="" alt="" style="display:none">
-        <p id="coverDropMsg">ドロップ、または</p>
-        <label for="coverImg" class="btn-sm">ファイルを選択</label>
-        <input type="file" id="coverImg" accept="image/*" style="display:none" onchange="onFileInput(this,'cover')">
-        <div id="coverImgMeta" class="img-meta"></div>
-        <button id="coverImgClearBtn" class="btn-sm danger" style="display:none;margin-top:6px" onclick="clearImg('cover')">✕ 削除</button>
-      </div>
-    </div>
+  <div class="ap-row">
+    <span class="ap-tag">→</span>
+    <button class="btn-mini" onclick="apPasteTextbox('apTextbox2')">📋</button>
+    <button class="btn-mini" onclick="apClearTextarea('apTextbox2')">✕</button>
+    <textarea id="apTextbox2" class="ap-textbox" placeholder="④全情報 の結果をここに貼付"></textarea>
+  </div>
+  <div class="ap-row">
+    <span class="ap-tag">⑤</span>
+    <button class="btn-prompt" onclick="apCopy('photoNews', this)">*画像(ニュース)</button>
+    <button class="btn-prompt" onclick="apCopy('xNotify', this)">*X・サムネ</button>
+  </div>
+  <div class="img-cards" style="margin-top:6px;">
     <div class="img-card">
       <h3>ニュース画像（左側に表示）</h3>
       <div id="newsDropZone" class="drop-zone">
@@ -233,7 +281,24 @@ Appier G|4180|818|+96|+13.30%
         <button id="newsImgClearBtn" class="btn-sm danger" style="display:none;margin-top:6px" onclick="clearImg('news')">✕ 削除</button>
       </div>
     </div>
+    <div class="img-card">
+      <h3>表紙画像（右側に表示）</h3>
+      <div id="coverDropZone" class="drop-zone">
+        <img id="coverImgThumb" class="img-thumb" src="" alt="" style="display:none">
+        <p id="coverDropMsg">ドロップ、または</p>
+        <label for="coverImg" class="btn-sm">ファイルを選択</label>
+        <input type="file" id="coverImg" accept="image/*" style="display:none" onchange="onFileInput(this,'cover')">
+        <div id="coverImgMeta" class="img-meta"></div>
+        <button id="coverImgClearBtn" class="btn-sm danger" style="display:none;margin-top:6px" onclick="clearImg('cover')">✕ 削除</button>
+      </div>
+    </div>
   </div>
+</div>
+
+<div class="card">
+  <h2>サムネイル（スライド 0 枚目）</h2>
+  <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">「：」で上段・中段・下段を区切る。色指定: <span style="color:#ff914d">*オレンジ*</span>　<span style="color:#5ce1e6">#水色#</span>　<span style="color:#ffde59">%黄色%</span></p>
+  <textarea id="thumbInput" style="min-height:60px;" oninput="debouncedPreview()">日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%</textarea>
 </div>
 
 <button class="btn" id="downloadBtn" onclick="downloadZip()">⬇ ダウンロード</button>
@@ -247,6 +312,219 @@ Appier G|4180|818|+96|+13.30%
 <div id="renderTarget" style="position:fixed;left:-3000px;top:0;pointer-events:none;"></div>
 
 <script>
+// ==================== AI PROMPT GENERATOR (日次) ====================
+const AP_HOLIDAYS = [
+  '2025-07-21','2025-08-11','2025-09-15','2025-09-23',
+  '2025-10-13','2025-11-03','2025-11-23','2025-11-24','2025-12-31',
+  '2026-01-01','2026-01-02','2026-01-12','2026-02-11','2026-02-23',
+  '2026-03-20','2026-04-29','2026-05-03','2026-05-04','2026-05-05',
+  '2026-05-06','2026-07-20','2026-08-11','2026-09-21','2026-09-22',
+  '2026-09-23','2026-10-12','2026-11-03','2026-11-23','2026-12-31'
+];
+
+const AP_COMMON = {
+  nameConvert: `\n・銘柄名は銘柄名一覧表の「銘柄名（正式）」を使用してください。ただし、銘柄名一覧表にない場合は、ソースの名称もしくはレポートの名称を使用してください。`,
+  VoiceNote_Principle: `\n【ルールの原則】\n以下の個別ルールを適用するにあたり、下記の3つの原則を応答の最初から最後まで、常に厳守してください。
+1. ルールは静かに適用する:すべてのルールは、会話の裏側で静かに適用してください。ルールの適用過程や、「〇〇というルールに従い、」のような前置きは一切不要です。
+2. 自然な発話（繰り返し厳禁）:特定の単語や数値を不自然に繰り返す癖があります。（例：「上期、上期は」「4500万円。4500万円」）。すべての発言は、自然な人間の会話のように、一度だけ行ってください。
+3. 一貫性と自己チェック:指示されたルールは、応答の途中で忘れることなく、最後まで一貫して適用してください。応答を終える前に、すべての指示が守られているか必ず自己チェックする習慣をつけてください。`,
+  VoiceNote_Basic: `\n【基本ルール】\n・この音声では、元の資料やソース、レポート、出典などの存在に一切触れず、内容のみを自然な解説としてまとめてください。\n・話し手 と 聞き手 の役割を決め、最初から最後まで役割を入れ替えないこと。\n・日付は「今日」「昨日」と言わず、必ず「8月5日」のように具体的な日付で話してください。特定の日付に続く「前日」などの表現は問題ありません。\n・音声の冒頭で今日の日付を話す必要はありません。\n・無理に1人称を使用しなくても問題ありませんが、使用する場合には1人称は「わたし」にしてください。`,
+  VoiceNote_tatoe: `\n【比喩・たとえ表現のルール】\n・原則として、比喩やたとえ話は使わないこと。\n・「例えるなら〜のようなもので…」「〜にたとえると…」と前置きして、たとえ話を広げる表現は使わないこと。\n・どうしても比喩が必要な場合のみ、「渋滞のように動きが遅くなる」のような、ごく一般的で短い一言の比喩にとどめること。\n・比喩を使うか迷う場合は、比喩を使わずにストレートに説明することを優先すること。`,
+  VoiceNote_kaihi: `\n【音声の最後のルール】\n・音声の一番最後は、必ず「本日はここまでです」の１文で終えてください。\n・１文の直後に2秒程度の無音の間を置いてから終了する（無音の指示自体は読み上げない）`,
+  VoiceNote_Ks1: `ただし、決算資料のみ決算資料であることに触れて構いません。`,
+  VoiceNote_Ks2: `\n・業績予想の増減表現\n音声では「上方修正」「下方修正」という言葉は使わず、予想やガイダンスが増えた場合は「引き上げた」、減った場合は「引き下げた」と表現すること。\nIRや資料に「上方修正」「下方修正」と書かれていても、読み上げる際は「業績予想を引き上げた」「業績予想を引き下げた」に言い換えること。`,
+  VoiceNote_Ks3: `\n・ビジネス数値の読み替え\n「〇百万円」という表記は、計算・変換後の数値で読むこと。\n例）\n- 「45百万円」→「4500万円」（読み方：よんせんごひゃくまんえん）\n- 「120百万円」→「1億2000万円」（読み方：いちおくにせんまんえん）\n- 「5678百万円」→「56億7800万円」（読み方：ごじゅうろくおくななせんはっぴゃくまんえん）\n- 「203百万円」→「2億300万円」（読み方：におくさんびゃくまんえん）`,
+};
+
+const AP_COPY_TEXTS = {
+  urls: `https://quote.nomura.co.jp/nomura/cgi-bin/quote.cgi?template=nomura_tp_index_01\nhttps://s.kabutan.jp/warnings/nk225_contrib/?direction=desc&order=contrib_price\nhttps://s.kabutan.jp/warnings/nk225_contrib/?direction=asc&order=contrib_price\nhttps://www.nikkei.com/marketdata/ranking-jp/price-rise/?market=G_TP\nhttps://www.nikkei.com/marketdata/ranking-jp/price-drop/?market=G_TP\nhttps://s.kabutan.jp/warnings/sector_stocks_ranking/\nhttps://s.kabutan.jp/warnings/sector_stocks_ranking/?direction=asc&order=prev_price_ratio\nhttps://www.nikkei.com/marketdata/ranking-jp/trading-value/?market=all`,
+  rank: `東証プライム市場の上昇率・下落率ランキングTOP5の銘柄の証券コード、銘柄名、株価、株価変動幅、株価変動率を以下の形式で出力してください。\n一覧のタイトル・一覧以外の内容は一切記述しないでください。\n\n上昇率TOP5\n（上昇率上位の表）\n下落率TOP5\n（下落率上位の表）`,
+  namerank: `寄与度ランキング（トップ、ワースト）、売買代金ランキング、株価上昇率／株価下落率ランキングに記載の銘柄について\n証券コード、銘柄名を表形式で出力してください。（重複可）\n一覧表以外の内容は一切記述しないでください。\n・銘柄は各ランキングの上位5銘柄までを出力してください。`,
+  top10ReasonNewsNG: `１．東証プライム市場の上昇率・下落率ランキングTOP5の銘柄について、変動率が高かった具体的な理由を、各銘柄のコードや企業名で個別に調査し、以下の要因を含めて確認できた場合のみ記載してください。\n・企業のプレスリリース（新製品、提携、M&A、業績修正など）\n・決算発表\n・証券会社による投資判断や目標株価の変更\n・大株主の大量保有報告書や保有目的の変更\n・関連市場や業界全体に影響を与える重要なニュース\n・ランキングは以下を使用すること。\n{{textbox}}\n・変動理由が「具体的なニュース・決算発表等」で**確認できた銘柄のみ**を掲載すること。  \n・理由が未確認、あるいは{{today}}から一週間以上前の材料しかない場合は、**一切表示しない**。  \n・理由は{{today}}の15:29までに発表されたものに限定すること。\n・「理由が見つからない」「市場全体の調整」などの曖昧な記載は**禁止**。  \n・除外した銘柄は名前やコードも含めて**一切報告しない**。\n・ニュースは日本語・英語いずれでも構いません。\n・レポート形式ではなく、以下の形式でまとめてください。\n以下に記載のない余計な文章や表などは追加しないでください。\n\n急騰・急落銘柄の材料\nトヨタ自動車（7203）：-10.15％\n理由となる出来事：〇〇〇〇〇〇\n日付：YYYY/M/D\n詳細：XXXXXXXXXXXXX\n\nソニー（7211）：+9.15％\n理由となる出来事：〇〇〇〇〇〇\n日付：YYYY/M/D\n詳細：XXXXXXXXXXXXX\n\n２．{{today}}の東京株式市場に大きく影響を与えたニュースをまとめて\n個別株や指数の値動きについての記載はせず、ニュースの内容に文字数を割いて\n{{prevBizDay}}の15時30分から{{today}}の15時29分の間に発表されたニュースのみ記載して\nニュースの数は任せるが、多くても５～６個まで\n・個別株の値動きのまとめや個別株の決算は除く、ただし複数銘柄に影響を与えたニュースは可\n・日本株の指数の値動きに関するまとめは除く\n・レポート形式ではなく、以下の形式でまとめてください。以下に記載のない余計な文章や表などは追加しないでください。\n\n{{prevBizDay}}の15時30分から{{today}}の15時29分の間に発表された東京株式市場に影響を及ぼしたニュース\n\n概要：〇〇〇〇〇〇\n日付：YYYY年M月D日\n詳細：XXXXXXXXXXXXX\n\n概要：〇〇〇〇〇〇\n日付：YYYY年M月D日\n詳細：XXXXXXXXXXXXX\n\n・記載するのは上記１と２の内容のみにしてください。上記以外の内容（分析やまとめなど）は不要です。\n・出典、出典のリンクは削除してください`,
+  voiceNew: `指数動向、各ランキングから今日の東証相場を振り返り、特徴や投資家心理、市場の注目ポイントを2分超の長さで、以下の構成で解説してください。\n個人的な感想は添えず、事実を伝えることに専念してください。また、メタ情報は発言しないようにしてください。\n【構成】\n1.指数の値動き\n2.日経平均寄与度\n3.業種別の値動き\n4.個別銘柄の値動き（上昇率ランキング、下落率ランキング）\n5.売買代金ランキング\n6.ニュース{{VoiceNote_Principle}}{{VoiceNote_Basic}}{{nameConvert}}{{VoiceNote_Ks}}\n・選別、まだら模様などの表現は禁止(市場はそういうもので当たり前のこと、全銘柄が一方向に動くものではないため){{VoiceNote_tatoe}}{{VoiceNote_kaihi}}`,
+  infografic: `この日の東証マーケットを振り返る動画の最後に「まとめ」として表示する、東証マーケットのまとめ画像を作成してください。\n全ての情報を記載する必要はありませんが、この日のマーケットの特長がわかるようにしてください。\n背景は白を基調としてください。`,
+  presen1: `以下の形式で、表紙（1行目のタイトルはそのまま、2行目以降が本文）、指数、値上がり値下がり、寄与度、業種別騰落率、ニュースを出力してください。\n表紙の本文は、改行せずに、140文字程度でこの日の市場を簡潔にまとめてください。\n銘柄名は銘柄名一覧表の「銘柄名（正式）」を使用してください。\nただし、銘柄名一覧表にない場合は、ソースの名称もしくはレポートの名称を使用し、「ホールディングス」はＨＤ、「フィナンシャルグループ」はＦＧ、「グループ」はＧに変換してください。\nニュースの見出しは30文字（60バイト）以内、ニュースの詳細は90文字（180バイト）以内にまとめてください。\nニュースは最大5本までとし、東京株式市場に影響を及ぼしたニュースから、特に市場への影響が大きかったと思われるものを選定してください。ただし、ニュースの本数が4本に満たない場合に限り、個別銘柄の急騰・急落銘柄の材料を加えて、合計4本としてください。\n\n\n日付: 2026/03/15\n\n[表紙]\nマーケット振り返り\n2026年3月15日の日本株式市場は全体的に上昇。\n日経平均は+170円と小幅続伸。\n\n[指数]\n日経平均|58,753.39|+170.27|+0.29%\nTOPIX|3,880.34|+37.18|+0.97%\n東証スタンダードTOP20|1,612.59|+2.74|+0.17%\n東証グロースCore|875.24|+15.98|+1.86%\n\n[上昇率]\n東邦チタニウム|5727|2,291|+400|+21.15%\nテクセンドフォトマスク|429A|3,375|+479|+16.54%\nＳＨＩＦＴ|3697|691.2|+87.2|+14.44%\nAppier G|4180|818|+96|+13.30%\nユニチカ|3103|1,617|+189|+13.24%\n\n[下落率]\n楽天銀行|5838|6,878|-1,080|-13.57%\n松屋|8237|2,548|-318|-11.10%\nヨコオ|6800|3,415|-330|-8.81%\n日東紡績|3110|25,470|-2,210|-7.98%\n大和冷機工業|6459|1,804|-151|-7.72%\n\n[寄与度]\nソフトバンクG|9984|+129.16\nファナック|6954|+46.46\nリクルートHD|6098|+46.13\nＴＤＫ|6762|+26.32\nフジクラ|5803|+21.39\n---\nアドバンテスト|6857|-131.03\n東京エレクトロン|8035|-92.25\nダイキン工業|6367|-27.74\nイビデン|4062|-23.60\n住友電気工業|5802|-15.88\n\n[売買代金]\nキオクシアHD|285A|21,240|-225|-1.05%|5,946億円\nフジクラ|5803|27,465|+640|+2.39%|4,425億円\nアドバンテスト|6857|28,125|-490|-1.71%|3,246億円\nＪＸ金属|5016|4,142|-3|-0.07%|3,189億円\nディスコ|6146|79,070|-930|-1.16%|2,103億円\n\n[業種]\nサービス業|+3.29%|20.4倍\n銀行業|+3.28%|15.3倍\n海運業|+2.81%|10.9倍\n情報・通信業|+2.60%|26.3倍\n保険業|+2.36%|18.3倍\n---\n小売業|-1.39%|33.6倍\nガラス・土石|-1.02%|76.6倍\n非鉄金属|-0.87%|26.6倍\n食料品|-0.63%|28.8倍\n鉄鋼|-0.24%|16.8倍\n\n[ニュース]\nエヌビディア　11-1月期決算|純利益前年同期比+94%、売上高+73%でいずれも過去最高。2-4月期見通し約780億ドル。\n楽天G　フィンテック事業再編協議再開|楽天銀行・カード・証券をHDとして集約する組織再編を想定し、協議再開を公表。\n高市首相　IMF提言・消費税・日銀政策に言及|飲食料品の消費税2年間停止案を一定評価。日銀政策について2%物価目標の安定実現に向けた運営に期待。\n内閣府　12月景気動向指数改定値|一致指数前月比0.6ポイント低下の114.3。基調判断「足踏みを示している」を据え置き。`,
+  reportKk: `各サイトのデータからは指数、各ランキング、レポートからは急騰・急落銘柄の材料、東京株式市場に影響を及ぼしたニュースをまとめて出力してください。\n・急騰・急落銘柄の材料、東京株式市場に影響を及ぼしたニュースは、レポートに記載の内容をそのまま出力してください。ただし、銘柄名は「銘柄名一覧表」の「銘柄名（正式）」に置き換えてください。\n・指数は銘柄名、株価、前日比（日経平均、TOPIX、東証スタンダード、東証グロース）\n・各市場（プライム、スタンダード、グロース）の出来高・時価総額\n・寄与度ランキング（トップ、ワースト）は銘柄名、証券コード、寄与度\n・業種別ランキング（トップ、ワースト）は業種名、変動率、PER\n・売買代金ランキングは銘柄名、証券コード、株価、前日比、売買代金\n・株価上昇率／株価下落率ランキングは銘柄名、証券コード、株価、前日比\n※前日比は「変動幅（変動率）」形式、ランキングは上位5位まで\n※業種別ランキングは、変動率がマイナスでも上位5位まで、変動率がプラスでも下位5位まで記載する。\n※ランキングや指数はいつ時点の情報かを記述しない\n・まとめ→今日の東証相場を振り返り、特徴や投資家心理、市場の注目ポイントのまとめ\n{{nameConvert}}`,
+  xNotify: "以下の資料から２分で{{intro}}動画のサムネイルの文字と、Xへの投稿文を作成してください。\n\n{{textbox}}",
+  photoTop: `「東証マーケットを振り返る」をイメージして画像を生成してください。\n文字や企業ロゴは記載しないでください。`,
+  photoNews: `以下の中に記載のニュースの中から1つをピックアップし、そのニュースをイメージした画像を生成してください。\n文字や企業ロゴは記載しないでください。\n\n{{textbox}}`,
+};
+
+const AP_INTRO = "今日の東京株式市場を振り返る";
+
+let apToday = '', apPrevBizDay = '';
+
+function apIsBusinessDay(date){
+  const day = date.getDay();
+  if (day === 0 || day === 6) return false;
+  const y = date.getFullYear(), m = String(date.getMonth()+1).padStart(2,'0'), d = String(date.getDate()).padStart(2,'0');
+  return !AP_HOLIDAYS.includes(`${y}-${m}-${d}`);
+}
+function apMostRecentBizDay(date){ let d = new Date(date); while(!apIsBusinessDay(d)) d.setDate(d.getDate()-1); return d; }
+function apPrevBizDayOf(date){ let d = new Date(date); d.setDate(d.getDate()-1); while(!apIsBusinessDay(d)) d.setDate(d.getDate()-1); return d; }
+function apFormatDate(date){ return `${date.getFullYear()}年${date.getMonth()+1}月${date.getDate()}日`; }
+
+function apUpdateDates(baseDateStr){
+  const base = baseDateStr ? new Date(baseDateStr+'T00:00:00') : new Date();
+  const today = apMostRecentBizDay(base);
+  const prev = apPrevBizDayOf(today);
+  apToday = apFormatDate(today);
+  apPrevBizDay = apFormatDate(prev);
+  const info = document.getElementById('apDateInfo');
+  if (info) info.textContent = `→ 基準日: ${apToday} / 前営業日: ${apPrevBizDay}`;
+}
+
+function apReplaceVariables(text, vars){
+  if (typeof text !== 'string') return '';
+  let s = text, changed = true, counter = 0;
+  while (changed && counter < 10){
+    changed = false;
+    s = s.replace(/{{(.*?)}}/g, (m, k) => { const v = vars[k.trim()]; if (v !== undefined){ changed = true; return v; } return m; });
+    counter++;
+  }
+  return s;
+}
+
+const AP_TEXTBOX_MAP = {
+  top10ReasonNewsNG: 'apTextbox1',
+  photoNews:         'apTextbox2',
+  xNotify:           'apTextbox2',
+};
+
+function apBuildVars(copyId){
+  const tbId = AP_TEXTBOX_MAP[copyId];
+  const textbox = tbId ? (document.getElementById(tbId).value || '') : '';
+  return {
+    today: apToday,
+    prevBizDay: apPrevBizDay,
+    intro: AP_INTRO,
+    textbox,
+    nameConvert: AP_COMMON.nameConvert,
+    VoiceNote_Principle: AP_COMMON.VoiceNote_Principle,
+    VoiceNote_Basic: AP_COMMON.VoiceNote_Basic,
+    VoiceNote_tatoe: AP_COMMON.VoiceNote_tatoe,
+    VoiceNote_kaihi: AP_COMMON.VoiceNote_kaihi,
+    VoiceNote_Ks: '',
+  };
+}
+
+function apCopyWithFeedback(text, btn){
+  const done = () => {
+    const original = btn.innerText;
+    btn.innerText = '✔ コピー完了！';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.innerText = original; btn.classList.remove('copied'); }, 2000);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done).catch(() => apFallbackCopy(text, done));
+  } else {
+    apFallbackCopy(text, done);
+  }
+}
+function apFallbackCopy(text, done){
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed'; ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch(e){ alert('コピーに失敗しました'); }
+  document.body.removeChild(ta);
+}
+
+function apCopy(copyId, btn){
+  const tpl = AP_COPY_TEXTS[copyId] || '';
+  const final = apReplaceVariables(tpl, apBuildVars(copyId));
+  apCopyWithFeedback(final, btn);
+}
+
+function apFactCheck(btn){
+  const base = apReplaceVariables(AP_COPY_TEXTS.top10ReasonNewsNG, apBuildVars('top10ReasonNewsNG'));
+  const report = (document.getElementById('apFcReport').value || '').trim();
+  const reportSection = report ? `\n\n--レポート--\n\n${report}` : `\n\n--レポート--\n\n`;
+  const final = `以下のレポートは、以下の指示でAIが生成したものです。\nレポートのファクトチェックを行い、誤っている個所と指示に沿っていない箇所のみを指摘してください。\n指摘は件数が多くても構わないので、すべて指摘してください。\n指摘がある場合には、指摘箇所、指摘内容、修正後内容を記載してください。\nレイアウトや出力形式に関する指摘は不要です。\n\n--指示--\n${base}${reportSection}`;
+  apCopyWithFeedback(final, btn);
+}
+
+function apFactCheckFix(btn){
+  apCopyWithFeedback(`指摘箇所を指示の内容に沿って修正し、全文出力してください。\nただし、指摘していない箇所は一切変更しないでください。`, btn);
+}
+
+async function apPasteTextbox(id){
+  try {
+    const text = await navigator.clipboard.readText();
+    document.getElementById(id).value = text;
+  } catch(e){ alert('クリップボードの読み取りに失敗しました'); }
+}
+function apClearTextarea(id){ document.getElementById(id).value = ''; }
+
+const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thumbInput'];
+const THUMB_DEFAULT = '日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%';
+const SSG_PREFIX = 'ssg_';
+
+function apSaveField(id){
+  const el = document.getElementById(id);
+  if (!el) return;
+  localStorage.setItem(SSG_PREFIX + id, el.value);
+}
+function apLoadAll(){
+  for (const id of AP_STORAGE_IDS){
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const v = localStorage.getItem(SSG_PREFIX + id);
+    if (v !== null) el.value = v;
+  }
+}
+function apBindAutosave(){
+  for (const id of AP_STORAGE_IDS){
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.addEventListener('input', () => apSaveField(id));
+  }
+}
+function apClearStorage(){
+  for (const id of AP_STORAGE_IDS) localStorage.removeItem(SSG_PREFIX + id);
+}
+function apResetAll(){
+  if (!confirm('テキスト・画像をすべて初期値に戻します。よろしいですか？')) return;
+  apDoReset();
+}
+function apDoReset(){
+  for (const id of ['apTextbox1','apFcReport','apTextbox2','mainInput']){
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  }
+  const thumb = document.getElementById('thumbInput');
+  if (thumb) thumb.value = THUMB_DEFAULT;
+  if (typeof clearImg === 'function'){
+    try { clearImg('cover'); } catch(e){}
+    try { clearImg('news'); } catch(e){}
+  }
+  apClearStorage();
+  if (typeof debouncedPreview === 'function') debouncedPreview();
+}
+
+(function apInit(){
+  const now = new Date();
+  const iso = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  // 日付が変わっていたら自動リセット
+  const lastDate = localStorage.getItem(SSG_PREFIX + 'lastDate');
+  if (lastDate && lastDate !== iso){
+    apDoReset();
+  }
+  localStorage.setItem(SSG_PREFIX + 'lastDate', iso);
+  // フィールド復元
+  apLoadAll();
+  apBindAutosave();
+  // 基準日
+  const dateInput = document.getElementById('apBaseDate');
+  if (dateInput){
+    dateInput.value = iso;
+    dateInput.addEventListener('change', () => apUpdateDates(dateInput.value));
+  }
+  apUpdateDates(iso);
+  if (typeof debouncedPreview === 'function') debouncedPreview();
+})();
+
 const SLIDE_W = 1280, SLIDE_H = 720;
 
 // ===== サムネイル設定 =====
