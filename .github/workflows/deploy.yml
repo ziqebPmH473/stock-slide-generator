@@ -13,9 +13,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build (package.json があればビルド)
+        run: |
+          if [ -f package.json ]; then
+            npm install
+            npm run build --if-present
+          fi
+      - name: Pick output directory
+        id: out
+        run: |
+          DIR="."
+          for d in dist build out; do
+            if [ -d "$d" ]; then DIR="$d"; break; fi
+          done
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy . --project-name=ssg-9506afd114d7 --branch=main
+          command: pages deploy ${{ steps.out.outputs.dir }} --project-name=${{ secrets.CF_PROJECT_NAME }} --branch=main --commit-dirty=true
