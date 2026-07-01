@@ -333,10 +333,19 @@ Appier G|4180|818|+96|+13.30%
   <div class="card">
     <h2>自動版パイプライン（BETA）</h2>
     <p style="font-size:13px;color:var(--muted);line-height:1.7;">
-      ここに、URL取得 → 分析 → 台本／スライド／サムネ生成を<strong style="color:var(--text)">ボタン一発</strong>で行う自動パイプラインを実装していきます。<br>
-      現行の「手動版」タブとは完全に独立しており、こちらの動作は手動版に影響しません。
+      URL取得 → 分析 → 台本／スライド／サムネ生成を<strong style="color:var(--text)">ボタン一発</strong>で行う自動パイプライン。<br>
+      現行の「手動版」タブとは完全に独立しています。
     </p>
-    <p style="font-size:12px;color:var(--muted);margin-top:10px;">🚧 Step 0：タブの器を設置しました。次はURL取得の検証（CF Functions）に進みます。</p>
+  </div>
+
+  <div class="card">
+    <h2>① データ取得（野村・株探・日経の8ページ）</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:10px;">
+      ボタンを押すと、サーバー側で8つのページを取得します（NotebookLMにURLを貼る作業の代わり）。
+    </p>
+    <button class="btn" id="autoFetchBtn" onclick="autoFetchSources()">🔄 データ取得を実行</button>
+    <div id="autoFetchStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
+    <div id="autoFetchResult"></div>
   </div>
 </div><!-- /#tabAuto -->
 
@@ -1047,6 +1056,56 @@ function switchTab(name){
   document.getElementById('tabAuto').classList.toggle('active', !isManual);
   document.getElementById('tabBtnManual').classList.toggle('active', isManual);
   document.getElementById('tabBtnAuto').classList.toggle('active', !isManual);
+}
+
+// ==================== 自動版：① データ取得 ====================
+// 取得結果は AutoState に保持し、後続の分析工程で使う。
+const AutoState = { sources: null, fetchedAt: null };
+
+function autoEsc(s){ return String(s==null?'':s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+async function autoFetchSources(){
+  const btn = document.getElementById('autoFetchBtn');
+  const statusEl = document.getElementById('autoFetchStatus');
+  const resultEl = document.getElementById('autoFetchResult');
+  btn.disabled = true;
+  statusEl.textContent = '取得中…（8ページ）';
+  resultEl.innerHTML = '';
+  try {
+    const res = await fetch('/api/fetch-sources');
+    if(!res.ok) throw new Error('サーバー応答エラー: ' + res.status);
+    const data = await res.json();
+    AutoState.sources = data.sources;
+    AutoState.fetchedAt = data.fetchedAt;
+    const okCount = data.sources.filter(s=>s.ok).length;
+    statusEl.textContent = `完了：${okCount}/${data.sources.length} 件取得`;
+    resultEl.innerHTML = autoRenderSources(data.sources);
+  } catch(e){
+    statusEl.textContent = '❌ ' + e.message + '（CF Functions が動くサーバーで開いていますか？）';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function autoRenderSources(sources){
+  return sources.map(s=>{
+    const badge = s.ok ? '<span style="color:#4ade80">●</span>' : '<span style="color:#f87171">●</span>';
+    let inner = '';
+    if(s.type === 'rows' && s.rows){
+      const head = s.rows.slice(0,5).map(r =>
+        `${autoEsc(r.rank)}. ${autoEsc(r.code)} ${autoEsc(r.name)} ｜ ${autoEsc(r.rate)}% ｜ 株価${autoEsc(r.price)}`
+      ).join('\n');
+      inner = `<div style="font-size:11px;color:var(--muted);margin-top:4px;">構造化データ ${s.rows.length}行（先頭5行）:</div>`
+            + `<pre style="font-size:11px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;margin-top:4px;white-space:pre-wrap;max-height:140px;overflow:auto;">${autoEsc(head)}</pre>`;
+    } else if(s.text){
+      inner = `<pre style="font-size:11px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;margin-top:4px;white-space:pre-wrap;max-height:120px;overflow:auto;">${autoEsc(s.text.slice(0,600))}…</pre>`;
+    } else if(s.error){
+      inner = `<div style="font-size:11px;color:#f87171;margin-top:4px;">${autoEsc(s.error)}</div>`;
+    }
+    return `<details style="margin-top:8px;border:1px solid var(--border);border-radius:6px;padding:8px;">`
+         + `<summary style="font-size:12px;color:var(--text);cursor:pointer;">${badge} ${autoEsc(s.label)} <span style="color:var(--muted)">(${s.status||'-'}, ${s.bytes||0}B)</span></summary>`
+         + inner + `</details>`;
+  }).join('');
 }
 
 apInit();
