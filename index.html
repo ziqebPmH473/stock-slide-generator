@@ -1396,6 +1396,28 @@ function autoInitDict(){
 // ==================== 自動版：④ スライド文章生成 ====================
 function autoTodayStr(){ const d=new Date(); return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`; }
 
+// ランキングの銘柄名を略記へ（ホールディングス→ＨＤ 等）。順序重要（FG→HD→G）
+function autoAbbrevName(name){
+  return String(name)
+    .replace(/フィナンシャルグループ/g, 'ＦＧ')
+    .replace(/ホールディングス/g, 'ＨＤ')
+    .replace(/グループ/g, 'Ｇ');
+}
+// スライド文章の「ランキング系セクションの銘柄名」だけ略記変換（ニュース・表紙・指数・業種は対象外）
+function autoApplyRankAbbrev(text){
+  const rankSections=new Set(['上昇率','下落率','寄与度','売買代金']);
+  let cur=null;
+  return text.split('\n').map(line=>{
+    const secM=line.trim().match(/^\[(.+)\]$/);
+    if(secM){ cur=secM[1]; return line; }
+    if(cur && rankSections.has(cur) && line.includes('|')){
+      const parts=line.split('|');
+      parts[0]=autoAbbrevName(parts[0]);   // 銘柄名は先頭フィールド
+      return parts.join('|');
+    }
+    return line;
+  }).join('\n');
+}
 // 売買代金(円) → 「◯◯億円」に丸める
 function autoYenToOku(v){
   const n=parseInt(String(v).replace(/[^\d]/g,''),10);
@@ -1412,7 +1434,15 @@ function autoRowsToText(rows, withValue){
 }
 
 function autoSrcMap(){ const m={}; (AutoState.sources||[]).forEach(s=>{ m[s.key]=s; }); return m; }
-function autoIndexToText(rows){ return rows.map(r=>`${r.name}｜${r.value}｜${r.change}｜${r.pct}`).join('\n'); }
+// 指数は「日経平均・TOPIX・東証スタンダードTOP20・東証グロースCore」の4つに固定して渡す
+function autoIndexToText(rows){
+  const nikkei=rows.find(r=>r.name==='日経平均');
+  const topix=rows.find(r=>r.name==='TOPIX');
+  const std=rows.find(r=>/スタンダード/.test(r.name)&&/TOP20/.test(r.name));
+  const gro=rows.find(r=>/グロース/.test(r.name)&&/Core/.test(r.name));
+  const line=(nm,r)=>r?`${nm}｜${r.value}｜${r.change}｜${r.pct}`:'';
+  return [line('日経平均',nikkei),line('TOPIX',topix),line('東証スタンダードTOP20',std),line('東証グロースCore',gro)].filter(Boolean).join('\n');
+}
 function autoContribToText(rows){ return rows.map(r=>`${r.code} ${r.name||autoLookupName(r.code)||''} 寄与度${r.contrib} 株価${r.price}`).join('\n'); }
 function autoSectorToText(rows){ return rows.map(r=>`${r.name} ${r.rate} PER${r.per}`).join('\n'); }
 
@@ -1602,9 +1632,10 @@ async function autoGenerateSlideText(){
     });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'不明なエラー');
-    AutoState.slideText=data.text;
-    document.getElementById('autoSlideText').value=data.text;
-    apSetValue('mainInput', data.text);   // 手動版の入力欄に同期
+    const text=autoApplyRankAbbrev(data.text);   // ランキングの銘柄名をＨＤ/ＦＧ/Ｇへ確実に変換
+    AutoState.slideText=text;
+    document.getElementById('autoSlideText').value=text;
+    apSetValue('mainInput', text);   // 手動版の入力欄に同期
     renderPreview();                       // 既存エンジンでスライド描画
     st.textContent='✅ 生成完了'+autoModelNote(data);
   }catch(e){
