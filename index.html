@@ -350,20 +350,39 @@ Appier G|4180|818|+96|+13.30%
   </div>
 
   <div class="card">
-    <h2>② 名称変換（東証 銘柄名一覧表を自動生成）</h2>
+    <h2>② 抽出（現プロンプトをAIで実行 → 各テキストボックスへ）</h2>
     <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">
-      銘柄コードを含むテキストを貼るか、①の取得結果から自動抽出します。<strong style="color:var(--text)">東証の公式リスト</strong>（<span id="autoDictInfo">読込中…</span>）とコードで照合し、正式名称に変換します。ChatGPT/Gemへの往復は不要です。
+      現行と<strong style="color:var(--text)">同じプロンプト</strong>を①の取得データに対してAIで実行し、結果を下の各欄に出力します。
+      現行（手動）の出力と貼り比べて<strong style="color:var(--text)">現/新比較</strong>ができます。手動版のロジックは変更していません。
     </p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
-      <button class="btn-sm" onclick="autoMeigaraFromFetched()">📥 ①の取得データから抽出</button>
-      <button class="btn-sm danger" onclick="document.getElementById('autoMeigaraIn').value='';">✕ 入力クリア</button>
+
+    <!-- 分析RANK -->
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:10px;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-sm" onclick="autoRunRank(this)">🤖 分析RANK をAI実行</button>
+        <span style="font-size:11px;color:var(--muted)">→ 手動版①（理由ニュース用）に相当</span>
+        <button class="btn-mini" onclick="autoCopyEl('autoRankOut',this)">📋</button>
+        <span id="autoRankStatus" style="font-size:11px;color:var(--muted)"></span>
+      </div>
+      <textarea id="autoRankOut" placeholder="分析RANK の AI 出力（上昇率TOP5／下落率TOP5）" style="min-height:90px;"></textarea>
     </div>
-    <textarea id="autoMeigaraIn" placeholder="コード＋銘柄名を含むテキストを貼付（例：6976 太陽誘電 …）。①データ取得済みなら「①の取得データから抽出」でOK。" style="min-height:80px;"></textarea>
-    <button class="btn" style="margin-top:8px;" onclick="autoConvertNames()">🔤 正式名称に変換</button>
-    <div id="autoMeigaraStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
-    <div id="autoMeigaraResult"></div>
-    <div id="autoMeigaraCopyRow" style="display:none;margin-top:8px;">
-      <button class="btn-sm" onclick="autoCopyMeigara(this)">📋 銘柄名一覧表をコピー</button>
+
+    <!-- 名称RANK → 辞書変換 -->
+    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn-sm" onclick="autoRunNameRank(this)">🤖 名称RANK をAI実行</button>
+        <span style="font-size:11px;color:var(--muted)">→ 銘柄抽出（コード＋銘柄名）。手貼りも可</span>
+        <button class="btn-mini" onclick="autoCopyEl('autoMeigaraIn',this)">📋</button>
+        <span id="autoNameRankStatus" style="font-size:11px;color:var(--muted)"></span>
+      </div>
+      <textarea id="autoMeigaraIn" placeholder="名称RANK の AI 出力（コード＋銘柄名）。ここを辞書で正式名称に変換します。" style="min-height:90px;"></textarea>
+      <button class="btn" style="margin-top:8px;" onclick="autoConvertNames()">🔤 辞書で正式名称に変換（銘柄名一覧表を作成）</button>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px;">照合先：東証公式リスト <span id="autoDictInfo">読込中…</span>（AI不使用・完全一致）</p>
+      <div id="autoMeigaraStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
+      <div id="autoMeigaraResult"></div>
+      <div id="autoMeigaraCopyRow" style="display:none;margin-top:8px;">
+        <button class="btn-sm" onclick="autoCopyMeigara(this)">📋 銘柄名一覧表をコピー</button>
+      </div>
     </div>
   </div>
 
@@ -1175,22 +1194,7 @@ function autoLookupName(code){
   return d[up] !== undefined ? d[up] : null;
 }
 
-// ①の取得データ（日経の行データ）から「コード 名前」を抽出して入力欄へ
-function autoMeigaraFromFetched(){
-  const el = document.getElementById('autoMeigaraIn');
-  if(!AutoState.sources){ document.getElementById('autoMeigaraStatus').textContent='先に①データ取得を実行してください'; return; }
-  const lines = [];
-  for(const s of AutoState.sources){
-    if(s.type === 'rows' && s.rows){
-      for(const r of s.rows){ if(r.code) lines.push(`${r.code} ${r.name||''}`.trim()); }
-    }
-  }
-  // 株探（寄与度・業種テキスト）からもコードを拾う（テキスト中の4桁コード）
-  el.value = lines.join('\n');
-  document.getElementById('autoMeigaraStatus').textContent = `①から ${lines.length} 件抽出しました。「正式名称に変換」を押してください。`;
-}
-
-// 入力テキスト → 銘柄名一覧表
+// 入力テキスト（名称RANKのAI出力）→ 銘柄名一覧表
 function autoConvertNames(){
   const statusEl = document.getElementById('autoMeigaraStatus');
   const resEl = document.getElementById('autoMeigaraResult');
@@ -1258,8 +1262,10 @@ function autoRowsToText(rows, withValue){
   }).join('\n');
 }
 
-// ①取得データ＋②銘柄名一覧表＋ChatGPTニュースを resources 配列にまとめる
-function autoBuildResources(){
+// 取得データを resources 配列にまとめる。
+// opts.forExtract=true のときは URL 取得データのみ（銘柄名一覧表・ニュースは含めない）。
+function autoBuildResources(opts){
+  opts = opts || {};
   const res=[];
   const byKey={};
   (AutoState.sources||[]).forEach(s=>{ byKey[s.key]=s; });
@@ -1272,10 +1278,58 @@ function autoBuildResources(){
   if(byKey.nikkei_rise && byKey.nikkei_rise.rows) add('株価上昇率ランキング（日経）', autoRowsToText(byKey.nikkei_rise.rows));
   if(byKey.nikkei_drop && byKey.nikkei_drop.rows) add('株価下落率ランキング（日経）', autoRowsToText(byKey.nikkei_drop.rows));
   if(byKey.nikkei_value && byKey.nikkei_value.rows) add('売買代金ランキング（日経）', autoRowsToText(byKey.nikkei_value.rows, true));
-  if(AutoState.meigaraTable)    add('銘柄名一覧表（正式名称・これに従って表記統一すること）', AutoState.meigaraTable);
-  const news=(document.getElementById('autoNewsIn')||{}).value||'';
-  add('急騰・急落銘柄の材料／当日ニュース（ChatGPT作成レポート）', news);
+  if(!opts.forExtract){
+    if(AutoState.meigaraTable)  add('銘柄名一覧表（正式名称・これに従って表記統一すること）', AutoState.meigaraTable);
+    const news=(document.getElementById('autoNewsIn')||{}).value||'';
+    add('急騰・急落銘柄の材料／当日ニュース（ChatGPT作成レポート）', news);
+  }
   return res;
+}
+
+// 現行プロンプトの {{変数}} 置換用
+function autoVars(){
+  const d=new Date();
+  const jp=`${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+  return {
+    today: jp, prevBizDay: jp, intro: AP_INTRO, textbox: '',
+    nameConvert: AP_COMMON.nameConvert,
+    VoiceNote_Principle: AP_COMMON.VoiceNote_Principle,
+    VoiceNote_Basic: AP_COMMON.VoiceNote_Basic,
+    VoiceNote_tatoe: AP_COMMON.VoiceNote_tatoe,
+    VoiceNote_kaihi: AP_COMMON.VoiceNote_kaihi,
+    VoiceNote_Ks: '',
+  };
+}
+
+// 現行プロンプトを取得データに対してAI実行し、結果を outId のテキストボックスへ
+async function autoRunExtract(promptKey, outId, statusId, btn){
+  const st = statusId ? document.getElementById(statusId) : null;
+  if(!AutoState.sources){ if(st) st.textContent='先に①データ取得を'; return; }
+  const prompt = apReplaceVariables(AP_COPY_TEXTS[promptKey], autoVars());
+  const resources = autoBuildResources({forExtract:true});
+  const old = btn ? btn.textContent : '';
+  if(btn){ btn.disabled=true; btn.textContent='実行中…'; }
+  if(st) st.textContent='AI実行中…';
+  try{
+    const res=await fetch('/api/analyze',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ prompt, resources, temperature:0.2 })
+    });
+    const data=await res.json();
+    if(!data.ok) throw new Error(data.error||'不明なエラー');
+    document.getElementById(outId).value=data.text;
+    if(st) st.textContent='✅ 完了'+(data.usage?`（${data.usage.totalTokenCount}tok）`:'');
+    return data.text;
+  }catch(e){ if(st) st.textContent='❌ '+e.message; }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=old; } }
+}
+function autoRunRank(btn){ return autoRunExtract('rank', 'autoRankOut', 'autoRankStatus', btn); }
+function autoRunNameRank(btn){ return autoRunExtract('namerank', 'autoMeigaraIn', 'autoNameRankStatus', btn); }
+
+function autoCopyEl(id, btn){
+  const t=(document.getElementById(id)||{}).value||'';
+  const done=()=>{ const o=btn.textContent; btn.textContent='✔'; setTimeout(()=>btn.textContent=o,1200); };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(done); else done();
 }
 
 async function autoGenerateSlideText(){
