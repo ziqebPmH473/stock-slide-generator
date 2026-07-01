@@ -148,8 +148,7 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 #tabAuto .card h2 { margin-bottom:5px; font-size:12px; }
 #tabAuto .card > p { font-size:11px; margin-bottom:6px; line-height:1.5; }
 #tabAuto .btn { width:auto; display:inline-block; padding:7px 16px; font-size:13px; margin-bottom:0; }
-#tabAuto textarea { min-height:44px !important; margin-top:4px; }
-#tabAuto textarea:focus { min-height:150px !important; }
+#tabAuto textarea { min-height:72px !important; margin-top:4px; }
 #tabAuto label { font-size:11px; }
 #tabAuto select { min-height:32px; }
 #tabAuto .auto-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:4px; }
@@ -1485,7 +1484,9 @@ function autoVars(){
 // ===== ②' ChatGPT工程（理由ニュース＋ファクトチェック：現行と同じ）=====
 function autoClip(text, btn){
   const done=()=>{ const o=btn.textContent; btn.textContent='✔ コピー'; setTimeout(()=>btn.textContent=o,1500); };
-  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(done); else done();
+  // クリップボードAPIが失敗したら execCommand にフォールバック（成功表示だけで未コピー、を防ぐ）
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(()=>apFallbackCopy(text, done));
+  else apFallbackCopy(text, done);
 }
 async function autoPaste(id){
   const el=document.getElementById(id); if(!el) return;
@@ -1583,7 +1584,8 @@ async function autoGenerateTts(btn){
 function autoCopyEl(id, btn){
   const t=(document.getElementById(id)||{}).value||'';
   const done=()=>{ const o=btn.textContent; btn.textContent='✔'; setTimeout(()=>btn.textContent=o,1200); };
-  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(done); else done();
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(()=>apFallbackCopy(t, done));
+  else apFallbackCopy(t, done);
 }
 
 async function autoGenerateSlideText(){
@@ -1620,7 +1622,7 @@ function autoSyncSlideText(){
 function autoCopySlideText(btn){
   const t=document.getElementById('autoSlideText').value;
   const done=()=>{ const o=btn.textContent; btn.textContent='✔ コピー'; setTimeout(()=>btn.textContent=o,1500); };
-  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(done); else done();
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(()=>apFallbackCopy(t, done)); else apFallbackCopy(t, done);
 }
 
 // ==================== 自動版：⑤ サムネ＆X投稿文 ====================
@@ -1707,7 +1709,7 @@ function autoCopyImagePrompt(btn){
   const t=autoBuildImagePrompt();
   autoRefreshImgPromptView();
   const done=()=>{ const o=btn.textContent; btn.textContent='✔ コピー'; setTimeout(()=>btn.textContent=o,1500); };
-  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(done); else done();
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(()=>apFallbackCopy(t, done)); else apFallbackCopy(t, done);
   const st=document.getElementById('autoImgStatus');
   if(!((document.getElementById('autoFcReport')||{}).value||'').trim()) st.textContent='⚠ ②\'のChatGPTレポート欄が空です（材料なしのプロンプトになります）';
   else st.textContent='📋 プロンプトをコピーしました。画像生成ツールに貼り付けてください。';
