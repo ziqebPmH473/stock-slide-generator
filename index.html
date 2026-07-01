@@ -366,6 +366,16 @@ Appier G|4180|818|+96|+13.30%
       <button class="btn-sm" onclick="autoCopyMeigara(this)">📋 銘柄名一覧表をコピー</button>
     </div>
   </div>
+
+  <div class="card">
+    <h2>③ AI接続テスト（Gemini APIの疎通確認）</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+      APIキーが正しく設定され、Geminiが呼べるかを確認します。まだ本番の分析はしません。
+    </p>
+    <button class="btn" id="autoTestBtn" onclick="autoTestGemini()">🔌 接続テストを実行</button>
+    <div id="autoTestStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
+    <pre id="autoTestResult" style="font-size:12px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;white-space:pre-wrap;display:none;"></pre>
+  </div>
 </div><!-- /#tabAuto -->
 
 <div id="renderTarget" style="position:fixed;left:-3000px;top:0;pointer-events:none;"></div>
@@ -1213,6 +1223,27 @@ function autoInitDict(){
     if(autoDictReady() && window.MEIGARA_META) info.textContent = `${window.MEIGARA_META.count}銘柄 / 基準日 ${window.MEIGARA_META.date}`;
     else info.textContent = '⚠ 辞書未読込';
   }
+}
+
+// ==================== 自動版：③ AI接続テスト ====================
+async function autoTestGemini(){
+  const btn=document.getElementById('autoTestBtn');
+  const st=document.getElementById('autoTestStatus');
+  const out=document.getElementById('autoTestResult');
+  btn.disabled=true; st.textContent='Geminiに問い合わせ中…'; out.style.display='none'; out.textContent='';
+  try{
+    const res=await fetch('/api/analyze',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ prompt:'「接続テスト成功」とだけ日本語で返してください。' })
+    });
+    const data=await res.json();
+    if(!data.ok) throw new Error(data.error||'不明なエラー');
+    st.textContent='✅ 接続成功'+(data.usage?`（消費トークン: ${data.usage.totalTokenCount||'?'}）`:'');
+    out.style.display='block';
+    out.textContent='モデル: '+data.model+'\n応答: '+data.text;
+  }catch(e){
+    st.textContent='❌ '+e.message;
+  }finally{ btn.disabled=false; }
 }
 
 apInit();
