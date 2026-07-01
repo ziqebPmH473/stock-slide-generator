@@ -483,15 +483,42 @@ Appier G|4180|818|+96|+13.30%
     <p>ChatGPT等に投げる画像用プロンプト。ニュース画像は②'レポート、まとめ画像は④'全情報を材料にします。画像生成AIは要課金。</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="btn-sm" onclick="autoCopyImagePrompt(this)">📋 ニュース画像プロンプト</button>
+      <button class="btn-sm" onclick="autoCopyCoverImagePrompt(this)">📋 表紙画像プロンプト</button>
       <button class="btn-sm" onclick="autoCopySummaryImagePrompt(this)">📋 まとめ画像プロンプト</button>
       <button class="btn-sm" id="autoImgBtn" onclick="autoGenerateImage(this)">🖼 AIで画像生成（要・課金）</button>
     </div>
     <div id="autoImgStatus" style="font-size:13px;color:var(--muted);min-height:20px;margin:6px 0;"></div>
     <details style="margin-top:4px;">
-      <summary style="font-size:12px;color:var(--accent);cursor:pointer;">生成に使うプロンプトを確認</summary>
+      <summary style="font-size:12px;color:var(--accent);cursor:pointer;">生成に使うプロンプトを確認（ニュース画像）</summary>
       <pre id="autoImgPromptView" style="font-size:11px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;white-space:pre-wrap;margin-top:6px;"></pre>
     </details>
     <div id="autoImgOut" style="margin-top:8px;"></div>
+
+    <p style="margin:8px 0 2px;"><strong style="color:var(--text)">作成した画像をここに貼る（スライドに反映）：</strong></p>
+    <div class="img-cards">
+      <div class="img-card">
+        <h3>ニュース画像（左側に表示）</h3>
+        <div id="autoNewsDropZone" class="drop-zone">
+          <img id="autoNewsThumb" class="img-thumb" src="" alt="" style="display:none">
+          <p>ドロップ、または</p>
+          <label for="autoNews" class="btn-sm">ファイルを選択</label>
+          <input type="file" id="autoNews" accept="image/*" style="display:none" onchange="onFileInput(this,'news')">
+          <div id="autoNewsMeta" class="img-meta"></div>
+          <button id="autoNewsClear" class="btn-sm danger" style="display:none;margin-top:6px" onclick="clearImg('news')">✕ 削除</button>
+        </div>
+      </div>
+      <div class="img-card">
+        <h3>表紙画像（右側に表示）</h3>
+        <div id="autoCoverDropZone" class="drop-zone">
+          <img id="autoCoverThumb" class="img-thumb" src="" alt="" style="display:none">
+          <p>ドロップ、または</p>
+          <label for="autoCover" class="btn-sm">ファイルを選択</label>
+          <input type="file" id="autoCover" accept="image/*" style="display:none" onchange="onFileInput(this,'cover')">
+          <div id="autoCoverMeta" class="img-meta"></div>
+          <button id="autoCoverClear" class="btn-sm danger" style="display:none;margin-top:6px" onclick="clearImg('cover')">✕ 削除</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="card">
@@ -827,18 +854,25 @@ const NAME_SHRINK = {
 let newsImgUrl  = null;
 let coverImgUrl = null;
 
+const _m = id => document.getElementById(id);
+// 手動版・自動版 両方の画像ウィジェットを更新（存在するものだけ）
+function applyImgUI(pfx, url, fileName){
+  const ap = 'auto' + (pfx==='cover'?'Cover':'News');   // 自動版のID接頭辞
+  if(_m(pfx+'ImgThumb')){ _m(pfx+'ImgThumb').src=url; _m(pfx+'ImgThumb').style.display='block'; }
+  if(_m(pfx+'DropMsg')) _m(pfx+'DropMsg').textContent='別の画像に変更：';
+  if(_m(pfx+'ImgMeta')) _m(pfx+'ImgMeta').textContent=fileName;
+  if(_m(pfx+'ImgClearBtn')) _m(pfx+'ImgClearBtn').style.display='';
+  if(_m(ap+'Thumb')){ _m(ap+'Thumb').src=url; _m(ap+'Thumb').style.display='block'; }
+  if(_m(ap+'Meta')) _m(ap+'Meta').textContent=fileName;
+  if(_m(ap+'Clear')) _m(ap+'Clear').style.display='';
+}
 function setImg(file, type){
   if(!file || !file.type.startsWith('image/')) return;
   const pfx = type==='cover' ? 'cover' : 'news';
   const r = new FileReader();
   r.onload = e => {
-    if(type==='cover') coverImgUrl = e.target.result;
-    else               newsImgUrl  = e.target.result;
-    document.getElementById(pfx+'ImgThumb').src = e.target.result;
-    document.getElementById(pfx+'ImgThumb').style.display = 'block';
-    document.getElementById(pfx+'DropMsg').textContent = '別の画像に変更：';
-    document.getElementById(pfx+'ImgMeta').textContent = file.name;
-    document.getElementById(pfx+'ImgClearBtn').style.display = '';
+    if(type==='cover') coverImgUrl = e.target.result; else newsImgUrl = e.target.result;
+    applyImgUI(pfx, e.target.result, file.name);
     debouncedPreview();
   };
   r.readAsDataURL(file);
@@ -846,23 +880,27 @@ function setImg(file, type){
 function onFileInput(el, type){ if(el.files[0]) setImg(el.files[0], type); }
 function clearImg(type){
   const pfx = type==='cover' ? 'cover' : 'news';
+  const ap = 'auto' + (pfx==='cover'?'Cover':'News');
   if(type==='cover') coverImgUrl = null; else newsImgUrl = null;
-  document.getElementById(pfx+'Img').value = '';
-  document.getElementById(pfx+'ImgThumb').style.display = 'none';
-  document.getElementById(pfx+'ImgThumb').src = '';
-  document.getElementById(pfx+'DropMsg').textContent = '画像をここにドロップ、または';
-  document.getElementById(pfx+'ImgMeta').textContent = '';
-  document.getElementById(pfx+'ImgClearBtn').style.display = 'none';
+  if(_m(pfx+'Img')) _m(pfx+'Img').value='';
+  if(_m(ap)) _m(ap).value='';
+  [pfx+'ImgThumb', ap+'Thumb'].forEach(id=>{ if(_m(id)){ _m(id).style.display='none'; _m(id).src=''; } });
+  if(_m(pfx+'DropMsg')) _m(pfx+'DropMsg').textContent='画像をここにドロップ、または';
+  [pfx+'ImgMeta', ap+'Meta'].forEach(id=>{ if(_m(id)) _m(id).textContent=''; });
+  [pfx+'ImgClearBtn', ap+'Clear'].forEach(id=>{ if(_m(id)) _m(id).style.display='none'; });
   debouncedPreview();
 }
 function initDropZone(id, type){
   const z = document.getElementById(id);
+  if(!z) return;
   z.addEventListener('dragover',  e => { e.preventDefault(); z.classList.add('drag-over'); });
   z.addEventListener('dragleave', ()  => z.classList.remove('drag-over'));
   z.addEventListener('drop', e => { e.preventDefault(); z.classList.remove('drag-over'); setImg(e.dataTransfer.files[0], type); });
 }
 initDropZone('coverDropZone','cover');
 initDropZone('newsDropZone','news');
+initDropZone('autoNewsDropZone','news');
+initDropZone('autoCoverDropZone','cover');
 
 // ==================== THUMBNAIL MARKUP ====================
 function parseThumbnailMarkup(text){
@@ -1710,6 +1748,8 @@ const AUTO_SUMMARY_IMG_PROMPT = `@画像を作成する 以下の内容を基に
 function autoCopySummaryImagePrompt(btn){
   autoClip(AUTO_SUMMARY_IMG_PROMPT + autoFullInfoOrHint(), btn);
 }
+// 表紙画像プロンプト（photoTop・現行と同一）
+function autoCopyCoverImagePrompt(btn){ autoClip(AP_COPY_TEXTS.photoTop, btn); }
 
 // ⑤ Geminiで直接生成（サムネ／X投稿文を別々の欄へ）
 async function autoGenerateSns(btn){
