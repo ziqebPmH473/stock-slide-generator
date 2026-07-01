@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@100;300;400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 <script src="meigara-dict.js"></script>
 <style>
 /* ===== APP UI ===== */
@@ -578,7 +579,23 @@ Appier G|4180|818|+96|+13.30%
         </select>
       </div>
     </div>
-    <button class="btn" id="autoTtsBtn" style="margin-top:10px;" onclick="autoGenerateTts(this)">🔊 音声を生成</button>
+    <div style="margin-top:10px;">
+      <label style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);">
+        <span>🔆 クリア感補正の強さ（こもり軽減）</span>
+        <b id="autoTtsClarityVal" style="color:var(--accent);">60%</b>
+      </label>
+      <input type="range" id="autoTtsClarity" min="0" max="100" value="60" style="width:100%;cursor:pointer;margin:2px 0;" oninput="document.getElementById('autoTtsClarityVal').textContent=this.value+'%'">
+      <div style="font-size:10px;color:var(--muted);display:flex;justify-content:space-between;"><span>0% = 素のまま</span><span>100% = 最大補正</span></div>
+    </div>
+    <div class="auto-row" style="margin-top:8px;">
+      <label style="display:flex;align-items:center;gap:5px;">出力形式
+        <select id="autoTtsFormat" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
+          <option value="mp3" selected>MP3</option>
+          <option value="wav">WAV</option>
+        </select>
+      </label>
+    </div>
+    <button class="btn" id="autoTtsBtn" style="margin-top:8px;" onclick="autoGenerateTts(this)">🔊 音声を生成</button>
     <div id="autoTtsStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
     <div id="autoTtsOut" style="margin-top:6px;"></div>
   </div>
@@ -1642,6 +1659,53 @@ async function autoRunExtract(promptKey, outId, statusId, btn, full, modelCls){
 // 台本＝現行の台本プロンプト＋全情報（銘柄名一覧表・ChatGPTレポート含む）を最上位モデルで生成
 function autoRunScript(btn){ return autoRunExtract('script', 'autoScriptOut', 'autoScriptStatus', btn, true, 'high'); }
 
+// base64 → ArrayBuffer
+function autoB64ToBuf(b64){ const bin=atob(b64); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i); return u.buffer; }
+// AudioBuffer(モノ) → WAV Blob
+function autoBufToWav(buffer){
+  const sr=buffer.sampleRate, s=buffer.getChannelData(0), len=s.length;
+  const ab=new ArrayBuffer(44+len*2), v=new DataView(ab);
+  const w=(o,str)=>{ for(let i=0;i<str.length;i++)v.setUint8(o+i,str.charCodeAt(i)); };
+  w(0,'RIFF'); v.setUint32(4,36+len*2,true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true);
+  v.setUint16(20,1,true); v.setUint16(22,1,true); v.setUint32(24,sr,true); v.setUint32(28,sr*2,true);
+  v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,len*2,true);
+  let o=44; for(let i=0;i<len;i++){ let x=Math.max(-1,Math.min(1,s[i])); v.setInt16(o,x<0?x*0x8000:x*0x7FFF,true); o+=2; }
+  return new Blob([ab],{type:'audio/wav'});
+}
+// AudioBuffer(モノ) → MP3 Blob（lamejs）
+function autoBufToMp3(buffer){
+  const sr=buffer.sampleRate, s=buffer.getChannelData(0);
+  const enc=new lamejs.Mp3Encoder(1, sr, 160);
+  const i16=new Int16Array(s.length);
+  for(let i=0;i<s.length;i++){ let x=Math.max(-1,Math.min(1,s[i])); i16[i]=x<0?x*0x8000:x*0x7FFF; }
+  const out=[]; const block=1152;
+  for(let i=0;i<i16.length;i+=block){ const buf=enc.encodeBuffer(i16.subarray(i,i+block)); if(buf.length)out.push(new Int8Array(buf)); }
+  const end=enc.flush(); if(end.length)out.push(new Int8Array(end));
+  return new Blob(out,{type:'audio/mpeg'});
+}
+// こもり軽減EQ（gemini-voiceと同一仕様。strength 0〜1）＋形式変換。WAV(base64) → {blob, ext}
+async function autoProcessAudio(wavB64, strength, format){
+  const buf=autoB64ToBuf(wavB64);
+  if(strength<=0 && format==='wav') return { blob:new Blob([buf],{type:'audio/wav'}), ext:'wav' };
+  const AC=window.AudioContext||window.webkitAudioContext;
+  const actx=new AC();
+  let decoded=await actx.decodeAudioData(buf.slice(0));
+  actx.close();
+  let rendered=decoded;
+  if(strength>0){
+    const off=new OfflineAudioContext(1, decoded.length, decoded.sampleRate);
+    const src=off.createBufferSource(); src.buffer=decoded;
+    const lowCut=off.createBiquadFilter(); lowCut.type='lowshelf'; lowCut.frequency.value=250; lowCut.gain.value=-6*strength;  // こもりの元(低中域)を削る
+    const shelf=off.createBiquadFilter(); shelf.type='highshelf'; shelf.frequency.value=3000; shelf.gain.value=12*strength;   // 明瞭感
+    const peak=off.createBiquadFilter(); peak.type='peaking'; peak.frequency.value=5000; peak.Q.value=1.0; peak.gain.value=6*strength; // 子音の芯
+    const gain=off.createGain(); gain.gain.value=0.85;                                                                        // クリップ防止
+    src.connect(lowCut); lowCut.connect(shelf); shelf.connect(peak); peak.connect(gain); gain.connect(off.destination);
+    src.start(0);
+    rendered=await off.startRendering();
+  }
+  return format==='mp3' ? { blob:autoBufToMp3(rendered), ext:'mp3' } : { blob:autoBufToWav(rendered), ext:'wav' };
+}
+
 // ⑦ 台本テキスト → TTS
 async function autoGenerateTts(btn){
   const st=document.getElementById('autoTtsStatus');
@@ -1650,6 +1714,8 @@ async function autoGenerateTts(btn){
   if(!text){ st.textContent='台本が空です（先に「台本をAI実行」または手入力）'; return; }
   const voice=document.getElementById('autoTtsVoice').value;
   const model=document.getElementById('autoTtsModel').value;
+  const strength=(parseInt(document.getElementById('autoTtsClarity').value,10)||0)/100;
+  const format=document.getElementById('autoTtsFormat').value;
   const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…'; st.textContent='音声生成中…（台本が長いと数十秒）'; out.innerHTML='';
   try{
     const res=await fetch('/api/tts',{
@@ -1658,10 +1724,12 @@ async function autoGenerateTts(btn){
     });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'不明なエラー');
-    const src=`data:${data.mimeType};base64,${data.audioBase64}`;
-    st.textContent=`✅ 生成完了（${data.seconds}秒 / ${voice}）`;
-    out.innerHTML=`<audio controls src="${src}" style="width:100%;margin-top:4px;"></audio>`
-      +`<div style="margin-top:6px;"><a href="${src}" download="narration.wav" class="btn-sm" style="text-decoration:none;">⬇ WAVをダウンロード</a></div>`;
+    st.textContent='音声を加工中…';
+    const { blob, ext }=await autoProcessAudio(data.audioBase64, strength, format);
+    const url=URL.createObjectURL(blob);
+    st.textContent=`✅ 生成完了（${data.seconds}秒 / ${voice} / ${ext.toUpperCase()}${strength>0?('・補正'+Math.round(strength*100)+'%'):''}）`;
+    out.innerHTML=`<audio controls src="${url}" style="width:100%;margin-top:4px;"></audio>`
+      +`<div style="margin-top:6px;"><a href="${url}" download="narration.${ext}" class="btn-sm" style="text-decoration:none;">⬇ ${ext.toUpperCase()}をダウンロード</a></div>`;
   }catch(e){ st.textContent='❌ '+e.message; }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
