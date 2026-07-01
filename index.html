@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@100;300;400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="meigara-dict.js"></script>
 <style>
 /* ===== APP UI ===== */
 :root { --bg:#0f172a; --panel:#1e293b; --border:#334155; --text:#e2e8f0; --muted:#94a3b8; --accent:#3b82f6; }
@@ -346,6 +347,24 @@ Appier G|4180|818|+96|+13.30%
     <button class="btn" id="autoFetchBtn" onclick="autoFetchSources()">🔄 データ取得を実行</button>
     <div id="autoFetchStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
     <div id="autoFetchResult"></div>
+  </div>
+
+  <div class="card">
+    <h2>② 名称変換（東証 銘柄名一覧表を自動生成）</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+      銘柄コードを含むテキストを貼るか、①の取得結果から自動抽出します。<strong style="color:var(--text)">東証の公式リスト</strong>（<span id="autoDictInfo">読込中…</span>）とコードで照合し、正式名称に変換します。ChatGPT/Gemへの往復は不要です。
+    </p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+      <button class="btn-sm" onclick="autoMeigaraFromFetched()">📥 ①の取得データから抽出</button>
+      <button class="btn-sm danger" onclick="document.getElementById('autoMeigaraIn').value='';">✕ 入力クリア</button>
+    </div>
+    <textarea id="autoMeigaraIn" placeholder="コード＋銘柄名を含むテキストを貼付（例：6976 太陽誘電 …）。①データ取得済みなら「①の取得データから抽出」でOK。" style="min-height:80px;"></textarea>
+    <button class="btn" style="margin-top:8px;" onclick="autoConvertNames()">🔤 正式名称に変換</button>
+    <div id="autoMeigaraStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
+    <div id="autoMeigaraResult"></div>
+    <div id="autoMeigaraCopyRow" style="display:none;margin-top:8px;">
+      <button class="btn-sm" onclick="autoCopyMeigara(this)">📋 銘柄名一覧表をコピー</button>
+    </div>
   </div>
 </div><!-- /#tabAuto -->
 
@@ -1108,7 +1127,96 @@ function autoRenderSources(sources){
   }).join('');
 }
 
+// ==================== 自動版：② 名称変換（辞書ルックアップ）====================
+// 東証コード → 正式名称。AIは使わず MEIGARA_DICT を完全一致で引く。
+// コード書式：4桁数字、または 3桁数字+英字（例 285A）。
+const AUTO_CODE_RE = /\b(\d{3}[0-9A-Za-z])\b/g;
+
+let autoMeigaraTableText = '';
+
+function autoDictReady(){ return typeof window.MEIGARA_DICT === 'object' && window.MEIGARA_DICT; }
+
+function autoLookupName(code){
+  const d = autoDictReady();
+  if(!d) return null;
+  if(d[code] !== undefined) return d[code];
+  const up = String(code).toUpperCase();
+  return d[up] !== undefined ? d[up] : null;
+}
+
+// ①の取得データ（日経の行データ）から「コード 名前」を抽出して入力欄へ
+function autoMeigaraFromFetched(){
+  const el = document.getElementById('autoMeigaraIn');
+  if(!AutoState.sources){ document.getElementById('autoMeigaraStatus').textContent='先に①データ取得を実行してください'; return; }
+  const lines = [];
+  for(const s of AutoState.sources){
+    if(s.type === 'rows' && s.rows){
+      for(const r of s.rows){ if(r.code) lines.push(`${r.code} ${r.name||''}`.trim()); }
+    }
+  }
+  // 株探（寄与度・業種テキスト）からもコードを拾う（テキスト中の4桁コード）
+  el.value = lines.join('\n');
+  document.getElementById('autoMeigaraStatus').textContent = `①から ${lines.length} 件抽出しました。「正式名称に変換」を押してください。`;
+}
+
+// 入力テキスト → 銘柄名一覧表
+function autoConvertNames(){
+  const statusEl = document.getElementById('autoMeigaraStatus');
+  const resEl = document.getElementById('autoMeigaraResult');
+  if(!autoDictReady()){ statusEl.textContent='❌ 辞書が読み込まれていません（meigara-dict.js）'; return; }
+  const raw = document.getElementById('autoMeigaraIn').value;
+  if(!raw.trim()){ statusEl.textContent='入力が空です'; resEl.innerHTML=''; return; }
+
+  const seen = new Set();
+  const rows = [];
+  let dropped = 0;
+  for(const line of raw.split(/\r?\n/)){
+    if(!line.trim()) continue;
+    AUTO_CODE_RE.lastIndex = 0;
+    const m = AUTO_CODE_RE.exec(line);
+    if(!m){ continue; }
+    const code = m[1];
+    const official = autoLookupName(code);
+    if(official === null){ dropped++; continue; }   // 辞書に無いコードは破棄（GPT仕様）
+    if(seen.has(code)) continue;                     // 一覧表は重複排除
+    seen.add(code);
+    const orig = line.replace(m[1], '').replace(/[|｜,、\t]+/g,' ').replace(/\s+/g,' ').trim();
+    rows.push({ code, orig, official });
+  }
+
+  if(!rows.length){ statusEl.textContent=`ヒット0件（破棄 ${dropped}）。コードを含む行がありますか？`; resEl.innerHTML=''; document.getElementById('autoMeigaraCopyRow').style.display='none'; return; }
+
+  // GPTと同じ出力テキスト（Markdown表）を生成 → コピー用に保持
+  autoMeigaraTableText = '## 銘柄名一覧表\n\n| コード | 銘柄名（元） | 銘柄名（正式） |\n| :--- | :--- | :--- |\n'
+    + rows.map(r=>`| ${r.code} | ${r.orig} | ${r.official} |`).join('\n');
+
+  statusEl.textContent = `変換完了：${rows.length} 件（辞書外で破棄 ${dropped} 件）`;
+  resEl.innerHTML = `<div style="overflow:auto;max-height:300px;border:1px solid var(--border);border-radius:6px;margin-top:6px;">`
+    + `<table style="width:100%;border-collapse:collapse;font-size:12px;">`
+    + `<thead><tr style="position:sticky;top:0;background:var(--panel);"><th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--muted)">コード</th><th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--muted)">元</th><th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--muted)">正式名称</th></tr></thead>`
+    + `<tbody>` + rows.map(r=>`<tr><td style="padding:5px 8px;border-bottom:1px solid var(--border);color:#cbd5e1">${autoEsc(r.code)}</td><td style="padding:5px 8px;border-bottom:1px solid var(--border);color:var(--muted)">${autoEsc(r.orig)}</td><td style="padding:5px 8px;border-bottom:1px solid var(--border);color:var(--text)">${autoEsc(r.official)}</td></tr>`).join('') + `</tbody></table></div>`;
+  document.getElementById('autoMeigaraCopyRow').style.display='block';
+  AutoState.meigaraTable = autoMeigaraTableText;
+  AutoState.meigaraRows = rows;
+}
+
+function autoCopyMeigara(btn){
+  if(!autoMeigaraTableText) return;
+  const done=()=>{ const o=btn.textContent; btn.textContent='✔ コピー完了'; setTimeout(()=>btn.textContent=o,1500); };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(autoMeigaraTableText).then(done).catch(done);
+  else done();
+}
+
+function autoInitDict(){
+  const info = document.getElementById('autoDictInfo');
+  if(info){
+    if(autoDictReady() && window.MEIGARA_META) info.textContent = `${window.MEIGARA_META.count}銘柄 / 基準日 ${window.MEIGARA_META.date}`;
+    else info.textContent = '⚠ 辞書未読込';
+  }
+}
+
 apInit();
+autoInitDict();
 </script>
 </body>
 </html>
