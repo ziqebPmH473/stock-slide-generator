@@ -416,6 +416,25 @@ Appier G|4180|818|+96|+13.30%
       </div>
     </div>
   </div>
+
+  <div class="card">
+    <h2>⑤ サムネ文字 ＆ X投稿文を生成</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+      YouTube運用ルール（サムネ・X関連）に沿って、④のスライド文章を材料に
+      <strong style="color:var(--text)">サムネ案（3本＋最有力）とX投稿文</strong>を生成します。
+    </p>
+    <details style="margin-bottom:8px;">
+      <summary style="font-size:12px;color:var(--accent);cursor:pointer;">サムネ/X生成ルール（編集可・Gem改定時はここを上書き）</summary>
+      <textarea id="autoSnsRule" style="min-height:180px;font-size:11px;margin-top:6px;"></textarea>
+    </details>
+    <button class="btn" id="autoSnsBtn" onclick="autoGenerateSns(this)">🎨 サムネ・X投稿文を生成</button>
+    <div id="autoSnsStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
+    <div id="autoSnsOutWrap" style="display:none;">
+      <label style="font-size:12px;color:var(--muted);">生成結果（編集可）：</label>
+      <textarea id="autoSnsOut" style="min-height:160px;"></textarea>
+      <button class="btn-sm" style="margin-top:6px;" onclick="autoCopyEl('autoSnsOut',this)">📋 コピー</button>
+    </div>
+  </div>
 </div><!-- /#tabAuto -->
 
 <div id="renderTarget" style="position:fixed;left:-3000px;top:0;pointer-events:none;"></div>
@@ -1248,6 +1267,8 @@ function autoInitDict(){
     if(autoDictReady() && window.MEIGARA_META) info.textContent = `${window.MEIGARA_META.count}銘柄 / 基準日 ${window.MEIGARA_META.date}`;
     else info.textContent = '⚠ 辞書未読込';
   }
+  const ruleEl = document.getElementById('autoSnsRule');
+  if(ruleEl && !ruleEl.value.trim()) ruleEl.value = AUTO_SNS_RULE_DEFAULT;
 }
 
 // ==================== 自動版：④ スライド文章生成 ====================
@@ -1368,6 +1389,77 @@ function autoCopySlideText(btn){
   const t=document.getElementById('autoSlideText').value;
   const done=()=>{ const o=btn.textContent; btn.textContent='✔ コピー'; setTimeout(()=>btn.textContent=o,1500); };
   if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(done); else done();
+}
+
+// ==================== 自動版：⑤ サムネ＆X投稿文 ====================
+// ルールセットからサムネ/X投稿に絡む部分＋根本思想だけを凝縮した既定値（編集可）
+const AUTO_SNS_RULE_DEFAULT = `【最上位方針（サムネ・X共通の思想）】
+■ターゲット：投資経験の深い層〜「初心者に見える層」まで幅広く包摂する。
+■アプローチ：「話題の単語を主役、専門用語は脇役」。話題性のある平易な言葉（例：防衛宇宙、国策銘柄、爆益チャンス）でフックを作る。財務・会計の専門用語（純有利子負債、D/Eレシオ、受注高〇〇円 等）はフックで使わず、その「結果」を平易・感情的な言葉に言い換える（例：借金ゼロ目前、財務が鉄壁に、なぜか株が売られる）。
+■優先フック：①銘柄固有の事業ギャップ（例：好調な日本 vs 不調な米州）を最優先。②弱い/無い場合のみ汎用的な財務ギャップ。
+■結論の禁止とギャップ戦略（最重要）：
+・禁止＝視聴者が「そらそうだ」と納得して好奇心が止まる順当な結論（例：増収増益でストップ高、下方修正で売られた）。
+・推奨＝「え、なんで？」となる予測に反する組み合わせ＝ギャップ（例：上方修正なのに株価下落、好決算なのに売られた）。
+・「赤字転落」「ストップ高」等の結論語は、単独提示は禁止。ギャップの構成要素としてのみ使用可。
+
+【サムネ 共通禁止】
+・結論（視聴前に答えがわかる事実）の記載を禁止。
+・記号禁止：スペース、引用符（「」（）“”）、！、？。
+・数値、株価の方向性（上昇・下落）、シリーズ名（「東証マーケット振り返り」等）の明示、「AI」等の強調語 を禁止。
+
+【サムネ案の作り方（3本＋最有力）】
+・形式：スラッシュ区切りの1行表記（ラベルは書かずテキストのみ）。
+・文字数（絶対厳守）：1行目と3行目＝全角8〜10文字（7文字以下は禁止。足りなければ修飾語や複合語で埋める）。2行目＝6〜9文字。
+・構成：上段＝感情・問題提起／中段＝銘柄名または注目すべき内容／下段＝抽象的な焦点・問いかけ。
+・東証マーケット振り返りでは、注目銘柄名を活かして関心を引く。
+
+【X（旧Twitter）投稿案】
+・目的：YouTube動画へのクリック・再生を促す。
+・内容：核心的な視点（なぜ？どうなる？）を、独立した最も惹きつける文章に再構成する。
+・文字数：URLを除き、ハッシュタグ含め全角120文字程度。
+・禁止：結論（増益減益等）の記載、煽り、過度な絵文字、「（ここにURL）」等の固定文言、動画タイトルの貼り付け、空行（段落のための2連続改行）の挿入。
+・東証マーケット振り返りでは銘柄名を入れて興味を引く。
+・構成：絵文字を交えつつ「空行なし（詰め）」で120文字程度。改行は文の区切りで1回のみ。ハッシュタグは本文直後の行に空行なしで配置する。`;
+
+async function autoGenerateSns(btn){
+  const st=document.getElementById('autoSnsStatus');
+  const rule=(document.getElementById('autoSnsRule').value||'').trim();
+  let material=(AutoState.slideText||'').trim();
+  if(!material){
+    if(!AutoState.sources){ st.textContent='先に④スライド文章を生成してください（または①データ取得）'; return; }
+    material=autoBuildResources().map(r=>`【${r.label}】\n${r.text}`).join('\n\n');
+  }
+  const prompt = rule + `
+
+===== 作成対象 =====
+本日の「東証マーケット振り返り」動画の、サムネイル文字案とX投稿文を作成してください。
+
+【出力範囲】サムネ案（3本＋最有力）と X投稿案 のみを出力すること。タイトル案・概要欄・関連動画・動画管理表・使用ツール等は一切出力しないこと。
+
+【出力フォーマット】
+🎨 サムネ案（3本）
+① 上段／中段／下段
+② 上段／中段／下段
+③ 上段／中段／下段
+🏆最有力案：（①〜③のいずれか）（理由：簡潔に）
+
+🕊️ X投稿案
+（本文。120文字程度・空行なし・改行は文区切りで1回のみ）
+#ハッシュタグ`;
+  const resources=[{label:'本日の東証マーケットのデータ・サマリ', text: material}];
+  const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…'; st.textContent='Geminiが生成中…';
+  try{
+    const res=await fetch('/api/analyze',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ prompt, resources, temperature:0.8 })
+    });
+    const data=await res.json();
+    if(!data.ok) throw new Error(data.error||'不明なエラー');
+    document.getElementById('autoSnsOutWrap').style.display='block';
+    document.getElementById('autoSnsOut').value=data.text;
+    st.textContent='✅ 生成完了'+(data.usage?`（${data.usage.totalTokenCount}tok）`:'');
+  }catch(e){ st.textContent='❌ '+e.message; }
+  finally{ btn.disabled=false; btn.textContent=old; }
 }
 
 // ==================== 自動版：③ AI接続テスト ====================
