@@ -376,6 +376,27 @@ Appier G|4180|818|+96|+13.30%
     <div id="autoTestStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
     <pre id="autoTestResult" style="font-size:12px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;white-space:pre-wrap;display:none;"></pre>
   </div>
+
+  <div class="card">
+    <h2>④ スライド文章を生成（データ整形＋ツール文章）</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+      ①の取得データ・②の銘柄名一覧表・下のChatGPT結果をまとめてGeminiに渡し、
+      <strong style="color:var(--text)">スライド用フォーマット</strong>（[表紙][指数][上昇率]…[ニュース]）を生成します。
+      生成結果は手動版の入力欄に自動で入り、そのままスライドになります。
+    </p>
+    <label style="font-size:12px;color:var(--muted);">ChatGPTの「理由ニュース」結果（②③の出力）を貼付：</label>
+    <textarea id="autoNewsIn" placeholder="ChatGPTで作成した『急騰・急落銘柄の材料』『当日ニュース』の結果をここに貼付。無くても生成は可能ですが、ニュース欄が空になります。" style="min-height:80px;"></textarea>
+    <button class="btn" id="autoSlideBtn" style="margin-top:8px;" onclick="autoGenerateSlideText()">🪄 スライド文章を生成</button>
+    <div id="autoSlideStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
+    <div id="autoSlideOut" style="display:none;">
+      <label style="font-size:12px;color:var(--muted);">生成結果（編集可・手動版の入力欄と同期）：</label>
+      <textarea id="autoSlideText" oninput="autoSyncSlideText()" style="min-height:160px;"></textarea>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+        <button class="btn-sm" onclick="switchTab('manual')">📊 手動版タブでスライドを確認・ダウンロード</button>
+        <button class="btn-sm" onclick="autoCopySlideText(this)">📋 コピー</button>
+      </div>
+    </div>
+  </div>
 </div><!-- /#tabAuto -->
 
 <div id="renderTarget" style="position:fixed;left:-3000px;top:0;pointer-events:none;"></div>
@@ -1223,6 +1244,76 @@ function autoInitDict(){
     if(autoDictReady() && window.MEIGARA_META) info.textContent = `${window.MEIGARA_META.count}銘柄 / 基準日 ${window.MEIGARA_META.date}`;
     else info.textContent = '⚠ 辞書未読込';
   }
+}
+
+// ==================== 自動版：④ スライド文章生成 ====================
+function autoTodayStr(){ const d=new Date(); return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`; }
+
+// 日経の行データ → 人が読める1行テキスト
+function autoRowsToText(rows, withValue){
+  return rows.map(r=>{
+    let s = `${r.rank}位 ${r.code} ${r.name}（${r.industry}） 変動率${r.rate}% 株価${r.price} 前日比${r.change}`;
+    if(withValue) s += ` 売買代金${r.value}`;
+    return s;
+  }).join('\n');
+}
+
+// ①取得データ＋②銘柄名一覧表＋ChatGPTニュースを resources 配列にまとめる
+function autoBuildResources(){
+  const res=[];
+  const byKey={};
+  (AutoState.sources||[]).forEach(s=>{ byKey[s.key]=s; });
+  const add=(label,text)=>{ if(text && String(text).trim()) res.push({label, text:String(text)}); };
+  if(byKey.nomura_index)        add('指数（野村）', byKey.nomura_index.text);
+  if(byKey.kabutan_contrib_desc)add('日経平均寄与度 上位（株探）', byKey.kabutan_contrib_desc.text);
+  if(byKey.kabutan_contrib_asc) add('日経平均寄与度 下位（株探）', byKey.kabutan_contrib_asc.text);
+  if(byKey.kabutan_sector_desc) add('業種別騰落 上位（株探）', byKey.kabutan_sector_desc.text);
+  if(byKey.kabutan_sector_asc)  add('業種別騰落 下位（株探）', byKey.kabutan_sector_asc.text);
+  if(byKey.nikkei_rise && byKey.nikkei_rise.rows) add('株価上昇率ランキング（日経）', autoRowsToText(byKey.nikkei_rise.rows));
+  if(byKey.nikkei_drop && byKey.nikkei_drop.rows) add('株価下落率ランキング（日経）', autoRowsToText(byKey.nikkei_drop.rows));
+  if(byKey.nikkei_value && byKey.nikkei_value.rows) add('売買代金ランキング（日経）', autoRowsToText(byKey.nikkei_value.rows, true));
+  if(AutoState.meigaraTable)    add('銘柄名一覧表（正式名称・これに従って表記統一すること）', AutoState.meigaraTable);
+  const news=(document.getElementById('autoNewsIn')||{}).value||'';
+  add('急騰・急落銘柄の材料／当日ニュース（ChatGPT作成レポート）', news);
+  return res;
+}
+
+async function autoGenerateSlideText(){
+  const btn=document.getElementById('autoSlideBtn');
+  const st=document.getElementById('autoSlideStatus');
+  if(!AutoState.sources){ st.textContent='先に①データ取得を実行してください'; return; }
+  const resources=autoBuildResources();
+  const prompt = `本日の日付は ${autoTodayStr()} です。出力の「日付:」と[表紙]の日付は必ずこの日付にしてください。\n\n` + AP_COPY_TEXTS.presen1;
+  btn.disabled=true; st.textContent='Geminiが生成中…（20〜40秒ほど）';
+  try{
+    const res=await fetch('/api/analyze',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ prompt, resources, temperature:0.3 })
+    });
+    const data=await res.json();
+    if(!data.ok) throw new Error(data.error||'不明なエラー');
+    AutoState.slideText=data.text;
+    document.getElementById('autoSlideOut').style.display='block';
+    document.getElementById('autoSlideText').value=data.text;
+    apSetValue('mainInput', data.text);   // 手動版の入力欄に同期
+    renderPreview();                       // 既存エンジンでスライド描画
+    st.textContent='✅ 生成完了'+(data.usage?`（消費トークン: ${data.usage.totalTokenCount||'?'}）`:'')+' — 手動版タブでスライドを確認できます';
+  }catch(e){
+    st.textContent='❌ '+e.message;
+  }finally{ btn.disabled=false; }
+}
+
+// 生成結果テキストを編集したら手動版入力欄＆プレビューへ反映
+function autoSyncSlideText(){
+  const t=document.getElementById('autoSlideText').value;
+  AutoState.slideText=t;
+  apSetValue('mainInput', t);
+  debouncedPreview();
+}
+function autoCopySlideText(btn){
+  const t=document.getElementById('autoSlideText').value;
+  const done=()=>{ const o=btn.textContent; btn.textContent='✔ コピー'; setTimeout(()=>btn.textContent=o,1500); };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(done); else done();
 }
 
 // ==================== 自動版：③ AI接続テスト ====================
