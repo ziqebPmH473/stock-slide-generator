@@ -376,11 +376,10 @@ Appier G|4180|818|+96|+13.30%
       <button class="astep-gear" id="autoGearBtn" title="モデル設定" onclick="autoToggleCfg()">⚙</button>
     </div>
     <div class="astep-pills" id="autoPills">
-      <button class="astep-pill active" data-k="1" onclick="autoStep('1')"><b>①</b>取得</button>
-      <button class="astep-pill" data-k="2" onclick="autoStep('2')"><b>②</b>抽出</button>
-      <button class="astep-pill" data-k="2b" onclick="autoStep('2b')"><b>②'</b>理由ニュース</button>
-      <button class="astep-pill" data-k="4" onclick="autoStep('4')"><b>④</b>スライド</button>
-      <button class="astep-pill" data-k="4b" onclick="autoStep('4b')"><b>④'</b>全情報</button>
+      <button class="astep-pill active" data-k="1" onclick="autoStep('1')"><b>①</b>取得・抽出</button>
+      <button class="astep-pill" data-k="2" onclick="autoStep('2')"><b>②</b>ファクトCK</button>
+      <button class="astep-pill" data-k="4" onclick="autoStep('4')"><b>③</b>スライド</button>
+      <button class="astep-pill" data-k="4b" onclick="autoStep('4b')"><b>④</b>全情報</button>
       <button class="astep-pill" data-k="5" onclick="autoStep('5')"><b>⑤</b>サムネ/X</button>
       <button class="astep-pill" data-k="6" onclick="autoStep('6')"><b>⑥</b>画像</button>
       <button class="astep-pill" data-k="7" onclick="autoStep('7')"><b>⑦</b>音声</button>
@@ -420,8 +419,8 @@ Appier G|4180|818|+96|+13.30%
   </div>
 
   <div class="card">
-    <h2>② 抽出（①取得時にコードで自動生成／AIはバックアップ）</h2>
-    <p>①「データ取得」を押すと、下の2つはコードで自動生成されます（AI不要・正確）。<strong style="color:var(--text)">分析RANK（上昇下落）はこの後のChatGPT用に保持</strong>。名称RANKは辞書で正式名称に変換します。</p>
+    <h2>データ抽出（①取得時に自動生成）</h2>
+    <p>①「データ取得」を押すと、下はコードで自動生成されます（AI不要・正確）。<strong style="color:var(--text)">分析RANK（上昇下落）はこの後のファクトチェック用に保持</strong>。名称は辞書で正式名称に変換します。</p>
 
     <!-- 分析RANK（上昇下落・ChatGPT用に保持）-->
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:10px;">
@@ -432,17 +431,17 @@ Appier G|4180|818|+96|+13.30%
       <textarea id="autoRankOut" placeholder="①データ取得で自動生成（上昇率TOP5／下落率TOP5）"></textarea>
     </div>
 
-    <!-- 名称RANK → 辞書変換 -->
+    <!-- 名称RANK（通常は自動・閉じておく）→ 辞書変換 → 銘柄名一覧表 -->
     <div style="border:1px solid var(--border);border-radius:6px;padding:8px;">
-      <div class="auto-row">
-        <strong style="font-size:11px;color:var(--text);">名称RANK（コード＋銘柄名）</strong>
-        <button class="btn-mini" onclick="autoCopyEl('autoMeigaraIn',this)">📋</button>
-      </div>
-      <textarea id="autoMeigaraIn" placeholder="①データ取得で自動生成（各ランキングのコード＋銘柄名）"></textarea>
+      <details>
+        <summary style="font-size:11px;color:var(--muted);cursor:pointer;">名称RANK（コード＋銘柄名）※①で自動生成・通常は開かなくてOK <button class="btn-mini" onclick="event.preventDefault();autoCopyEl('autoMeigaraIn',this)">📋</button></summary>
+        <textarea id="autoMeigaraIn" placeholder="①データ取得で自動生成（各ランキングのコード＋銘柄名）"></textarea>
+      </details>
       <div class="auto-row" style="margin-top:6px;">
-        <button class="btn" onclick="autoConvertNames()">🔤 正式名称に変換</button>
+        <strong style="font-size:11px;color:var(--text);">銘柄名一覧表（正式名称）</strong>
+        <button class="btn" onclick="autoConvertNames()">🔤 変換</button>
         <button class="btn-mini" onclick="autoCopyEl('autoMeigaraOut',this)">📋</button>
-        <span style="font-size:10px;color:var(--muted);">照合：東証公式 <span id="autoDictInfo">読込中…</span></span>
+        <span style="font-size:10px;color:var(--muted);">東証公式 <span id="autoDictInfo">読込中…</span></span>
         <span id="autoMeigaraStatus" style="font-size:11px;color:var(--muted);"></span>
       </div>
       <textarea id="autoMeigaraOut" placeholder="変換後の銘柄名一覧表（チェック用）"></textarea>
@@ -452,33 +451,38 @@ Appier G|4180|818|+96|+13.30%
       <button class="btn-sm" id="autoAiBackupBtn" onclick="autoRunAiBackup(this)">🤖 AIバックアップ（生ページをAIが再解析）</button>
       <span id="autoBackupStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
-    <p style="margin-bottom:0;">※サイトのHTML構造が変わって自動生成(コード)がズレた時の保険。①が取得した生ページをAIに読み直させて分析RANK・名称RANKを作り直します。</p>
+    <p>※サイトのHTML構造が変わって自動生成(コード)がズレた時の保険。①が取得した生ページをAIに読み直させて分析RANK・名称RANKを作り直します。</p>
+
+    <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
+      <p style="margin-bottom:6px;">次に、分析RANKを埋め込んだ<strong style="color:var(--text)">理由ニュース用プロンプト</strong>をコピーしてChatGPTへ投げます。</p>
+      <button class="btn" onclick="autoCopyReasonNews(this); autoStep('2');">📋 理由ニュースのプロンプトをコピー → ②へ</button>
+    </div>
   </div>
 
   <div class="card">
-    <h2>②' 理由ニュース（ChatGPTで手動・ファクトチェック）</h2>
-    <p>下のボタンで<strong style="color:var(--text)">分析RANKを埋め込んだ理由ニュース用プロンプト</strong>をコピー→ChatGPTへ。結果を貼り、✅FactCK／🔧修正でファクトチェックを繰り返します（現行と同じ）。</p>
+    <h2>② ファクトチェック（ChatGPTで手動）</h2>
+    <p>①でコピーした理由ニュースプロンプトをChatGPTへ→結果を下に貼付。<strong style="color:var(--text)">✅FactCK／🔧修正</strong>でファクトチェックを繰り返し、確定したレポートを置いてください（④スライド・⑥画像の材料になります）。</p>
     <div class="auto-row">
-      <button class="btn-sm" onclick="autoCopyReasonNews(this)">📋 *理由ニュース プロンプト</button>
-      <span style="font-size:10px;color:var(--muted);">分析RANKを使用</span>
-    </div>
-    <div class="auto-row" style="margin-top:6px;">
       <span style="font-size:11px;color:var(--muted);">ChatGPTのレポートを貼付：</span>
       <button class="btn-mini" onclick="autoPaste('autoFcReport')">📋 貼付</button>
       <button class="btn-mini" onclick="document.getElementById('autoFcReport').value='';">✕</button>
     </div>
-    <textarea id="autoFcReport" placeholder="ChatGPTが作成した理由ニュースのレポートをここに貼付。④スライド・⑥画像の材料になります。"></textarea>
+    <textarea id="autoFcReport" placeholder="ChatGPTが作成した理由ニュースのレポートをここに貼付。"></textarea>
     <div class="auto-row" style="margin-top:6px;">
       <button class="btn-sm" onclick="autoCopyFactCheck(this)">✅ FactCK（点検プロンプト）</button>
       <button class="btn-sm" onclick="autoCopyFactCheckFix(this)">🔧 修正プロンプト</button>
     </div>
+    <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
+      <p style="margin-bottom:6px;">レポートが確定したら、スライド文章を生成します（①の取得データ＋銘柄名一覧表＋このレポートを使用）。</p>
+      <button class="btn" id="autoSlideBtn" onclick="autoGenerateSlideText(); autoStep('4');">🪄 スライド文章を生成 → ③へ</button>
+    </div>
   </div>
 
   <div class="card">
-    <h2>④ スライド文章を生成（データ整形＋ツール文章）</h2>
-    <p>①の取得データ（指数・各ランキング）＋②の銘柄名一覧表＋②'のChatGPTレポートをまとめてGeminiに渡し、<strong style="color:var(--text)">スライド用フォーマット</strong>（[表紙][指数][上昇率]…[ニュース]）を生成します。生成結果は手動版の入力欄に入り、そのままスライドになります。</p>
+    <h2>③ スライド文章（プレビュー・ダウンロード）</h2>
+    <p>②で生成したスライド文章がここに入ります。気に入らなければ直接編集すると下のプレビューに即反映。もう一度生成する場合は「再生成」を押してください。</p>
     <div class="auto-row" style="margin-top:6px;">
-      <button class="btn" id="autoSlideBtn" onclick="autoGenerateSlideText()">🪄 スライド文章を生成</button>
+      <button class="btn-sm" id="autoSlideBtn" onclick="autoGenerateSlideText()">🔁 再生成</button>
       <button class="btn-mini" onclick="autoCopyEl('autoSlideText',this)">📋</button>
       <span id="autoSlideStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
@@ -492,7 +496,7 @@ Appier G|4180|818|+96|+13.30%
   </div>
 
   <div class="card">
-    <h2>④' 全情報（ChatGPTプロンプトの材料）</h2>
+    <h2>④ 全情報（ChatGPTプロンプトの材料）</h2>
     <p>まとめ画像・サムネ/XをChatGPT(Gem)に投げる時の「データ」です。①取得データ＋②'レポートからAIが生成します（NotebookLMの代わり）。</p>
     <div class="auto-row">
       <button class="btn" id="autoFullInfoBtn" onclick="autoGenerateFullInfo(this)">🗂 全情報を生成</button>
@@ -1401,11 +1405,10 @@ function switchTab(name){
 
 // ==================== 自動版：ステップウィザード（1画面1工程）====================
 const AUTO_STEPS = [
-  {k:'1',  label:'① データ取得'},
-  {k:'2',  label:'② 抽出'},
-  {k:'2b', label:"②' 理由ニュース"},
-  {k:'4',  label:'④ スライド文章'},
-  {k:'4b', label:"④' 全情報"},
+  {k:'1',  label:'① データ取得・抽出'},
+  {k:'2',  label:'② ファクトチェック'},
+  {k:'4',  label:'③ スライド文章'},
+  {k:'4b', label:'④ 全情報'},
   {k:'5',  label:'⑤ サムネ & X投稿文'},
   {k:'6',  label:'⑥ 画像プロンプト'},
   {k:'7',  label:'⑦ 台本 → 音声'},
@@ -1414,7 +1417,7 @@ let _autoStepsReady = false;
 function autoInitSteps(){
   if(_autoStepsReady) return;
   const cards = [...document.querySelectorAll('#tabAuto > .card')];
-  const map = [['1','① データ取得'],['2','② 抽出'],['2b','理由ニュース'],['4','スライド文章'],['4b','全情報'],['5','サムネ'],['6','画像プロンプト'],['7','台本']];
+  const map = [['1','① データ取得'],['1','データ抽出'],['2','ファクトチェック'],['4','スライド文章'],['4b','全情報'],['5','サムネ'],['6','画像プロンプト'],['7','台本']];
   cards.forEach(function(c){
     const h = c.querySelector('h2');
     if(!h){ c.classList.add('astep-cfg'); return; }
