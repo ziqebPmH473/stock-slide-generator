@@ -395,10 +395,10 @@ Appier G|4180|818|+96|+13.30%
     </div>
 
     <div class="auto-row" style="margin-top:8px;">
-      <button class="btn-sm" id="autoAiBackupBtn" onclick="autoRunAiBackup(this)">🤖 AIバックアップ（URL取得→整形で上記2つを再生成）</button>
+      <button class="btn-sm" id="autoAiBackupBtn" onclick="autoRunAiBackup(this)">🤖 AIバックアップ（生ページをAIが再解析）</button>
       <span id="autoBackupStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
-    <p style="margin-bottom:0;">※サイト構造の変更で自動生成がおかしい時のバックアップ。生ページをAIに読ませて分析RANK・名称RANKを作り直します。</p>
+    <p style="margin-bottom:0;">※サイトのHTML構造が変わって自動生成(コード)がズレた時の保険。①が取得した生ページをAIに読み直させて分析RANK・名称RANKを作り直します。</p>
   </div>
 
   <div class="card">
@@ -1503,23 +1503,21 @@ function autoCopyFactCheck(btn){
 function autoCopyFactCheckFix(btn){ autoClip(`指摘箇所を指示の内容に沿って修正し、全文出力してください。\nただし、指摘していない箇所は一切変更しないでください。`, btn); }
 
 // ===== AIバックアップ（生ページをAIに読ませて分析RANK・名称RANKを再生成）=====
+// AIバックアップ＝①が取得した「生ページ」をAIが読み直して分析RANK・名称RANKを再生成する。
+// （①の"解析(表読み取り)"がサイト構造変更でズレた時の復旧。取得自体はサーバー側fetchに依存）
 async function autoRunAiBackup(btn){
   const st=document.getElementById('autoBackupStatus');
   const old=btn.textContent; btn.disabled=true;
   try{
-    // ①を押していない/①がエラーでも、ここで取得から実行する（URL取得→整形まで一括）
-    if(!AutoState.sources || !AutoState.sources.some(s=>s.ok)){
-      btn.textContent='取得中…'; st.textContent='データ取得中…（①を自動実行）';
-      await autoFetchSources();
-    }
-    if(!AutoState.sources || !AutoState.sources.some(s=>s.ok)){
-      st.textContent='❌ データ取得に失敗（サーバーに到達できません）'; return;
-    }
-    btn.textContent='AI実行中…'; st.textContent='AIで再生成中…（分析RANK→名称RANK）';
+    // まだ一度も取得していなければ取得（①を押していない場合のみ）
+    if(!AutoState.sources){ btn.textContent='取得中…'; st.textContent='生ページ取得中…'; await autoFetchSources(); }
+    const hasText=(AutoState.sources||[]).some(s=>s.text && s.text.trim());
+    if(!hasText){ st.textContent='❌ 生ページがありません（サーバーがページ取得に失敗。日経はAI直接取得も不可のため復旧できません）'; return; }
+    btn.textContent='AI実行中…'; st.textContent='生ページをAIが読み直して再生成中…';
     await autoRunExtractRaw('rank','autoRankOut');
     await autoRunExtractRaw('namerank','autoMeigaraIn');
     autoConvertNames();
-    st.textContent='✅ AIバックアップ完了（取得→整形まで実行）';
+    st.textContent='✅ AIバックアップ完了（生ページをAIが再解析）';
   }catch(e){ st.textContent='❌ '+e.message; }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
