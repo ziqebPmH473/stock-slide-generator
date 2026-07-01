@@ -346,10 +346,10 @@ Appier G|4180|818|+96|+13.30%
       <strong style="font-size:12px;color:var(--text);">自動版パイプライン（BETA）</strong>
       <label style="margin-left:auto;color:var(--muted);">テキストモデル</label>
       <select id="autoModelOverride" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
-        <option value="">自動（④⑤は上位／他は3.1Lite・上限で自動降格）</option>
+        <option value="" selected>自動（④⑤台本は上位／他は3.1Lite・上限で自動降格）</option>
         <option value="gemini-3.5-flash">Gemini 3.5 Flash（20回/日）</option>
         <option value="gemini-3-flash-preview">Gemini 3 Flash（20回/日）</option>
-        <option value="gemini-3.1-flash-lite" selected>Gemini 3.1 Flash Lite（500回/日）</option>
+        <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite（500回/日）</option>
         <option value="gemini-2.5-flash">Gemini 2.5 Flash（20回/日）</option>
         <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite（20回/日）</option>
       </select>
@@ -1579,7 +1579,8 @@ async function autoRunExtractRaw(promptKey, outId){
 
 // 現行プロンプトを取得データに対してAI実行し、結果を outId のテキストボックスへ
 // full=true のときは銘柄名一覧表・ニュースも材料に含める（台本など生成系向け）
-async function autoRunExtract(promptKey, outId, statusId, btn, full){
+// modelCls: 'high'（思考系・最上位モデル起点）/ 'low'
+async function autoRunExtract(promptKey, outId, statusId, btn, full, modelCls){
   const st = statusId ? document.getElementById(statusId) : null;
   if(!AutoState.sources){ if(st) st.textContent='先に①データ取得を'; return; }
   const prompt = apReplaceVariables(AP_COPY_TEXTS[promptKey], autoVars());
@@ -1590,7 +1591,7 @@ async function autoRunExtract(promptKey, outId, statusId, btn, full){
   try{
     const res=await fetch('/api/analyze',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ prompt, resources, temperature:0.2, models: autoModelChain('low') })
+      body:JSON.stringify({ prompt, resources, temperature:0.4, models: autoModelChain(modelCls||'low') })
     });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'不明なエラー');
@@ -1600,7 +1601,8 @@ async function autoRunExtract(promptKey, outId, statusId, btn, full){
   }catch(e){ if(st) st.textContent='❌ '+e.message; }
   finally{ if(btn){ btn.disabled=false; btn.textContent=old; } }
 }
-function autoRunScript(btn){ return autoRunExtract('script', 'autoScriptOut', 'autoScriptStatus', btn, true); }
+// 台本＝現行の台本プロンプト＋全情報（銘柄名一覧表・ChatGPTレポート含む）を最上位モデルで生成
+function autoRunScript(btn){ return autoRunExtract('script', 'autoScriptOut', 'autoScriptStatus', btn, true, 'high'); }
 
 // ⑦ 台本テキスト → TTS
 async function autoGenerateTts(btn){
