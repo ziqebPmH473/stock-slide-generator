@@ -183,6 +183,15 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 .btn-copy { background:#0d9488; border:1px solid #0d9488; color:#fff; border-radius:6px; padding:6px 12px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
 .btn-copy:hover { background:#0f766e; }
 #tabAuto .btn-copy { padding:7px 14px; }
+/* PC=2列／スマホ=1列 */
+.a2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; }
+.a2>div { min-width:0; }
+@media (max-width:760px){ .a2 { grid-template-columns:1fr; gap:8px; } }
+/* 下部ステータスバー */
+#autoStatusBar { position:sticky; bottom:0; z-index:40; background:var(--panel); border-top:1px solid var(--accent); padding:10px 12px; font-size:12.5px; color:var(--text); display:none; align-items:center; gap:9px; }
+#autoStatusBar.busy { display:flex; }
+#autoStatusBar .spin { width:13px; height:13px; border:2px solid var(--muted); border-top-color:var(--accent); border-radius:50%; animation:aspin .7s linear infinite; flex-shrink:0; }
+@keyframes aspin { to { transform:rotate(360deg); } }
 @media (max-width:640px){ .astep-title { font-size:13.5px; } .astep-pill { min-width:56px; padding:7px 7px; font-size:10px; } .astep-nav { min-width:78px; padding:12px 12px; } .astep-foot-label { font-size:12px; } }
 </style>
 </head>
@@ -374,16 +383,12 @@ Appier G|4180|818|+96|+13.30%
 
 <div id="tabAuto" class="tab-panel">
   <div class="astep-head">
-    <div class="astep-titlebar">
-      <span class="astep-title">⚡ 自動版パイプライン</span>
-      <span class="astep-beta">BETA</span>
-      <button class="astep-gear" id="autoGearBtn" title="モデル設定" onclick="autoToggleCfg()">⚙</button>
-    </div>
     <div class="astep-pills" id="autoPills">
       <button class="astep-pill active" data-k="1" onclick="autoStep('1')"><b>①</b>取得・抽出</button>
       <button class="astep-pill" data-k="2" onclick="autoStep('2')"><b>②</b>ファクトCK</button>
       <button class="astep-pill" data-k="4" onclick="autoStep('4')"><b>③</b>スライド</button>
       <button class="astep-pill" data-k="7" onclick="autoStep('7')"><b>④</b>出力</button>
+      <button class="astep-gear" id="autoGearBtn" title="モデル設定" onclick="autoToggleCfg()" style="margin-left:6px;width:auto;padding:0 12px;">⚙</button>
     </div>
   </div>
   <div class="card">
@@ -408,130 +413,97 @@ Appier G|4180|818|+96|+13.30%
   </div>
 
   <div class="card">
-    <h2>① データ取得（野村・株探・日経の8ページ）</h2>
-    <div class="auto-row" style="margin-bottom:8px;">
-      <label style="font-size:12px;color:var(--muted);">基準日</label>
-      <input type="date" id="autoBaseDate" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
-      <span id="autoDateInfo" style="font-size:11px;color:var(--muted);"></span>
-    </div>
-    <button class="btn" id="autoFetchBtn" onclick="autoFetchSources()">🔄 データ取得を実行</button>
-    <div id="autoFetchStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
-    <div id="autoFetchResult"></div>
-  </div>
-
-  <div class="card">
-    <h2>データ抽出（①取得時に自動生成）</h2>
-    <p>①「データ取得」を押すと、下はコードで自動生成されます（AI不要・正確）。<strong style="color:var(--text)">分析RANK（上昇下落）はこの後のファクトチェック用に保持</strong>。名称は辞書で正式名称に変換します。</p>
-
-    <!-- 分析RANK（上昇下落・ChatGPT用に保持）-->
-    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:10px;">
+    <h2>① データ取得・抽出</h2>
+    <div class="a2">
       <div class="auto-row">
-        <strong style="font-size:11px;color:var(--text);">分析RANK（上昇率/下落率・ChatGPT用）</strong>
-        <button class="btn-mini" onclick="autoCopyEl('autoRankOut',this)">📋</button>
+        <label style="font-size:12px;color:var(--muted);">基準日</label>
+        <input type="date" id="autoBaseDate" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
+        <span id="autoDateInfo" style="font-size:11px;color:var(--muted);"></span>
       </div>
-      <textarea id="autoRankOut" placeholder="①データ取得で自動生成（上昇率TOP5／下落率TOP5）"></textarea>
-    </div>
-
-    <!-- 名称RANK（通常は自動・閉じておく）→ 辞書変換 → 銘柄名一覧表 -->
-    <div style="border:1px solid var(--border);border-radius:6px;padding:8px;">
-      <details>
-        <summary style="font-size:11px;color:var(--muted);cursor:pointer;">名称RANK（コード＋銘柄名）※①で自動生成・通常は開かなくてOK <button class="btn-mini" onclick="event.preventDefault();autoCopyEl('autoMeigaraIn',this)">📋</button></summary>
-        <textarea id="autoMeigaraIn" placeholder="①データ取得で自動生成（各ランキングのコード＋銘柄名）"></textarea>
-      </details>
-      <div class="auto-row" style="margin-top:6px;">
-        <strong style="font-size:11px;color:var(--text);">銘柄名一覧表（正式名称）</strong>
-        <button class="btn" onclick="autoConvertNames()">🔤 変換</button>
-        <button class="btn-mini" onclick="autoCopyEl('autoMeigaraOut',this)">📋</button>
-        <span style="font-size:10px;color:var(--muted);">東証公式 <span id="autoDictInfo">読込中…</span></span>
-        <span id="autoMeigaraStatus" style="font-size:11px;color:var(--muted);"></span>
+      <div class="auto-row">
+        <button class="btn" id="autoFetchBtn" onclick="autoFetchSources()">🔄 データ取得</button>
+        <button class="btn-sm" id="autoAiBackupBtn" onclick="autoRunAiBackup(this)" title="サイト構造変更で自動生成がズレた時、生ページをAIが再解析">🤖 AI分析</button>
+        <span id="autoBackupStatus" style="font-size:11px;color:var(--muted);"></span>
       </div>
-      <textarea id="autoMeigaraOut" placeholder="変換後の銘柄名一覧表（チェック用）"></textarea>
     </div>
+    <div id="autoFetchStatus" style="font-size:11px;color:var(--muted);"></div>
+    <div id="autoFetchResult"></div>
 
-    <div class="auto-row" style="margin-top:8px;">
-      <button class="btn-sm" id="autoAiBackupBtn" onclick="autoRunAiBackup(this)">🤖 AIバックアップ（生ページをAIが再解析）</button>
-      <span id="autoBackupStatus" style="font-size:11px;color:var(--muted);"></span>
+    <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:8px;">
+      <strong style="font-size:12px;color:var(--text);">データ抽出</strong>
+      <div class="a2" style="margin-top:6px;">
+        <div style="border:1px solid var(--border);border-radius:6px;padding:8px;">
+          <div class="auto-row"><strong style="font-size:11px;color:var(--text);">分析RANK</strong>
+            <button class="btn-mini" onclick="autoCopyEl('autoRankOut',this)">📋</button></div>
+          <textarea id="autoRankOut"></textarea>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:6px;padding:8px;">
+          <details><summary style="font-size:11px;color:var(--muted);cursor:pointer;">▼ 名称RANK <button class="btn-mini" onclick="event.preventDefault();autoCopyEl('autoMeigaraIn',this)">📋</button></summary>
+            <textarea id="autoMeigaraIn"></textarea>
+          </details>
+          <div class="auto-row" style="margin-top:6px;"><strong style="font-size:11px;color:var(--text);">銘柄名一覧表</strong>
+            <button class="btn-sm" onclick="autoConvertNames()">🔤 変換</button>
+            <button class="btn-mini" onclick="autoCopyEl('autoMeigaraOut',this)">📋</button>
+            <span style="font-size:10px;color:var(--muted);" id="autoDictInfo"></span>
+            <span id="autoMeigaraStatus" style="font-size:11px;color:var(--muted);"></span></div>
+          <textarea id="autoMeigaraOut"></textarea>
+        </div>
+      </div>
     </div>
-    <p>※サイトのHTML構造が変わって自動生成(コード)がズレた時の保険。①が取得した生ページをAIに読み直させて分析RANK・名称RANKを作り直します。</p>
 
     <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
-      <p style="margin-bottom:6px;">次に、分析RANKを埋め込んだ<strong style="color:var(--text)">理由ニュース用プロンプト</strong>をコピーしてChatGPTへ投げます。</p>
-      <button class="btn-copy" style="width:100%;padding:11px;" onclick="autoCopyReasonNews(this); autoStep('2');">📋 理由ニュースのプロンプトをコピー → ②へ</button>
+      <button class="btn-copy" onclick="autoCopyReasonNews(this); autoStep('2');">📋 ChatGPT分析プロンプト → ②へ</button>
     </div>
   </div>
 
   <div class="card">
-    <h2>② ファクトチェック（ChatGPTで手動）</h2>
-    <p>①でコピーした理由ニュースプロンプトをChatGPTへ→結果を下に貼付。<strong style="color:var(--text)">✅FactCK／🔧修正</strong>でファクトチェックを繰り返し、確定したレポートを置いてください（④スライド・⑥画像の材料になります）。</p>
+    <h2>② ファクトチェック</h2>
     <div class="auto-row">
-      <span style="font-size:11px;color:var(--muted);">ChatGPTのレポートを貼付：</span>
-      <button class="btn-mini" onclick="autoPaste('autoFcReport')">📋 貼付</button>
-      <button class="btn-mini" onclick="document.getElementById('autoFcReport').value='';">✕</button>
+      <button class="btn-sm" onclick="autoPaste('autoFcReport')">📋 貼付</button>
+      <button class="btn-sm" onclick="document.getElementById('autoFcReport').value='';">✕ クリア</button>
     </div>
-    <textarea id="autoFcReport" placeholder="ChatGPTが作成した理由ニュースのレポートをここに貼付。"></textarea>
+    <textarea id="autoFcReport" placeholder="ChatGPTのレポートを貼付" style="min-height:140px;"></textarea>
     <div class="auto-row" style="margin-top:6px;">
-      <button class="btn-copy" onclick="autoCopyFactCheck(this)">✅ FactCK</button>
+      <button class="btn-copy" onclick="autoCopyFactCheck(this)">✅ CK</button>
       <button class="btn-copy" onclick="autoCopyFactCheckFix(this)">🔧 修正</button>
     </div>
     <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
-      <button class="btn" id="autoRunAllBtn" onclick="autoRunAll(this)">🪄 スライド文章を生成（→全情報・サムネ・X・台本まで一括）</button>
+      <button class="btn" id="autoRunAllBtn" onclick="autoRunAll(this)">✓ ファクトチェック完了（生成開始）</button>
     </div>
   </div>
 
   <div class="card">
     <h2>③ スライド</h2>
-    <div class="auto-row">
-      <strong style="font-size:11px;color:var(--text);">スライド文章</strong>
-      <button class="btn-sm" id="autoSlideBtn" onclick="autoGenerateSlideText()">🔁 再生成</button>
-      <button class="btn-mini" onclick="autoCopyEl('autoSlideText',this)">📋</button>
-      <span id="autoSlideStatus" style="font-size:11px;color:var(--muted);"></span>
-    </div>
-    <textarea id="autoSlideText" oninput="autoSyncSlideText()"></textarea>
-    <div id="autoPreviewCard" style="display:none;margin-top:8px;">
-      <div class="preview-wrap" id="autoPreviewArea"></div>
-    </div>
 
-    <div class="auto-row" style="margin-top:10px;">
-      <strong style="font-size:11px;color:var(--text);">サムネ案</strong>
-      <button class="btn-sm" onclick="autoGenerateSns(this)">🔁 再生成</button>
-      <button class="btn-mini" onclick="autoCopyEl('autoSnsThumb',this)">📋</button>
-      <span id="autoSnsStatus" style="font-size:11px;color:var(--muted);"></span>
-    </div>
-    <textarea id="autoSnsThumb"></textarea>
-    <div class="auto-row" style="margin-top:8px;">
-      <strong style="font-size:11px;color:var(--text);">サムネ文言（スライド0枚目）</strong>
-      <span style="font-size:10px;color:var(--muted);">「：」で上中下段／<span style="color:#ff914d">*橙*</span><span style="color:#5ce1e6">#水#</span><span style="color:#ffde59">%黄%</span></span>
-    </div>
-    <textarea id="autoThumbInput" oninput="autoSyncThumb()"></textarea>
-  </div>
-
-  <div class="card">
-    <h2>④ 全情報（画像・サムネ用データ）</h2>
-    <div class="auto-row">
-      <button class="btn-sm" id="autoFullInfoBtn" onclick="autoGenerateFullInfo(this)">🔁 再生成</button>
-      <button class="btn-mini" onclick="autoCopyEl('autoFullInfo',this)">📋</button>
-      <span id="autoFullInfoStatus" style="font-size:11px;color:var(--muted);"></span>
-    </div>
-    <details><summary style="font-size:11px;color:var(--muted);cursor:pointer;">全情報テキスト（通常は開かなくてOK）</summary>
-      <textarea id="autoFullInfo"></textarea>
-    </details>
-  </div>
-
-  <div class="card">
-    <h2>画像</h2>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <strong style="font-size:12px;color:var(--text);">ChatGPT用プロンプト</strong>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0;">
       <button class="btn-copy" onclick="autoCopyImagePrompt(this)">📋 ニュース画像</button>
-      <button class="btn-copy" onclick="autoCopyCoverImagePrompt(this)">📋 表紙画像</button>
       <button class="btn-copy" onclick="autoCopySummaryImagePrompt(this)">📋 まとめ画像</button>
-      <button class="btn-sm" id="autoImgBtn" onclick="autoGenerateImage(this)">🖼 AIで生成</button>
+      <button class="btn-copy" onclick="autoCopySnsXPrompt(this)">📋 サムネ/X</button>
+      <button class="btn-sm" id="autoImgBtn" onclick="autoGenerateImage(this)">🖼 画像をAI生成</button>
     </div>
-    <div id="autoImgStatus" style="font-size:12px;color:var(--muted);min-height:18px;margin:4px 0;"></div>
+    <div id="autoImgStatus" style="font-size:12px;color:var(--muted);min-height:16px;"></div>
     <pre id="autoImgPromptView" style="display:none;"></pre>
-    <div id="autoImgOut" style="margin-top:6px;"></div>
+    <div id="autoImgOut" style="margin-top:4px;"></div>
+
+    <div class="a2" style="margin-top:8px;">
+      <div>
+        <div class="auto-row"><strong style="font-size:11px;color:var(--text);">サムネ案</strong>
+          <button class="btn-sm" onclick="autoGenerateSns(this)">🔁 再生成</button>
+          <button class="btn-mini" onclick="autoCopyEl('autoSnsThumb',this)">📋</button>
+          <span id="autoSnsStatus" style="font-size:11px;color:var(--muted);"></span></div>
+        <textarea id="autoSnsThumb"></textarea>
+      </div>
+      <div>
+        <div class="auto-row"><strong style="font-size:11px;color:var(--text);">サムネ文言</strong>
+          <span style="font-size:10px;color:var(--muted);">：で上中下段/<span style="color:#ff914d">*橙*</span><span style="color:#5ce1e6">#水#</span><span style="color:#ffde59">%黄%</span></span></div>
+        <textarea id="autoThumbInput" oninput="autoSyncThumb()"></textarea>
+      </div>
+    </div>
 
     <div class="img-cards" style="margin-top:8px;">
       <div class="img-card">
-        <h3>ニュース画像（左側に表示）</h3>
+        <h3>ニュース画像</h3>
         <div id="autoNewsDropZone" class="drop-zone">
           <img id="autoNewsThumb" class="img-thumb" src="" alt="" style="display:none">
           <p>ドロップ、または</p>
@@ -542,7 +514,7 @@ Appier G|4180|818|+96|+13.30%
         </div>
       </div>
       <div class="img-card">
-        <h3>表紙画像（右側に表示）</h3>
+        <h3>表紙画像</h3>
         <div id="autoCoverDropZone" class="drop-zone">
           <img id="autoCoverThumb" class="img-thumb" src="" alt="" style="display:none">
           <p>ドロップ、または</p>
@@ -553,6 +525,31 @@ Appier G|4180|818|+96|+13.30%
         </div>
       </div>
     </div>
+
+    <div class="a2" style="margin-top:10px;">
+      <div>
+        <div class="auto-row"><strong style="font-size:11px;color:var(--text);">スライド文章</strong>
+          <button class="btn-sm" id="autoSlideBtn" onclick="autoGenerateSlideText()">🔁 再生成</button>
+          <button class="btn-mini" onclick="autoCopyEl('autoSlideText',this)">📋</button>
+          <span id="autoSlideStatus" style="font-size:11px;color:var(--muted);"></span></div>
+        <textarea id="autoSlideText" oninput="autoSyncSlideText()" style="min-height:300px !important;"></textarea>
+      </div>
+      <div>
+        <strong style="font-size:11px;color:var(--text);display:block;margin-bottom:4px;">スライド画像</strong>
+        <div id="autoPreviewCard" style="display:none;">
+          <div class="preview-wrap" id="autoPreviewArea"></div>
+        </div>
+      </div>
+    </div>
+
+    <details style="margin-top:8px;"><summary style="font-size:11px;color:var(--muted);cursor:pointer;">全情報（画像/サムネ用データ）
+      <button class="btn-sm" id="autoFullInfoBtn" onclick="event.preventDefault();autoGenerateFullInfo(this)">🔁</button>
+      <button class="btn-mini" onclick="event.preventDefault();autoCopyEl('autoFullInfo',this)">📋</button>
+      <span id="autoFullInfoStatus" style="font-size:11px;color:var(--muted);"></span></summary>
+      <textarea id="autoFullInfo"></textarea>
+    </details>
+
+    <button class="btn" style="margin-top:10px;" onclick="autoStep('7')">スライドOK → ④出力へ</button>
   </div>
 
   <div class="card">
@@ -613,9 +610,9 @@ Appier G|4180|818|+96|+13.30%
     <div style="margin-top:10px;">
       <label style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);">
         <span>🔆 クリア感補正の強さ（こもり軽減）</span>
-        <b id="autoTtsClarityVal" style="color:var(--accent);">60%</b>
+        <b id="autoTtsClarityVal" style="color:var(--accent);">5%</b>
       </label>
-      <input type="range" id="autoTtsClarity" min="0" max="100" value="60" style="width:100%;cursor:pointer;margin:2px 0;" oninput="document.getElementById('autoTtsClarityVal').textContent=this.value+'%'" onchange="autoRenderTts()">
+      <input type="range" id="autoTtsClarity" min="0" max="100" value="5" style="width:100%;cursor:pointer;margin:2px 0;" oninput="document.getElementById('autoTtsClarityVal').textContent=this.value+'%'" onchange="autoRenderTts()">
       <div style="font-size:10px;color:var(--muted);display:flex;justify-content:space-between;"><span>0% = 素のまま</span><span>100% = 最大補正</span></div>
     </div>
     <div class="auto-row" style="margin-top:8px;">
@@ -638,13 +635,13 @@ Appier G|4180|818|+96|+13.30%
       </div>
       <textarea id="autoSnsX"></textarea>
     </div>
-    <button class="btn" style="margin-top:10px;" onclick="downloadZip()">⬇ スライドをZIPダウンロード</button>
+    <button class="btn" style="margin-top:10px;" onclick="downloadZip()">⬇ スライド画像をZIPダウンロード</button>
+    <div style="margin-top:12px;">
+      <strong style="font-size:11px;color:var(--text);">スライド画像</strong>
+      <div id="autoPreviewCard2" style="display:none;margin-top:4px;"><div class="preview-wrap" id="autoPreviewArea2"></div></div>
+    </div>
   </div>
-  <div class="astep-foot">
-    <button class="astep-nav" id="autoPrevBtn" onclick="autoStepMove(-1)">← 戻る</button>
-    <span class="astep-foot-label" id="autoStepLabel">① データ取得</span>
-    <button class="astep-nav primary" id="autoNextBtn" onclick="autoStepMove(1)">次へ →</button>
-  </div>
+  <div id="autoStatusBar"><span class="spin"></span><span id="autoStatusMsg">処理中…</span></div>
 </div><!-- /#tabAuto -->
 
 <div id="renderTarget" style="position:fixed;left:-3000px;top:0;pointer-events:none;"></div>
@@ -1261,7 +1258,8 @@ function debouncedPreview(){ clearTimeout(previewTimer); previewTimer=setTimeout
 
 function renderPreview(){
   renderPreviewInto('previewArea','previewCard');
-  renderPreviewInto('autoPreviewArea','autoPreviewCard');   // 自動版タブ内プレビューにも描画
+  renderPreviewInto('autoPreviewArea','autoPreviewCard');   // ③スライド内プレビュー
+  renderPreviewInto('autoPreviewArea2','autoPreviewCard2'); // ④出力の下部プレビュー
 }
 function renderPreviewInto(areaId, cardId){
   const area=document.getElementById(areaId);
@@ -1424,18 +1422,23 @@ function autoStep(k){
   window.__autoStepK = k;
   document.querySelectorAll('#tabAuto .astep').forEach(function(c){ c.classList.toggle('current', c.dataset.astep===k); });
   document.querySelectorAll('#autoPills .astep-pill').forEach(function(p){ p.classList.toggle('active', p.dataset.k===k); });
-  const i = AUTO_STEPS.findIndex(function(s){ return s.k===k; });
-  const lbl = document.getElementById('autoStepLabel');
-  if(lbl && i>=0) lbl.textContent = AUTO_STEPS[i].label;
-  const pv = document.getElementById('autoPrevBtn'), nx = document.getElementById('autoNextBtn');
-  if(pv) pv.disabled = (i<=0);
-  if(nx){ nx.textContent = (i>=AUTO_STEPS.length-1) ? '完了 ✓' : '次へ →'; nx.disabled = (i>=AUTO_STEPS.length-1); }
   window.scrollTo(0, 0);
 }
 function autoStepMove(d){
   const i = AUTO_STEPS.findIndex(function(s){ return s.k===(window.__autoStepK||'1'); });
   const n = Math.min(AUTO_STEPS.length-1, Math.max(0, i+d));
   autoStep(AUTO_STEPS[n].k);
+}
+// 下部ステータスバー
+function autoStatus(msg){
+  const b=document.getElementById('autoStatusBar'), m=document.getElementById('autoStatusMsg'), s=b&&b.querySelector('.spin');
+  if(m) m.textContent=msg; if(s) s.style.display=''; if(b) b.classList.add('busy');
+}
+function autoStatusDone(msg){
+  const b=document.getElementById('autoStatusBar'), m=document.getElementById('autoStatusMsg'), s=b&&b.querySelector('.spin');
+  if(!b) return;
+  if(msg){ if(m) m.textContent=msg; if(s) s.style.display='none'; setTimeout(()=>b.classList.remove('busy'), 2500); }
+  else b.classList.remove('busy');
 }
 function autoToggleCfg(){
   autoInitSteps();
@@ -1496,12 +1499,12 @@ async function autoRunAll(realBtn){
   const o=realBtn.textContent; realBtn.disabled=true;
   try{
     autoStep('4');
-    realBtn.textContent='①スライド生成中…'; await autoGenerateSlideText();
-    realBtn.textContent='②全情報生成中…'; await autoGenerateFullInfo({});
-    realBtn.textContent='③サムネ/X生成中…'; await autoGenerateSns({});
-    realBtn.textContent='④台本生成中…'; await autoRunScript({});
-    realBtn.textContent='✅ 一括生成 完了';
-  }catch(e){ realBtn.textContent='❌ '+e.message; }
+    autoStatus('スライド文章を生成中…（1/4）'); realBtn.textContent='生成中…(1/4)'; await autoGenerateSlideText();
+    autoStatus('全情報を生成中…（2/4）'); realBtn.textContent='生成中…(2/4)'; await autoGenerateFullInfo({});
+    autoStatus('サムネ案・X投稿文を生成中…（3/4）'); realBtn.textContent='生成中…(3/4)'; await autoGenerateSns({});
+    autoStatus('台本を生成中…（4/4）'); realBtn.textContent='生成中…(4/4)'; await autoRunScript({});
+    autoStatusDone('✅ 一括生成が完了しました'); realBtn.textContent='✅ 完了';
+  }catch(e){ autoStatusDone('❌ '+e.message); realBtn.textContent='❌ '+e.message; }
   finally{ realBtn.disabled=false; setTimeout(()=>{realBtn.textContent=o;},2500); autoPersistState(); }
 }
 
@@ -1510,7 +1513,8 @@ async function autoFetchSources(){
   const statusEl = document.getElementById('autoFetchStatus');
   const resultEl = document.getElementById('autoFetchResult');
   btn.disabled = true;
-  statusEl.textContent = '取得中…（8ページ）';
+  statusEl.textContent = '';
+  autoStatus('データ取得中…（8ページ）');
   resultEl.innerHTML = '';
   try {
     const res = await fetch('/api/fetch-sources');
@@ -1524,13 +1528,13 @@ async function autoFetchSources(){
     const nr=autoGenNameRank();     if(nr) document.getElementById('autoMeigaraIn').value=nr;
     if(nr) autoConvertNames();
     const errN = data.sources.length - okCount;
-    statusEl.textContent = errN>0
-      ? `⚠ ${okCount}/${data.sources.length} 件取得（${errN}件エラー・下を確認）`
-      : `完了：${okCount}/${data.sources.length} 件取得（分析RANK・名称RANKを自動生成）`;
+    statusEl.textContent = errN>0 ? `⚠ ${errN}件でエラー（下を確認）` : '';
     resultEl.innerHTML = autoRenderSources(data.sources);
     autoPersistState();
+    autoStatusDone(errN>0 ? `⚠ 取得完了（${errN}件エラー）` : '✅ データ取得完了');
   } catch(e){
-    statusEl.textContent = '❌ ' + e.message + '（CF Functions が動くサーバーで開いていますか？）';
+    statusEl.textContent = '❌ ' + e.message;
+    autoStatusDone('❌ データ取得失敗');
   } finally {
     btn.disabled = false;
   }
@@ -1861,8 +1865,43 @@ function autoBufToMp3(buffer){
   return new Blob(out,{type:'audio/mpeg'});
 }
 // こもり軽減EQ（gemini-voiceと同一仕様。strength 0〜1）＋形式変換。WAV(base64) → {blob, ext}
-async function autoProcessAudio(wavB64, strength, format){
-  const buf=autoB64ToBuf(wavB64);
+// テキストを句点でおおよそn分割（長文の音声が後半こもる/声変わりするのを防ぐ）
+function autoSplitScript(text, n){
+  const t=text.trim();
+  if(n<=1 || t.length<300) return [t];
+  const per=Math.ceil(t.length/n);
+  const parts=[]; let start=0;
+  for(let i=1;i<n;i++){
+    let target=per*i;
+    let cut=t.indexOf('。', target);
+    if(cut<0 || cut>target+per*0.6) cut=t.lastIndexOf('。', target);
+    if(cut<=start) cut=target;
+    parts.push(t.slice(start, cut+1)); start=cut+1;
+  }
+  parts.push(t.slice(start));
+  return parts.map(s=>s.trim()).filter(Boolean);
+}
+// Float32(モノ) → WAV ArrayBuffer
+function autoFloatToWavBuf(s, sr){
+  const len=s.length, ab=new ArrayBuffer(44+len*2), v=new DataView(ab);
+  const w=(o,str)=>{ for(let i=0;i<str.length;i++)v.setUint8(o+i,str.charCodeAt(i)); };
+  w(0,'RIFF');v.setUint32(4,36+len*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,len*2,true);
+  let o=44; for(let i=0;i<len;i++){ let x=Math.max(-1,Math.min(1,s[i])); v.setInt16(o,x<0?x*0x8000:x*0x7FFF,true); o+=2; }
+  return ab;
+}
+// 複数のWAV(base64) → 連結した1本のWAV ArrayBuffer
+async function autoConcatWavs(b64list){
+  if(b64list.length===1) return autoB64ToBuf(b64list[0]);
+  const AC=window.AudioContext||window.webkitAudioContext; const ctx=new AC();
+  const chans=[]; let sr=24000;
+  for(const b of b64list){ const d=await ctx.decodeAudioData(autoB64ToBuf(b).slice(0)); chans.push(d.getChannelData(0).slice()); sr=d.sampleRate; }
+  ctx.close();
+  const total=chans.reduce((a,c)=>a+c.length,0), all=new Float32Array(total); let off=0;
+  for(const c of chans){ all.set(c,off); off+=c.length; }
+  return autoFloatToWavBuf(all, sr);
+}
+async function autoProcessAudio(wavBuf, strength, format){
+  const buf=wavBuf;
   if(strength<=0 && format==='wav') return { blob:new Blob([buf],{type:'audio/wav'}), ext:'wav' };
   const AC=window.AudioContext||window.webkitAudioContext;
   const actx=new AC();
@@ -1890,19 +1929,24 @@ async function autoGenerateTts(btn){
   if(!text){ st.textContent='台本が空です（先に「台本をAI実行」または手入力）'; return; }
   const voice=document.getElementById('autoTtsVoice').value;
   const model=document.getElementById('autoTtsModel').value;
-  const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…'; st.textContent='音声生成中…（台本が長いと数十秒）';
+  const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…';
   document.getElementById('autoTtsOut').innerHTML='';
   try{
-    const res=await fetch('/api/tts',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ text, voice, model })
-    });
-    const data=await res.json();
-    if(!data.ok) throw new Error(data.error||'不明なエラー');
-    // 生の音声を保持（以後はスライダー/形式変更で再生成せずかけ直す）
-    AutoState.ttsRaw=data.audioBase64; AutoState.ttsSeconds=data.seconds; AutoState.ttsVoice=voice;
+    // 台本を約半分ずつに分割して生成し、連結（後半のこもり/声変わり対策）
+    const parts=autoSplitScript(text, 2);
+    const b64s=[]; let sec=0;
+    for(let i=0;i<parts.length;i++){
+      st.textContent=`音声生成中… ${i+1}/${parts.length}`; autoStatus(`音声を生成中…（${i+1}/${parts.length}分割）`);
+      const res=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ text:parts[i], voice, model })});
+      const data=await res.json();
+      if(!data.ok) throw new Error(data.error||'不明なエラー');
+      b64s.push(data.audioBase64); sec+=(data.seconds||0);
+    }
+    st.textContent='連結・加工中…';
+    AutoState.ttsRaw=await autoConcatWavs(b64s); AutoState.ttsSeconds=Math.round(sec); AutoState.ttsVoice=voice;
     await autoRenderTts();
-  }catch(e){ st.textContent='❌ '+e.message; }
+    autoStatusDone('✅ 音声生成完了');
+  }catch(e){ st.textContent='❌ '+e.message; autoStatusDone('❌ 音声生成失敗'); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
 // 保持した生音声に、現在のスライダー/形式を適用してプレイヤー・DLを更新（再生成なし）

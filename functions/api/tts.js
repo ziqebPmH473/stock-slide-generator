@@ -81,31 +81,40 @@ export async function onRequestPost(context) {
     },
   };
 
-  try {
-    const res = await fetch(ENDPOINT(model, key), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      const raw = data && data.error && data.error.message ? data.error.message : `HTTP ${res.status}`;
-      let msg = raw;
-      if (res.status === 429 && /limit:\s*0|free_tier/i.test(raw)) {
-        msg = "このTTSモデルは無料枠では利用できません。別モデルを選ぶか、課金(有料枠)を有効化してください。（元のエラー: " + raw.slice(0, 120) + "…）";
+  // 混雑(503/high demand)や一時的な空応答はリトライ（最大3回）
+  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+  let lastErr = "音声データが返りませんでした";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(ENDPOINT(model, key), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const raw = data && data.error && data.error.message ? data.error.message : `HTTP ${res.status}`;
+        if (res.status === 429 && /limit:\s*0|free_tier/i.test(raw)) {
+          return json({ ok: false, error: "このTTSモデルは無料枠では利用できません。別モデルを選ぶか、課金(有料枠)を有効化してください。（元: " + raw.slice(0, 120) + "…）", status: res.status }, 502);
+        }
+        lastErr = raw;
+        const transient = res.status === 429 || res.status >= 500 || /overload|high demand|unavailable|temporarily|try again/i.test(raw);
+        if (transient && attempt < 2) { await delay(1500); continue; }
+        return json({ ok: false, error: "Gemini TTS エラー: " + raw, status: res.status }, 502);
       }
-      return json({ ok: false, error: msg, status: res.status }, 502);
-    }
-    const part = (data.candidates && data.candidates[0] && data.candidates[0].content &&
-                  data.candidates[0].content.parts || [])
-      .find((p) => p.inlineData && (p.inlineData.mimeType || "").startsWith("audio/"));
-    if (!part) return json({ ok: false, error: "音声データが返りませんでした（台本を短くするか別モデルを試してください）" }, 502);
+      const part = (data.candidates && data.candidates[0] && data.candidates[0].content &&
+                    data.candidates[0].content.parts || [])
+        .find((p) => p.inlineData && (p.inlineData.mimeType || "").startsWith("audio/"));
+      if (!part) { lastErr = "音声データが空"; if (attempt < 2) { await delay(1500); continue; } return json({ ok: false, error: "音声データが返りませんでした（台本を短くするか別モデルを試してください）" }, 502); }
 
-    const rate = parseSampleRate(part.inlineData.mimeType);
-    const pcm = b64ToBytes(part.inlineData.data);
-    const wav = pcmToWav(pcm, rate);
-    return json({ ok: true, mimeType: "audio/wav", audioBase64: bytesToB64(wav), seconds: +(pcm.length / 2 / rate).toFixed(1) });
-  } catch (e) {
-    return json({ ok: false, error: "呼び出し失敗: " + (e && e.message ? e.message : String(e)) }, 500);
+      const rate = parseSampleRate(part.inlineData.mimeType);
+      const pcm = b64ToBytes(part.inlineData.data);
+      const wav = pcmToWav(pcm, rate);
+      return json({ ok: true, mimeType: "audio/wav", audioBase64: bytesToB64(wav), seconds: +(pcm.length / 2 / rate).toFixed(1) });
+    } catch (e) {
+      lastErr = (e && e.message) ? e.message : String(e);
+      if (attempt < 2) { await delay(1500); continue; }
+    }
   }
+  return json({ ok: false, error: "音声生成に失敗（混雑の可能性）: " + lastErr }, 502);
 }
