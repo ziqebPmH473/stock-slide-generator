@@ -454,6 +454,68 @@ Appier G|4180|818|+96|+13.30%
     </details>
     <div id="autoImgOut" style="margin-top:8px;"></div>
   </div>
+
+  <div class="card">
+    <h2>⑦ 台本 → 音声（TTS）</h2>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+      現行の<strong style="color:var(--text)">台本プロンプト</strong>をAI実行して台本を作り、Gemini TTSで音声化します（gemini-voice ツールと同一仕様）。
+    </p>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button class="btn-sm" onclick="autoRunScript(this)">🤖 台本をAI実行</button>
+      <button class="btn-mini" onclick="autoCopyEl('autoScriptOut',this)">📋</button>
+      <span id="autoScriptStatus" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+    <textarea id="autoScriptOut" placeholder="台本のAI出力（ここを音声化します。手修正も可）" style="min-height:120px;"></textarea>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;align-items:flex-end;">
+      <div style="flex:1;min-width:180px;">
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">声</label>
+        <select id="autoTtsVoice" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 8px;border-radius:5px;font-size:13px;">
+          <option value="Zephyr">Zephyr (Bright)</option>
+          <option value="Puck">Puck (Upbeat)</option>
+          <option value="Charon">Charon (Informative)</option>
+          <option value="Kore">Kore (Firm)</option>
+          <option value="Fenrir">Fenrir (Excitable)</option>
+          <option value="Leda">Leda (Youthful)</option>
+          <option value="Orus">Orus (Firm)</option>
+          <option value="Aoede">Aoede (Breezy)</option>
+          <option value="Callirrhoe">Callirrhoe (Easy-going)</option>
+          <option value="Autonoe">Autonoe (Bright)</option>
+          <option value="Enceladus">Enceladus (Breathy)</option>
+          <option value="Iapetus">Iapetus (Clear)</option>
+          <option value="Umbriel">Umbriel (Easy-going)</option>
+          <option value="Algieba">Algieba (Smooth)</option>
+          <option value="Despina">Despina (Smooth)</option>
+          <option value="Erinome" selected>Erinome (Clear)</option>
+          <option value="Algenib">Algenib (Gravelly)</option>
+          <option value="Rasalgethi">Rasalgethi (Informative)</option>
+          <option value="Laomedeia">Laomedeia (Upbeat)</option>
+          <option value="Achernar">Achernar (Soft)</option>
+          <option value="Alnilam">Alnilam (Firm)</option>
+          <option value="Schedar">Schedar (Even)</option>
+          <option value="Gacrux">Gacrux (Mature)</option>
+          <option value="Pulcherrima">Pulcherrima (Forward)</option>
+          <option value="Achird">Achird (Friendly)</option>
+          <option value="Zubenelgenubi">Zubenelgenubi (Casual)</option>
+          <option value="Vindemiatrix">Vindemiatrix (Gentle)</option>
+          <option value="Sadachbita">Sadachbita (Lively)</option>
+          <option value="Sadaltager">Sadaltager (Knowledgeable)</option>
+          <option value="Sulafat">Sulafat (Warm)</option>
+        </select>
+      </div>
+      <div style="flex:1;min-width:180px;">
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">モデル</label>
+        <select id="autoTtsModel" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 8px;border-radius:5px;font-size:13px;">
+          <option value="gemini-2.5-flash-preview-tts" selected>Gemini 2.5 Flash TTS Preview (軽量・高速)</option>
+          <option value="gemini-2.5-pro-preview-tts">Gemini 2.5 Pro TTS Preview (高品質)</option>
+          <option value="gemini-3.1-flash-tts-preview">Gemini 3.1 Flash TTS Preview (最新・高速)</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn" id="autoTtsBtn" style="margin-top:10px;" onclick="autoGenerateTts(this)">🔊 音声を生成</button>
+    <div id="autoTtsStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
+    <div id="autoTtsOut" style="margin-top:6px;"></div>
+  </div>
 </div><!-- /#tabAuto -->
 
 <div id="renderTarget" style="position:fixed;left:-3000px;top:0;pointer-events:none;"></div>
@@ -1342,11 +1404,12 @@ function autoVars(){
 }
 
 // 現行プロンプトを取得データに対してAI実行し、結果を outId のテキストボックスへ
-async function autoRunExtract(promptKey, outId, statusId, btn){
+// full=true のときは銘柄名一覧表・ニュースも材料に含める（台本など生成系向け）
+async function autoRunExtract(promptKey, outId, statusId, btn, full){
   const st = statusId ? document.getElementById(statusId) : null;
   if(!AutoState.sources){ if(st) st.textContent='先に①データ取得を'; return; }
   const prompt = apReplaceVariables(AP_COPY_TEXTS[promptKey], autoVars());
-  const resources = autoBuildResources({forExtract:true});
+  const resources = autoBuildResources({forExtract: !full});
   const old = btn ? btn.textContent : '';
   if(btn){ btn.disabled=true; btn.textContent='実行中…'; }
   if(st) st.textContent='AI実行中…';
@@ -1365,6 +1428,31 @@ async function autoRunExtract(promptKey, outId, statusId, btn){
 }
 function autoRunRank(btn){ return autoRunExtract('rank', 'autoRankOut', 'autoRankStatus', btn); }
 function autoRunNameRank(btn){ return autoRunExtract('namerank', 'autoMeigaraIn', 'autoNameRankStatus', btn); }
+function autoRunScript(btn){ return autoRunExtract('script', 'autoScriptOut', 'autoScriptStatus', btn, true); }
+
+// ⑦ 台本テキスト → TTS
+async function autoGenerateTts(btn){
+  const st=document.getElementById('autoTtsStatus');
+  const out=document.getElementById('autoTtsOut');
+  const text=(document.getElementById('autoScriptOut').value||'').trim();
+  if(!text){ st.textContent='台本が空です（先に「台本をAI実行」または手入力）'; return; }
+  const voice=document.getElementById('autoTtsVoice').value;
+  const model=document.getElementById('autoTtsModel').value;
+  const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…'; st.textContent='音声生成中…（台本が長いと数十秒）'; out.innerHTML='';
+  try{
+    const res=await fetch('/api/tts',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ text, voice, model })
+    });
+    const data=await res.json();
+    if(!data.ok) throw new Error(data.error||'不明なエラー');
+    const src=`data:${data.mimeType};base64,${data.audioBase64}`;
+    st.textContent=`✅ 生成完了（${data.seconds}秒 / ${voice}）`;
+    out.innerHTML=`<audio controls src="${src}" style="width:100%;margin-top:4px;"></audio>`
+      +`<div style="margin-top:6px;"><a href="${src}" download="narration.wav" class="btn-sm" style="text-decoration:none;">⬇ WAVをダウンロード</a></div>`;
+  }catch(e){ st.textContent='❌ '+e.message; }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
 
 function autoCopyEl(id, btn){
   const t=(document.getElementById(id)||{}).value||'';
