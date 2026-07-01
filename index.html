@@ -142,6 +142,17 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 .tab-panel.active { display:block; }
 .tab-badge { font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px; margin-left:6px; }
 .tab-badge.beta { background:#7c2d12; color:#fdba74; }
+
+/* ===== 自動版：現行に近いコンパクト表示（スクロール削減）===== */
+#tabAuto .card { padding:9px 11px; margin-bottom:9px; }
+#tabAuto .card h2 { margin-bottom:5px; font-size:12px; }
+#tabAuto .card > p { font-size:11px; margin-bottom:6px; line-height:1.5; }
+#tabAuto .btn { width:auto; display:inline-block; padding:7px 16px; font-size:13px; margin-bottom:0; }
+#tabAuto textarea { min-height:44px !important; margin-top:4px; }
+#tabAuto textarea:focus { min-height:150px !important; }
+#tabAuto label { font-size:11px; }
+#tabAuto select { min-height:32px; }
+#tabAuto .auto-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:4px; }
 </style>
 </head>
 <body>
@@ -332,18 +343,23 @@ Appier G|4180|818|+96|+13.30%
 
 <div id="tabAuto" class="tab-panel">
   <div class="card">
-    <h2>自動版パイプライン（BETA）</h2>
-    <p style="font-size:13px;color:var(--muted);line-height:1.7;">
-      URL取得 → 分析 → 台本／スライド／サムネ生成を<strong style="color:var(--text)">ボタン一発</strong>で行う自動パイプライン。<br>
-      現行の「手動版」タブとは完全に独立しています。
-    </p>
+    <div class="auto-row">
+      <strong style="font-size:12px;color:var(--text);">自動版パイプライン（BETA）</strong>
+      <label style="margin-left:auto;color:var(--muted);">テキストモデル</label>
+      <select id="autoModelOverride" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
+        <option value="">自動（④⑤は上位／他は3.1Lite・上限で自動降格）</option>
+        <option value="gemini-3.5-flash">Gemini 3.5 Flash（20回/日）</option>
+        <option value="gemini-3-flash-preview">Gemini 3 Flash（20回/日）</option>
+        <option value="gemini-3.1-flash-lite" selected>Gemini 3.1 Flash Lite（500回/日）</option>
+        <option value="gemini-2.5-flash">Gemini 2.5 Flash（20回/日）</option>
+        <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite（20回/日）</option>
+      </select>
+    </div>
+    <p style="margin-bottom:0;">モデルを固定するとそのモデルで実行（テスト用）。「自動」で各工程の推奨モデル＋上限時の自動降格になります。</p>
   </div>
 
   <div class="card">
     <h2>① データ取得（野村・株探・日経の8ページ）</h2>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:10px;">
-      ボタンを押すと、サーバー側で8つのページを取得します（NotebookLMにURLを貼る作業の代わり）。
-    </p>
     <button class="btn" id="autoFetchBtn" onclick="autoFetchSources()">🔄 データ取得を実行</button>
     <div id="autoFetchStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
     <div id="autoFetchResult"></div>
@@ -376,24 +392,24 @@ Appier G|4180|818|+96|+13.30%
         <span id="autoNameRankStatus" style="font-size:11px;color:var(--muted)"></span>
       </div>
       <textarea id="autoMeigaraIn" placeholder="名称RANK の AI 出力（コード＋銘柄名）。ここを辞書で正式名称に変換します。" style="min-height:90px;"></textarea>
-      <button class="btn" style="margin-top:8px;" onclick="autoConvertNames()">🔤 辞書で正式名称に変換（銘柄名一覧表を作成）</button>
-      <p style="font-size:11px;color:var(--muted);margin-top:4px;">照合先：東証公式リスト <span id="autoDictInfo">読込中…</span>（AI不使用・完全一致）</p>
-      <div id="autoMeigaraStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
-      <div id="autoMeigaraResult"></div>
-      <div id="autoMeigaraCopyRow" style="display:none;margin-top:8px;">
-        <button class="btn-sm" onclick="autoCopyMeigara(this)">📋 銘柄名一覧表をコピー</button>
+      <div class="auto-row" style="margin-top:6px;">
+        <button class="btn" onclick="autoConvertNames()">🔤 正式名称に変換</button>
+        <button class="btn-mini" onclick="autoCopyEl('autoMeigaraOut',this)">📋</button>
+        <span style="font-size:10px;color:var(--muted);">照合：東証公式 <span id="autoDictInfo">読込中…</span></span>
+        <span id="autoMeigaraStatus" style="font-size:11px;color:var(--muted);"></span>
       </div>
+      <textarea id="autoMeigaraOut" placeholder="変換後の銘柄名一覧表（チェック用に出力されます）"></textarea>
     </div>
   </div>
 
   <div class="card">
-    <h2>③ AI接続テスト（Gemini APIの疎通確認）</h2>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">
-      APIキーが正しく設定され、Geminiが呼べるかを確認します。まだ本番の分析はしません。
-    </p>
-    <button class="btn" id="autoTestBtn" onclick="autoTestGemini()">🔌 接続テストを実行</button>
-    <div id="autoTestStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
-    <pre id="autoTestResult" style="font-size:12px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;white-space:pre-wrap;display:none;"></pre>
+    <h2>③ AI接続テスト（任意）</h2>
+    <p>APIキーが効いているかの確認用（特にデプロイ後）。1回だけAPIを消費します（上限の多い3.1 Flash Liteを使用）。通常は押さなくてOK。</p>
+    <div class="auto-row">
+      <button class="btn" id="autoTestBtn" onclick="autoTestGemini()">🔌 接続テスト</button>
+      <span id="autoTestStatus" style="font-size:11px;color:var(--muted);"></span>
+    </div>
+    <pre id="autoTestResult" style="font-size:12px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;white-space:pre-wrap;display:none;margin-top:4px;"></pre>
   </div>
 
   <div class="card">
@@ -403,18 +419,16 @@ Appier G|4180|818|+96|+13.30%
       <strong style="color:var(--text)">スライド用フォーマット</strong>（[表紙][指数][上昇率]…[ニュース]）を生成します。
       生成結果は手動版の入力欄に自動で入り、そのままスライドになります。
     </p>
-    <label style="font-size:12px;color:var(--muted);">ChatGPTの「理由ニュース」結果（②③の出力）を貼付：</label>
-    <textarea id="autoNewsIn" placeholder="ChatGPTで作成した『急騰・急落銘柄の材料』『当日ニュース』の結果をここに貼付。無くても生成は可能ですが、ニュース欄が空になります。" style="min-height:80px;"></textarea>
-    <button class="btn" id="autoSlideBtn" style="margin-top:8px;" onclick="autoGenerateSlideText()">🪄 スライド文章を生成</button>
-    <div id="autoSlideStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
-    <div id="autoSlideOut" style="display:none;">
-      <label style="font-size:12px;color:var(--muted);">生成結果（編集可・手動版の入力欄と同期）：</label>
-      <textarea id="autoSlideText" oninput="autoSyncSlideText()" style="min-height:160px;"></textarea>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-        <button class="btn-sm" onclick="switchTab('manual')">📊 手動版タブでスライドを確認・ダウンロード</button>
-        <button class="btn-sm" onclick="autoCopySlideText(this)">📋 コピー</button>
-      </div>
+    <label>ChatGPTの「理由ニュース」結果（②③の出力）を貼付：</label>
+    <textarea id="autoNewsIn" placeholder="ChatGPTで作成した『急騰・急落銘柄の材料』『当日ニュース』の結果をここに貼付。"></textarea>
+    <div class="auto-row" style="margin-top:6px;">
+      <button class="btn" id="autoSlideBtn" onclick="autoGenerateSlideText()">🪄 スライド文章を生成</button>
+      <button class="btn-sm" onclick="switchTab('manual')">📊 スライド確認</button>
+      <button class="btn-mini" onclick="autoCopyEl('autoSlideText',this)">📋</button>
+      <span id="autoSlideStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
+    <label style="margin-top:6px;display:block;">スライド文章（編集で手動版プレビューにリアルタイム反映）：</label>
+    <textarea id="autoSlideText" oninput="autoSyncSlideText()" placeholder="ここに生成結果が入ります。気に入らない箇所は直接編集すると、手動版のスライドに即反映されます。"></textarea>
   </div>
 
   <div class="card">
@@ -427,13 +441,16 @@ Appier G|4180|818|+96|+13.30%
       <summary style="font-size:12px;color:var(--accent);cursor:pointer;">サムネ/X生成ルール（編集可・Gem改定時はここを上書き）</summary>
       <textarea id="autoSnsRule" style="min-height:180px;font-size:11px;margin-top:6px;"></textarea>
     </details>
-    <button class="btn" id="autoSnsBtn" onclick="autoGenerateSns(this)">🎨 サムネ・X投稿文を生成</button>
-    <div id="autoSnsStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
-    <div id="autoSnsOutWrap" style="display:none;">
-      <label style="font-size:12px;color:var(--muted);">生成結果（編集可）：</label>
-      <textarea id="autoSnsOut" style="min-height:160px;"></textarea>
-      <button class="btn-sm" style="margin-top:6px;" onclick="autoCopyEl('autoSnsOut',this)">📋 コピー</button>
+    <div class="auto-row">
+      <button class="btn" id="autoSnsBtn" onclick="autoGenerateSns(this)">🎨 サムネ・X投稿文を生成</button>
+      <button class="btn-mini" onclick="autoCopyEl('autoSnsOut',this)">📋</button>
+      <span id="autoSnsStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
+    <textarea id="autoSnsOut" placeholder="サムネ案（3本＋最有力）とX投稿文がここに出ます（編集可）"></textarea>
+
+    <label style="margin-top:8px;display:block;">サムネ文言（手入力・スライド0枚目に反映／編集でリアルタイム反映）：</label>
+    <p style="margin-bottom:2px;">「：」で上段・中段・下段を区切る。色: <span style="color:#ff914d">*オレンジ*</span> <span style="color:#5ce1e6">#水色#</span> <span style="color:#ffde59">%黄色%</span></p>
+    <textarea id="autoThumbInput" oninput="autoSyncThumb()"></textarea>
   </div>
 
   <div class="card">
@@ -1233,6 +1250,21 @@ const AutoState = { sources: null, fetchedAt: null };
 
 function autoEsc(s){ return String(s==null?'':s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
+// テキストモデルの優先チェーン。cls: 'high'(思考系④⑤) / 'low'(その他)。
+// セレクタでモデル固定時はその1つだけ（テスト用）。
+function autoModelChain(cls){
+  const ov=(document.getElementById('autoModelOverride')||{}).value||'';
+  if(ov) return [ov];
+  return cls==='high'
+    ? ['gemini-3.5-flash','gemini-3-flash-preview','gemini-3.1-flash-lite','gemini-2.5-flash']
+    : ['gemini-3.1-flash-lite','gemini-3-flash-preview','gemini-2.5-flash-lite','gemini-2.5-flash'];
+}
+// 使用モデル/降格の表示用サフィックス
+function autoModelNote(data){
+  if(!data || !data.model) return '';
+  return `（${data.model}${data.fellBack?'・降格':''}${data.usage?(' / '+ (data.usage.totalTokenCount||'?') +'tok'):''}）`;
+}
+
 async function autoFetchSources(){
   const btn = document.getElementById('autoFetchBtn');
   const statusEl = document.getElementById('autoFetchStatus');
@@ -1297,10 +1329,10 @@ function autoLookupName(code){
 // 入力テキスト（名称RANKのAI出力）→ 銘柄名一覧表
 function autoConvertNames(){
   const statusEl = document.getElementById('autoMeigaraStatus');
-  const resEl = document.getElementById('autoMeigaraResult');
-  if(!autoDictReady()){ statusEl.textContent='❌ 辞書が読み込まれていません（meigara-dict.js）'; return; }
+  const outEl = document.getElementById('autoMeigaraOut');
+  if(!autoDictReady()){ statusEl.textContent='❌ 辞書未読込'; return; }
   const raw = document.getElementById('autoMeigaraIn').value;
-  if(!raw.trim()){ statusEl.textContent='入力が空です'; resEl.innerHTML=''; return; }
+  if(!raw.trim()){ statusEl.textContent='入力が空です'; outEl.value=''; return; }
 
   const seen = new Set();
   const rows = [];
@@ -1319,27 +1351,16 @@ function autoConvertNames(){
     rows.push({ code, orig, official });
   }
 
-  if(!rows.length){ statusEl.textContent=`ヒット0件（破棄 ${dropped}）。コードを含む行がありますか？`; resEl.innerHTML=''; document.getElementById('autoMeigaraCopyRow').style.display='none'; return; }
+  if(!rows.length){ statusEl.textContent=`ヒット0件（破棄 ${dropped}）`; outEl.value=''; return; }
 
-  // GPTと同じ出力テキスト（Markdown表）を生成 → コピー用に保持
+  // GPTと同じ出力テキスト（Markdown表）を生成 → チェック用に表示・保持
   autoMeigaraTableText = '## 銘柄名一覧表\n\n| コード | 銘柄名（元） | 銘柄名（正式） |\n| :--- | :--- | :--- |\n'
     + rows.map(r=>`| ${r.code} | ${r.orig} | ${r.official} |`).join('\n');
 
-  statusEl.textContent = `変換完了：${rows.length} 件（辞書外で破棄 ${dropped} 件）`;
-  resEl.innerHTML = `<div style="overflow:auto;max-height:300px;border:1px solid var(--border);border-radius:6px;margin-top:6px;">`
-    + `<table style="width:100%;border-collapse:collapse;font-size:12px;">`
-    + `<thead><tr style="position:sticky;top:0;background:var(--panel);"><th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--muted)">コード</th><th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--muted)">元</th><th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--muted)">正式名称</th></tr></thead>`
-    + `<tbody>` + rows.map(r=>`<tr><td style="padding:5px 8px;border-bottom:1px solid var(--border);color:#cbd5e1">${autoEsc(r.code)}</td><td style="padding:5px 8px;border-bottom:1px solid var(--border);color:var(--muted)">${autoEsc(r.orig)}</td><td style="padding:5px 8px;border-bottom:1px solid var(--border);color:var(--text)">${autoEsc(r.official)}</td></tr>`).join('') + `</tbody></table></div>`;
-  document.getElementById('autoMeigaraCopyRow').style.display='block';
+  statusEl.textContent = `変換完了：${rows.length}件（破棄${dropped}）`;
+  outEl.value = autoMeigaraTableText;
   AutoState.meigaraTable = autoMeigaraTableText;
   AutoState.meigaraRows = rows;
-}
-
-function autoCopyMeigara(btn){
-  if(!autoMeigaraTableText) return;
-  const done=()=>{ const o=btn.textContent; btn.textContent='✔ コピー完了'; setTimeout(()=>btn.textContent=o,1500); };
-  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(autoMeigaraTableText).then(done).catch(done);
-  else done();
 }
 
 function autoInitDict(){
@@ -1350,6 +1371,11 @@ function autoInitDict(){
   }
   const ruleEl = document.getElementById('autoSnsRule');
   if(ruleEl && !ruleEl.value.trim()) ruleEl.value = AUTO_SNS_RULE_DEFAULT;
+  const thumbEl = document.getElementById('autoThumbInput');
+  if(thumbEl && !thumbEl.value.trim()){
+    const cur=(document.getElementById('thumbInput')||{}).value;
+    thumbEl.value = (cur && cur.trim()) ? cur : THUMB_DEFAULT;
+  }
 }
 
 // ==================== 自動版：④ スライド文章生成 ====================
@@ -1416,12 +1442,12 @@ async function autoRunExtract(promptKey, outId, statusId, btn, full){
   try{
     const res=await fetch('/api/analyze',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ prompt, resources, temperature:0.2 })
+      body:JSON.stringify({ prompt, resources, temperature:0.2, models: autoModelChain('low') })
     });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'不明なエラー');
     document.getElementById(outId).value=data.text;
-    if(st) st.textContent='✅ 完了'+(data.usage?`（${data.usage.totalTokenCount}tok）`:'');
+    if(st) st.textContent='✅ 完了'+autoModelNote(data);
     return data.text;
   }catch(e){ if(st) st.textContent='❌ '+e.message; }
   finally{ if(btn){ btn.disabled=false; btn.textContent=old; } }
@@ -1470,16 +1496,15 @@ async function autoGenerateSlideText(){
   try{
     const res=await fetch('/api/analyze',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ prompt, resources, temperature:0.3 })
+      body:JSON.stringify({ prompt, resources, temperature:0.3, models: autoModelChain('high') })
     });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'不明なエラー');
     AutoState.slideText=data.text;
-    document.getElementById('autoSlideOut').style.display='block';
     document.getElementById('autoSlideText').value=data.text;
     apSetValue('mainInput', data.text);   // 手動版の入力欄に同期
     renderPreview();                       // 既存エンジンでスライド描画
-    st.textContent='✅ 生成完了'+(data.usage?`（消費トークン: ${data.usage.totalTokenCount||'?'}）`:'')+' — 手動版タブでスライドを確認できます';
+    st.textContent='✅ 生成完了'+autoModelNote(data);
   }catch(e){
     st.textContent='❌ '+e.message;
   }finally{ btn.disabled=false; }
@@ -1558,13 +1583,12 @@ async function autoGenerateSns(btn){
   try{
     const res=await fetch('/api/analyze',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ prompt, resources, temperature:0.8 })
+      body:JSON.stringify({ prompt, resources, temperature:0.8, models: autoModelChain('high') })
     });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'不明なエラー');
-    document.getElementById('autoSnsOutWrap').style.display='block';
     document.getElementById('autoSnsOut').value=data.text;
-    st.textContent='✅ 生成完了'+(data.usage?`（${data.usage.totalTokenCount}tok）`:'');
+    st.textContent='✅ 生成完了'+autoModelNote(data);
   }catch(e){ st.textContent='❌ '+e.message; }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
@@ -1619,16 +1643,23 @@ async function autoTestGemini(){
   try{
     const res=await fetch('/api/analyze',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ prompt:'「接続テスト成功」とだけ日本語で返してください。' })
+      body:JSON.stringify({ prompt:'「接続テスト成功」とだけ日本語で返してください。', models:['gemini-3.1-flash-lite'] })
     });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'不明なエラー');
-    st.textContent='✅ 接続成功'+(data.usage?`（消費トークン: ${data.usage.totalTokenCount||'?'}）`:'');
+    st.textContent='✅ 接続成功'+autoModelNote(data);
     out.style.display='block';
     out.textContent='モデル: '+data.model+'\n応答: '+data.text;
   }catch(e){
     st.textContent='❌ '+e.message;
   }finally{ btn.disabled=false; }
+}
+
+// サムネ文言（自動版）→ 手動版thumbInputへ同期＋プレビュー反映
+function autoSyncThumb(){
+  const t=document.getElementById('autoThumbInput').value;
+  apSetValue('thumbInput', t);
+  debouncedPreview();
 }
 
 apInit();

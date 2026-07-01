@@ -52,26 +52,38 @@ export async function onRequestPost(context) {
     },
   };
 
-  try {
-    const res = await fetch(ENDPOINT(payload.model || MODEL, key), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      const msg = data && data.error && data.error.message ? data.error.message : `HTTP ${res.status}`;
-      return json({ ok: false, error: "Gemini API エラー: " + msg }, 502);
+  // モデルは配列(models)で優先順に受け取り、上限(429)なら次の下位モデルへフォールバックする。
+  const models = (Array.isArray(payload.models) && payload.models.length)
+    ? payload.models
+    : [payload.model || MODEL];
+
+  let lastErr = "";
+  for (let i = 0; i < models.length; i++) {
+    const m = models[i];
+    try {
+      const res = await fetch(ENDPOINT(m, key), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const text =
+          (data.candidates && data.candidates[0] && data.candidates[0].content &&
+           data.candidates[0].content.parts || [])
+            .map((p) => p.text || "").join("").trim();
+        return json({ ok: true, text, usage: data.usageMetadata || null, model: m, fellBack: i > 0 });
+      }
+      const raw = data && data.error && data.error.message ? data.error.message : `HTTP ${res.status}`;
+      lastErr = raw;
+      // 上限/レート系のみ次モデルへ。それ以外(認証ミス等)は即中断
+      const isQuota = res.status === 429 || /quota|rate|exhaust|limit:\s*0|resource has been exhausted/i.test(raw);
+      if (!isQuota) return json({ ok: false, error: "Gemini API エラー: " + raw, model: m }, 502);
+    } catch (e) {
+      lastErr = (e && e.message) ? e.message : String(e);
     }
-    const text =
-      (data.candidates && data.candidates[0] && data.candidates[0].content &&
-       data.candidates[0].content.parts || [])
-        .map((p) => p.text || "").join("").trim();
-    const usage = data.usageMetadata || null;
-    return json({ ok: true, text, usage, model: payload.model || MODEL });
-  } catch (e) {
-    return json({ ok: false, error: "呼び出し失敗: " + (e && e.message ? e.message : String(e)) }, 500);
   }
+  return json({ ok: false, error: "全モデルで失敗しました（最後のエラー: " + lastErr + "）", triedModels: models }, 502);
 }
 
 export async function onRequestGet() {
