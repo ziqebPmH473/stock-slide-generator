@@ -435,6 +435,7 @@ Appier G|4180|818|+96|+13.30%
     <p>①の取得データ（指数・各ランキング）＋②の銘柄名一覧表＋②'のChatGPTレポートをまとめてGeminiに渡し、<strong style="color:var(--text)">スライド用フォーマット</strong>（[表紙][指数][上昇率]…[ニュース]）を生成します。生成結果は手動版の入力欄に入り、そのままスライドになります。</p>
     <div class="auto-row" style="margin-top:6px;">
       <button class="btn" id="autoSlideBtn" onclick="autoGenerateSlideText()">🪄 スライド文章を生成</button>
+      <button class="btn-sm" onclick="autoPreviewSlide()">🔎 送信内容</button>
       <button class="btn-mini" onclick="autoCopyEl('autoSlideText',this)">📋</button>
       <span id="autoSlideStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
@@ -452,6 +453,7 @@ Appier G|4180|818|+96|+13.30%
     <p>まとめ画像・サムネ/XをChatGPT(Gem)に投げる時の「データ」です。①取得データ＋②'レポートからAIが生成します（NotebookLMの代わり）。</p>
     <div class="auto-row">
       <button class="btn" id="autoFullInfoBtn" onclick="autoGenerateFullInfo(this)">🗂 全情報を生成</button>
+      <button class="btn-sm" onclick="autoPreviewFullInfo()">🔎 送信内容</button>
       <button class="btn-mini" onclick="autoCopyEl('autoFullInfo',this)">📋</button>
       <span id="autoFullInfoStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
@@ -467,6 +469,7 @@ Appier G|4180|818|+96|+13.30%
     </div>
     <div class="auto-row" style="margin-top:8px;">
       <button class="btn" id="autoSnsBtn" onclick="autoGenerateSns(this)">🎨 Geminiで直接生成</button>
+      <button class="btn-sm" onclick="autoPreviewSns()">🔎 送信内容</button>
       <span id="autoSnsStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
     <label style="display:block;margin-top:6px;">サムネ案 <button class="btn-mini" onclick="autoCopyEl('autoSnsThumb',this)">📋</button></label>
@@ -529,6 +532,7 @@ Appier G|4180|818|+96|+13.30%
     </p>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <button class="btn-sm" onclick="autoRunScript(this)">🤖 台本をAI実行</button>
+      <button class="btn-sm" onclick="autoPreviewScript()">🔎 送信内容</button>
       <button class="btn-mini" onclick="autoCopyEl('autoScriptOut',this)">📋</button>
       <span id="autoScriptStatus" style="font-size:11px;color:var(--muted)"></span>
     </div>
@@ -603,6 +607,19 @@ Appier G|4180|818|+96|+13.30%
 </div><!-- /#tabAuto -->
 
 <div id="renderTarget" style="position:fixed;left:-3000px;top:0;pointer-events:none;"></div>
+
+<!-- AIに送る全文プレビュー（確認用） -->
+<div id="autoPayloadModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;padding:20px;align-items:center;justify-content:center;" onclick="if(event.target===this)autoClosePayload()">
+  <div style="width:100%;max-width:780px;max-height:90vh;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <strong id="autoPayloadTitle" style="color:var(--text);font-size:13px;">AIに送る全文</strong>
+      <button class="btn-mini" style="margin-left:auto;" onclick="autoCopyEl('autoPayloadText',this)">📋 コピー</button>
+      <button class="btn-mini" onclick="autoClosePayload()">✕ 閉じる</button>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin:6px 0;">これが実際にAIへ送られる内容です（現行でNotebookLM等に貼っていた内容と見比べられます）。</p>
+    <textarea id="autoPayloadText" readonly style="flex:1;min-height:64vh !important;font-size:11px;line-height:1.5;"></textarea>
+  </div>
+</div>
 
 <script>
 // ==================== AI PROMPT GENERATOR (日次) ====================
@@ -1527,6 +1544,7 @@ function autoBuildResources(opts){
   const add=(label,text)=>{ if(text && String(text).trim()) res.push({label, text:String(text)}); };
   const get=(k, fn)=>{ const s=byKey[k]; if(!s) return ''; return opts.raw ? (s.text||'') : (s.rows&&s.rows.length ? fn(s.rows) : (s.text||'')); };
   add('指数（野村）', get('nomura_index', autoIndexToText));
+  if(!opts.raw){ const nv=byKey.nomura_index&&byKey.nomura_index.volumes; if(nv&&nv.length) add('各市場の出来高・時価総額（野村）', nv.map(v=>`${v.market}｜出来高${v.volume}｜時価総額${v.mcap}`).join('\n')); }
   add('日経平均寄与度 上位（株探）', get('kabutan_contrib_desc', autoContribToText));
   add('日経平均寄与度 下位（株探）', get('kabutan_contrib_asc', autoContribToText));
   add('業種別騰落 上位（株探）', get('kabutan_sector_desc', autoSectorToText));
@@ -1755,12 +1773,59 @@ function autoCopyEl(id, btn){
   else apFallbackCopy(t, done);
 }
 
+// ===== 「AIに送る全文」プレビュー（送信と同じ組み立て。CF側の資料整形も再現）=====
+function autoFmtPayload(prompt, resources){
+  const resText=(resources||[]).map(r=>`【${r.label}】\n${r.text}`).join('\n\n');
+  return resText ? `以下の資料のみを根拠として、指示に厳密に従って回答してください。資料に無い情報を創作しないでください。\n\n===== 資料 =====\n${resText}\n\n===== 指示 =====\n${prompt}` : prompt;
+}
+function autoSlidePrompt(){ return `本日の日付は ${autoTodayStr()} です。出力の「日付:」と[表紙]の日付は必ずこの日付にしてください。\n\n` + AP_COPY_TEXTS.presen1; }
+function autoScriptPrompt(){ return apReplaceVariables(AP_COPY_TEXTS.script, autoVars()); }
+function autoFullInfoPrompt(){ return apReplaceVariables(AP_COPY_TEXTS.reportKk, autoVars()); }
+const AUTO_SNS_PROMPT = `あなたはYouTube「東証マーケット振り返り」動画の担当です。本日のデータ（資料）を基に、サムネ案とX投稿文を作成してください。
+
+【サムネ案（3本＋最有力）】
+・スラッシュ区切りの1行（上段／中段／下段）。上段＝感情・問題提起／中段＝注目銘柄名や注目点／下段＝抽象的な問いかけ。
+・「え、なんで？」と思わせるギャップ（例：上方修正なのに株価下落）を優先。順当な結論（増益でストップ高等）は禁止。
+・禁止：！ ？ 数値 株価の方向性（上昇/下落の明示） スペース 引用符。1・3段目は全角8〜10文字、2段目は6〜9文字。
+
+【X投稿文】
+・今日の東証マーケットがどうだったか（指数の方向・注目された銘柄・主なニュース）が伝わる要約にすること。
+・絵文字を交え、URLとハッシュタグを除いて全角120文字程度。銘柄名を入れて興味を引く。煽り・断定は避ける。
+・末尾にハッシュタグを2〜5個。
+
+出力は必ず次の形式（区切り「===」を厳守）:
+🎨サムネ案
+①上段／中段／下段
+②上段／中段／下段
+③上段／中段／下段
+最有力：①〜③のいずれか（理由）
+===
+🕊️X投稿文
+（本文・絵文字あり）
+#ハッシュタグ`;
+function autoSnsMaterial(){
+  let m=(AutoState.slideText||'').trim();
+  if(!m) m=(document.getElementById('autoFullInfo')||{}).value.trim();
+  if(!m && AutoState.sources) m=autoBuildResources().map(r=>`【${r.label}】\n${r.text}`).join('\n\n');
+  return m;
+}
+function autoShowPayload(title, text){
+  document.getElementById('autoPayloadTitle').textContent=title;
+  document.getElementById('autoPayloadText').value=text;
+  document.getElementById('autoPayloadModal').style.display='flex';
+}
+function autoClosePayload(){ document.getElementById('autoPayloadModal').style.display='none'; }
+function autoPreviewSlide(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload('④ スライド文章 → AIに送る全文', autoFmtPayload(autoSlidePrompt(), autoBuildResources())); }
+function autoPreviewFullInfo(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload("④' 全情報 → AIに送る全文", autoFmtPayload(autoFullInfoPrompt(), autoBuildResources())); }
+function autoPreviewScript(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload('⑦ 台本 → AIに送る全文', autoFmtPayload(autoScriptPrompt(), autoBuildResources())); }
+function autoPreviewSns(){ const m=autoSnsMaterial(); if(!m){alert("先に④スライドか④'全情報を生成してください");return;} autoShowPayload('⑤ サムネ・X(直接生成) → AIに送る全文', autoFmtPayload(AUTO_SNS_PROMPT, [{label:'本日の東証マーケットのデータ・サマリ', text:m}])); }
+
 async function autoGenerateSlideText(){
   const btn=document.getElementById('autoSlideBtn');
   const st=document.getElementById('autoSlideStatus');
   if(!AutoState.sources){ st.textContent='先に①データ取得を実行してください'; return; }
   const resources=autoBuildResources();
-  const prompt = `本日の日付は ${autoTodayStr()} です。出力の「日付:」と[表紙]の日付は必ずこの日付にしてください。\n\n` + AP_COPY_TEXTS.presen1;
+  const prompt = autoSlidePrompt();
   btn.disabled=true; st.textContent='Geminiが生成中…（20〜40秒ほど）';
   try{
     const res=await fetch('/api/analyze',{
@@ -1797,7 +1862,7 @@ function autoCopySlideText(btn){
 async function autoGenerateFullInfo(btn){
   const st=document.getElementById('autoFullInfoStatus');
   if(!AutoState.sources){ st.textContent='先に①データ取得を実行してください'; return; }
-  const prompt=apReplaceVariables(AP_COPY_TEXTS.reportKk, autoVars());
+  const prompt=autoFullInfoPrompt();
   const resources=autoBuildResources();  // 構造化データ＋銘柄名一覧表＋ChatGPTレポート
   const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…'; st.textContent='全情報を生成中…';
   try{
@@ -1836,34 +1901,9 @@ function autoCopyCoverImagePrompt(btn){ autoClip(AP_COPY_TEXTS.photoTop, btn); }
 // ⑤ Geminiで直接生成（サムネ／X投稿文を別々の欄へ）
 async function autoGenerateSns(btn){
   const st=document.getElementById('autoSnsStatus');
-  let material=(AutoState.slideText||'').trim();
-  if(!material) material=(document.getElementById('autoFullInfo')||{}).value.trim();
-  if(!material){
-    if(!AutoState.sources){ st.textContent='先に④スライド文章か④\'全情報を生成してください'; return; }
-    material=autoBuildResources().map(r=>`【${r.label}】\n${r.text}`).join('\n\n');
-  }
-  const prompt = `あなたはYouTube「東証マーケット振り返り」動画の担当です。本日のデータ（資料）を基に、サムネ案とX投稿文を作成してください。
-
-【サムネ案（3本＋最有力）】
-・スラッシュ区切りの1行（上段／中段／下段）。上段＝感情・問題提起／中段＝注目銘柄名や注目点／下段＝抽象的な問いかけ。
-・「え、なんで？」と思わせるギャップ（例：上方修正なのに株価下落）を優先。順当な結論（増益でストップ高等）は禁止。
-・禁止：！ ？ 数値 株価の方向性（上昇/下落の明示） スペース 引用符。1・3段目は全角8〜10文字、2段目は6〜9文字。
-
-【X投稿文】
-・今日の東証マーケットがどうだったか（指数の方向・注目された銘柄・主なニュース）が伝わる要約にすること。
-・絵文字を交え、URLとハッシュタグを除いて全角120文字程度。銘柄名を入れて興味を引く。煽り・断定は避ける。
-・末尾にハッシュタグを2〜5個。
-
-出力は必ず次の形式（区切り「===」を厳守）:
-🎨サムネ案
-①上段／中段／下段
-②上段／中段／下段
-③上段／中段／下段
-最有力：①〜③のいずれか（理由）
-===
-🕊️X投稿文
-（本文・絵文字あり）
-#ハッシュタグ`;
+  const material=autoSnsMaterial();
+  if(!material){ st.textContent='先に④スライド文章か④\'全情報を生成してください'; return; }
+  const prompt = AUTO_SNS_PROMPT;
   const resources=[{label:'本日の東証マーケットのデータ・サマリ', text: material}];
   const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…'; st.textContent='Geminiが生成中…';
   try{

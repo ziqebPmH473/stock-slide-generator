@@ -44,6 +44,19 @@ function parseNomuraIndex(html) {
   return rows;
 }
 
+// --- 野村：各市場の出来高・時価総額 ---
+function parseNomuraVolume(html) {
+  const rows = [];
+  for (const tr of html.match(/<tr[\s\S]*?<\/tr>/g) || []) {
+    const cells = (tr.match(/<t[dh][\s\S]*?<\/t[dh]>/g) || []).map(cellText).filter(Boolean);
+    if (cells.length < 3) continue;
+    if (!/^東証(プライム|スタンダード|グロース)$/.test(cells[0])) continue;
+    if (!/株/.test(cells[1]) || !/円/.test(cells[2])) continue;
+    rows.push({ market: cells[0], volume: cells[1], mcap: cells[2] });
+  }
+  return rows;
+}
+
 // --- 株探：寄与度（コード＋銘柄名＋株価＋寄与度）---
 function parseKabutanContrib(html) {
   const rows = [];
@@ -104,7 +117,7 @@ async function fetchOne(src) {
     // 生テキスト（AIバックアップ用）
     out.text = htmlToText(html).slice(0, 12000);
     // 構造化パース
-    if (src.key === "nomura_index") { out.kind = "index"; out.rows = parseNomuraIndex(html); }
+    if (src.key === "nomura_index") { out.kind = "index"; out.rows = parseNomuraIndex(html); out.volumes = parseNomuraVolume(html); }
     else if (src.key.startsWith("kabutan_contrib")) { out.kind = "contrib"; out.rows = parseKabutanContrib(html); }
     else if (src.key.startsWith("kabutan_sector")) { out.kind = "sector"; out.rows = parseKabutanSector(html); }
     else if (src.key.startsWith("nikkei_")) { out.kind = "ranking"; out.rows = parseNikkei(html) || []; }
