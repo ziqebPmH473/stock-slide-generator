@@ -153,6 +153,32 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 #tabAuto label { font-size:11px; }
 #tabAuto select { min-height:32px; }
 #tabAuto .auto-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:4px; }
+
+/* ===== 自動版：ステップウィザード（1画面1工程）===== */
+.astep-head { position:sticky; top:0; z-index:30; background:var(--bg); padding:6px 0 10px; margin-bottom:14px; border-bottom:1px solid var(--border); }
+.astep-titlebar { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.astep-title { font-size:15px; font-weight:700; color:var(--text); }
+.astep-beta { font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px; background:#7c2d12; color:#fdba74; }
+.astep-gear { margin-left:auto; background:var(--panel); border:1px solid var(--border); color:var(--muted); width:40px; height:40px; border-radius:10px; font-size:17px; cursor:pointer; flex-shrink:0; }
+.astep-gear:hover, .astep-gear.on { color:#fff; border-color:var(--accent); background:var(--accent); }
+.astep-pills { display:flex; gap:6px; overflow-x:auto; padding-bottom:5px; scrollbar-width:thin; }
+.astep-pill { flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:3px; min-width:66px; padding:8px 10px; background:var(--panel); border:1px solid var(--border); border-radius:11px; color:var(--muted); font-size:11px; font-weight:600; cursor:pointer; transition:all .12s; white-space:nowrap; }
+.astep-pill b { font-size:15px; line-height:1; font-weight:800; }
+.astep-pill:hover { color:var(--text); border-color:#475569; }
+.astep-pill.active { background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 2px 10px rgba(59,130,246,.35); }
+.astep-pill.active b { color:#fff; }
+#tabAuto .astep { display:none; margin-bottom:0; }
+#tabAuto .astep.current { display:block; }
+.astep-cfg { display:none; margin-bottom:0; }
+.astep-cfg.open { display:block; margin-bottom:14px; }
+.astep-foot { position:sticky; bottom:0; z-index:30; display:flex; align-items:center; gap:12px; margin-top:16px; padding:12px 0; background:var(--bg); border-top:1px solid var(--border); }
+.astep-foot-label { flex:1; text-align:center; font-size:13.5px; font-weight:700; color:var(--text); }
+.astep-nav { min-width:104px; min-height:46px; padding:12px 22px; border-radius:11px; font-size:14px; font-weight:700; cursor:pointer; background:var(--panel); border:1px solid var(--border); color:var(--text); }
+.astep-nav:hover:not(:disabled) { border-color:var(--accent); }
+.astep-nav:disabled { opacity:.35; cursor:not-allowed; }
+.astep-nav.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.astep-nav.primary:hover { background:#2563eb; }
+@media (max-width:640px){ .astep-title { font-size:13.5px; } .astep-pill { min-width:56px; padding:7px 7px; font-size:10px; } .astep-nav { min-width:78px; padding:12px 12px; } .astep-foot-label { font-size:12px; } }
 </style>
 </head>
 <body>
@@ -342,9 +368,27 @@ Appier G|4180|818|+96|+13.30%
 </div><!-- /#tabManual -->
 
 <div id="tabAuto" class="tab-panel">
+  <div class="astep-head">
+    <div class="astep-titlebar">
+      <span class="astep-title">⚡ 自動版パイプライン</span>
+      <span class="astep-beta">BETA</span>
+      <button class="astep-gear" id="autoGearBtn" title="モデル設定" onclick="autoToggleCfg()">⚙</button>
+    </div>
+    <div class="astep-pills" id="autoPills">
+      <button class="astep-pill active" data-k="1" onclick="autoStep('1')"><b>①</b>取得</button>
+      <button class="astep-pill" data-k="2" onclick="autoStep('2')"><b>②</b>抽出</button>
+      <button class="astep-pill" data-k="2b" onclick="autoStep('2b')"><b>②'</b>理由ニュース</button>
+      <button class="astep-pill" data-k="3" onclick="autoStep('3')"><b>③</b>接続テスト</button>
+      <button class="astep-pill" data-k="4" onclick="autoStep('4')"><b>④</b>スライド</button>
+      <button class="astep-pill" data-k="4b" onclick="autoStep('4b')"><b>④'</b>全情報</button>
+      <button class="astep-pill" data-k="5" onclick="autoStep('5')"><b>⑤</b>サムネ/X</button>
+      <button class="astep-pill" data-k="6" onclick="autoStep('6')"><b>⑥</b>画像</button>
+      <button class="astep-pill" data-k="7" onclick="autoStep('7')"><b>⑦</b>音声</button>
+    </div>
+  </div>
   <div class="card">
     <div class="auto-row">
-      <strong style="font-size:12px;color:var(--text);">自動版パイプライン（BETA）</strong>
+      <strong style="font-size:12px;color:var(--text);">モデル設定</strong>
       <label style="margin-left:auto;color:var(--muted);">テキストモデル</label>
       <select id="autoModelOverride" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
         <option value="" selected>自動（④⑤台本は上位／他は3.1Lite・上限で自動降格）</option>
@@ -603,6 +647,11 @@ Appier G|4180|818|+96|+13.30%
     <button class="btn" id="autoTtsBtn" style="margin-top:8px;" onclick="autoGenerateTts(this)">🔊 音声を生成</button>
     <div id="autoTtsStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
     <div id="autoTtsOut" style="margin-top:6px;"></div>
+  </div>
+  <div class="astep-foot">
+    <button class="astep-nav" id="autoPrevBtn" onclick="autoStepMove(-1)">← 戻る</button>
+    <span class="astep-foot-label" id="autoStepLabel">① データ取得</span>
+    <button class="astep-nav primary" id="autoNextBtn" onclick="autoStepMove(1)">次へ →</button>
   </div>
 </div><!-- /#tabAuto -->
 
@@ -1343,6 +1392,60 @@ function switchTab(name){
   document.getElementById('tabAuto').classList.toggle('active', !isManual);
   document.getElementById('tabBtnManual').classList.toggle('active', isManual);
   document.getElementById('tabBtnAuto').classList.toggle('active', !isManual);
+  if(!isManual){ autoInitSteps(); autoStep(window.__autoStepK||'1'); }
+}
+
+// ==================== 自動版：ステップウィザード（1画面1工程）====================
+const AUTO_STEPS = [
+  {k:'1',  label:'① データ取得'},
+  {k:'2',  label:'② 抽出'},
+  {k:'2b', label:"②' 理由ニュース"},
+  {k:'3',  label:'③ AI接続テスト'},
+  {k:'4',  label:'④ スライド文章'},
+  {k:'4b', label:"④' 全情報"},
+  {k:'5',  label:'⑤ サムネ & X投稿文'},
+  {k:'6',  label:'⑥ 画像プロンプト'},
+  {k:'7',  label:'⑦ 台本 → 音声'},
+];
+let _autoStepsReady = false;
+function autoInitSteps(){
+  if(_autoStepsReady) return;
+  const cards = [...document.querySelectorAll('#tabAuto > .card')];
+  const map = [['1','① データ取得'],['2','② 抽出'],['2b','理由ニュース'],['3','AI接続'],['4','スライド文章'],['4b','全情報'],['5','サムネ'],['6','画像プロンプト'],['7','台本']];
+  cards.forEach(function(c){
+    const h = c.querySelector('h2');
+    if(!h){ c.classList.add('astep-cfg'); return; }
+    const t = h.textContent || '';
+    const m = map.find(function(e){ return t.indexOf(e[1]) !== -1; });
+    if(m){ c.classList.add('astep'); c.dataset.astep = m[0]; }
+  });
+  _autoStepsReady = true;
+}
+function autoStep(k){
+  autoInitSteps();
+  window.__autoStepK = k;
+  document.querySelectorAll('#tabAuto .astep').forEach(function(c){ c.classList.toggle('current', c.dataset.astep===k); });
+  document.querySelectorAll('#autoPills .astep-pill').forEach(function(p){ p.classList.toggle('active', p.dataset.k===k); });
+  const i = AUTO_STEPS.findIndex(function(s){ return s.k===k; });
+  const lbl = document.getElementById('autoStepLabel');
+  if(lbl && i>=0) lbl.textContent = AUTO_STEPS[i].label;
+  const pv = document.getElementById('autoPrevBtn'), nx = document.getElementById('autoNextBtn');
+  if(pv) pv.disabled = (i<=0);
+  if(nx){ nx.textContent = (i>=AUTO_STEPS.length-1) ? '完了 ✓' : '次へ →'; nx.disabled = (i>=AUTO_STEPS.length-1); }
+  window.scrollTo(0, 0);
+}
+function autoStepMove(d){
+  const i = AUTO_STEPS.findIndex(function(s){ return s.k===(window.__autoStepK||'1'); });
+  const n = Math.min(AUTO_STEPS.length-1, Math.max(0, i+d));
+  autoStep(AUTO_STEPS[n].k);
+}
+function autoToggleCfg(){
+  autoInitSteps();
+  const c = document.querySelector('#tabAuto .astep-cfg');
+  const g = document.getElementById('autoGearBtn');
+  if(!c) return;
+  const open = c.classList.toggle('open');
+  if(g) g.classList.toggle('on', open);
 }
 
 // ==================== 自動版：① データ取得 ====================
