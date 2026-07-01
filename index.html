@@ -1505,13 +1505,21 @@ function autoCopyFactCheckFix(btn){ autoClip(`指摘箇所を指示の内容に�
 // ===== AIバックアップ（生ページをAIに読ませて分析RANK・名称RANKを再生成）=====
 async function autoRunAiBackup(btn){
   const st=document.getElementById('autoBackupStatus');
-  if(!AutoState.sources){ st.textContent='先に①データ取得を実行してください'; return; }
-  const old=btn.textContent; btn.disabled=true; btn.textContent='AI実行中…'; st.textContent='AIで再生成中…（分析RANK→名称RANK）';
+  const old=btn.textContent; btn.disabled=true;
   try{
+    // ①を押していない/①がエラーでも、ここで取得から実行する（URL取得→整形まで一括）
+    if(!AutoState.sources || !AutoState.sources.some(s=>s.ok)){
+      btn.textContent='取得中…'; st.textContent='データ取得中…（①を自動実行）';
+      await autoFetchSources();
+    }
+    if(!AutoState.sources || !AutoState.sources.some(s=>s.ok)){
+      st.textContent='❌ データ取得に失敗（サーバーに到達できません）'; return;
+    }
+    btn.textContent='AI実行中…'; st.textContent='AIで再生成中…（分析RANK→名称RANK）';
     await autoRunExtractRaw('rank','autoRankOut');
     await autoRunExtractRaw('namerank','autoMeigaraIn');
     autoConvertNames();
-    st.textContent='✅ AIバックアップ完了';
+    st.textContent='✅ AIバックアップ完了（取得→整形まで実行）';
   }catch(e){ st.textContent='❌ '+e.message; }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
