@@ -408,7 +408,11 @@ Appier G|4180|818|+96|+13.30%
       <button class="btn-sm" onclick="autoCopyReasonNews(this)">📋 *理由ニュース プロンプト</button>
       <span style="font-size:10px;color:var(--muted);">分析RANKを使用</span>
     </div>
-    <label style="margin-top:6px;display:block;">ChatGPTのレポートを貼付（急騰急落の材料＋当日ニュース）：</label>
+    <div class="auto-row" style="margin-top:6px;">
+      <span style="font-size:11px;color:var(--muted);">ChatGPTのレポートを貼付：</span>
+      <button class="btn-mini" onclick="autoPaste('autoFcReport')">📋 貼付</button>
+      <button class="btn-mini" onclick="document.getElementById('autoFcReport').value='';">✕</button>
+    </div>
     <textarea id="autoFcReport" placeholder="ChatGPTが作成した理由ニュースのレポートをここに貼付。④スライド・⑥画像の材料になります。"></textarea>
     <div class="auto-row" style="margin-top:6px;">
       <button class="btn-sm" onclick="autoCopyFactCheck(this)">✅ FactCK（点検プロンプト）</button>
@@ -1482,6 +1486,11 @@ function autoVars(){
 function autoClip(text, btn){
   const done=()=>{ const o=btn.textContent; btn.textContent='✔ コピー'; setTimeout(()=>btn.textContent=o,1500); };
   if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(done); else done();
+}
+async function autoPaste(id){
+  const el=document.getElementById(id); if(!el) return;
+  try{ el.value = await navigator.clipboard.readText(); el.dispatchEvent(new Event('input',{bubbles:true})); }
+  catch(e){ el.focus(); alert('クリップボードを読み取れませんでした。Ctrl+V で貼り付けてください。'); }
 }
 function autoReasonVars(){ const v=autoVars(); v.textbox=(document.getElementById('autoRankOut')||{}).value||''; return v; }
 function autoCopyReasonNews(btn){ autoClip(apReplaceVariables(AP_COPY_TEXTS.top10ReasonNewsNG, autoReasonVars()), btn); }

@@ -57,33 +57,43 @@ export async function onRequestPost(context) {
     ? payload.models
     : [payload.model || MODEL];
 
+  // 一時的エラー（上限・レート・過負荷・混雑・503等）は リトライ→次モデル へ
+  const isTransient = (status, raw) =>
+    status === 429 || status >= 500 ||
+    /quota|rate|exhaust|limit:\s*0|overload|high demand|unavailable|temporarily|try again|resource has been exhausted/i.test(raw || "");
+  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
   let lastErr = "";
   for (let i = 0; i < models.length; i++) {
     const m = models[i];
-    try {
-      const res = await fetch(ENDPOINT(m, key), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        const text =
-          (data.candidates && data.candidates[0] && data.candidates[0].content &&
-           data.candidates[0].content.parts || [])
-            .map((p) => p.text || "").join("").trim();
-        return json({ ok: true, text, usage: data.usageMetadata || null, model: m, fellBack: i > 0 });
+    for (let attempt = 0; attempt < 2; attempt++) {   // 各モデル最大2回（一時エラー時に1回リトライ）
+      try {
+        const res = await fetch(ENDPOINT(m, key), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          const text =
+            (data.candidates && data.candidates[0] && data.candidates[0].content &&
+             data.candidates[0].content.parts || [])
+              .map((p) => p.text || "").join("").trim();
+          return json({ ok: true, text, usage: data.usageMetadata || null, model: m, fellBack: i > 0 });
+        }
+        const raw = data && data.error && data.error.message ? data.error.message : `HTTP ${res.status}`;
+        lastErr = raw;
+        // 一時エラー以外（認証ミス等）は即中断
+        if (!isTransient(res.status, raw)) return json({ ok: false, error: "Gemini API エラー: " + raw, model: m }, 502);
+        if (attempt === 0) { await delay(800); continue; }  // 同モデルで1回リトライ
+      } catch (e) {
+        lastErr = (e && e.message) ? e.message : String(e);
+        if (attempt === 0) { await delay(800); continue; }
       }
-      const raw = data && data.error && data.error.message ? data.error.message : `HTTP ${res.status}`;
-      lastErr = raw;
-      // 上限/レート系のみ次モデルへ。それ以外(認証ミス等)は即中断
-      const isQuota = res.status === 429 || /quota|rate|exhaust|limit:\s*0|resource has been exhausted/i.test(raw);
-      if (!isQuota) return json({ ok: false, error: "Gemini API エラー: " + raw, model: m }, 502);
-    } catch (e) {
-      lastErr = (e && e.message) ? e.message : String(e);
+      break;   // このモデルは諦めて次モデルへ
     }
   }
-  return json({ ok: false, error: "全モデルで失敗しました（最後のエラー: " + lastErr + "）", triedModels: models }, 502);
+  return json({ ok: false, error: "全モデルが混雑/上限のようです。少し待って再試行してください（最後のエラー: " + lastErr + "）", triedModels: models }, 502);
 }
 
 export async function onRequestGet() {
