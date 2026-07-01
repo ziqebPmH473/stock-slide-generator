@@ -178,6 +178,7 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 .astep-nav:disabled { opacity:.35; cursor:not-allowed; }
 .astep-nav.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
 .astep-nav.primary:hover { background:#2563eb; }
+.copied-flash { background:#16a34a !important; border-color:#16a34a !important; color:#fff !important; }
 @media (max-width:640px){ .astep-title { font-size:13.5px; } .astep-pill { min-width:56px; padding:7px 7px; font-size:10px; } .astep-nav { min-width:78px; padding:12px 12px; } .astep-foot-label { font-size:12px; } }
 </style>
 </head>
@@ -378,7 +379,6 @@ Appier G|4180|818|+96|+13.30%
       <button class="astep-pill active" data-k="1" onclick="autoStep('1')"><b>①</b>取得</button>
       <button class="astep-pill" data-k="2" onclick="autoStep('2')"><b>②</b>抽出</button>
       <button class="astep-pill" data-k="2b" onclick="autoStep('2b')"><b>②'</b>理由ニュース</button>
-      <button class="astep-pill" data-k="3" onclick="autoStep('3')"><b>③</b>接続テスト</button>
       <button class="astep-pill" data-k="4" onclick="autoStep('4')"><b>④</b>スライド</button>
       <button class="astep-pill" data-k="4b" onclick="autoStep('4b')"><b>④'</b>全情報</button>
       <button class="astep-pill" data-k="5" onclick="autoStep('5')"><b>⑤</b>サムネ/X</button>
@@ -399,11 +399,21 @@ Appier G|4180|818|+96|+13.30%
         <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite（20回/日）</option>
       </select>
     </div>
-    <p style="margin-bottom:0;">モデルを固定するとそのモデルで実行（テスト用）。「自動」で各工程の推奨モデル＋上限時の自動降格になります。</p>
+    <p>モデルを固定するとそのモデルで実行（テスト用）。「自動」で各工程の推奨モデル＋上限時の自動降格になります。</p>
+    <div class="auto-row" style="margin-top:8px;">
+      <button class="btn-sm" id="autoTestBtn" onclick="autoTestGemini()">🔌 AI接続テスト</button>
+      <span id="autoTestStatus" style="font-size:11px;color:var(--muted);"></span>
+    </div>
+    <pre id="autoTestResult" style="font-size:12px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;white-space:pre-wrap;display:none;margin-top:4px;"></pre>
   </div>
 
   <div class="card">
     <h2>① データ取得（野村・株探・日経の8ページ）</h2>
+    <div class="auto-row" style="margin-bottom:8px;">
+      <label style="font-size:12px;color:var(--muted);">基準日</label>
+      <input type="date" id="autoBaseDate" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
+      <span id="autoDateInfo" style="font-size:11px;color:var(--muted);"></span>
+    </div>
     <button class="btn" id="autoFetchBtn" onclick="autoFetchSources()">🔄 データ取得を実行</button>
     <div id="autoFetchStatus" style="font-size:13px;color:var(--muted);text-align:center;min-height:20px;margin:6px 0;"></div>
     <div id="autoFetchResult"></div>
@@ -465,21 +475,10 @@ Appier G|4180|818|+96|+13.30%
   </div>
 
   <div class="card">
-    <h2>③ AI接続テスト（任意）</h2>
-    <p>APIキーが効いているかの確認用（特にデプロイ後）。1回だけAPIを消費します（上限の多い3.1 Flash Liteを使用）。通常は押さなくてOK。</p>
-    <div class="auto-row">
-      <button class="btn" id="autoTestBtn" onclick="autoTestGemini()">🔌 接続テスト</button>
-      <span id="autoTestStatus" style="font-size:11px;color:var(--muted);"></span>
-    </div>
-    <pre id="autoTestResult" style="font-size:12px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;white-space:pre-wrap;display:none;margin-top:4px;"></pre>
-  </div>
-
-  <div class="card">
     <h2>④ スライド文章を生成（データ整形＋ツール文章）</h2>
     <p>①の取得データ（指数・各ランキング）＋②の銘柄名一覧表＋②'のChatGPTレポートをまとめてGeminiに渡し、<strong style="color:var(--text)">スライド用フォーマット</strong>（[表紙][指数][上昇率]…[ニュース]）を生成します。生成結果は手動版の入力欄に入り、そのままスライドになります。</p>
     <div class="auto-row" style="margin-top:6px;">
       <button class="btn" id="autoSlideBtn" onclick="autoGenerateSlideText()">🪄 スライド文章を生成</button>
-      <button class="btn-sm" onclick="autoPreviewSlide()">🔎 送信内容</button>
       <button class="btn-mini" onclick="autoCopyEl('autoSlideText',this)">📋</button>
       <span id="autoSlideStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
@@ -497,7 +496,6 @@ Appier G|4180|818|+96|+13.30%
     <p>まとめ画像・サムネ/XをChatGPT(Gem)に投げる時の「データ」です。①取得データ＋②'レポートからAIが生成します（NotebookLMの代わり）。</p>
     <div class="auto-row">
       <button class="btn" id="autoFullInfoBtn" onclick="autoGenerateFullInfo(this)">🗂 全情報を生成</button>
-      <button class="btn-sm" onclick="autoPreviewFullInfo()">🔎 送信内容</button>
       <button class="btn-mini" onclick="autoCopyEl('autoFullInfo',this)">📋</button>
       <span id="autoFullInfoStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
@@ -513,7 +511,6 @@ Appier G|4180|818|+96|+13.30%
     </div>
     <div class="auto-row" style="margin-top:8px;">
       <button class="btn" id="autoSnsBtn" onclick="autoGenerateSns(this)">🎨 Geminiで直接生成</button>
-      <button class="btn-sm" onclick="autoPreviewSns()">🔎 送信内容</button>
       <span id="autoSnsStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
     <label style="display:block;margin-top:6px;">サムネ案 <button class="btn-mini" onclick="autoCopyEl('autoSnsThumb',this)">📋</button></label>
@@ -576,7 +573,6 @@ Appier G|4180|818|+96|+13.30%
     </p>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <button class="btn-sm" onclick="autoRunScript(this)">🤖 台本をAI実行</button>
-      <button class="btn-sm" onclick="autoPreviewScript()">🔎 送信内容</button>
       <button class="btn-mini" onclick="autoCopyEl('autoScriptOut',this)">📋</button>
       <span id="autoScriptStatus" style="font-size:11px;color:var(--muted)"></span>
     </div>
@@ -732,6 +728,8 @@ function apUpdateDates(baseDateStr){
   apPrevBizDay = apFormatDate(prev);
   const info = document.getElementById('apDateInfo');
   if (info) info.textContent = `${apToday}/${apPrevBizDay}`;
+  const ainfo = document.getElementById('autoDateInfo');
+  if (ainfo) ainfo.textContent = `${apToday}（前営業日 ${apPrevBizDay}）`;
 }
 
 function apReplaceVariables(text, vars){
@@ -823,7 +821,8 @@ async function apPasteTextbox(id){
 }
 function apClearTextarea(id){ apSetValue(id, ''); }
 
-const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thumbInput'];
+const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thumbInput',
+  'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoFullInfo','autoSnsThumb','autoSnsX','autoScriptOut','autoThumbInput'];
 const THUMB_DEFAULT = '日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%';
 const SSG_PREFIX = 'ssg_';
 
@@ -856,10 +855,10 @@ function apResetAll(){
 }
 function apDoReset(){
   apClearStorage();
-  for (const id of ['apTextbox1','apFcReport','apTextbox2','mainInput']){
-    apSetValue(id, '');
+  for (const id of AP_STORAGE_IDS){
+    if (!document.getElementById(id)) continue;
+    apSetValue(id, (id==='thumbInput'||id==='autoThumbInput') ? THUMB_DEFAULT : '');
   }
-  apSetValue('thumbInput', THUMB_DEFAULT);
   if (typeof clearImg === 'function'){
     try { clearImg('cover'); } catch(e){}
     try { clearImg('news'); } catch(e){}
@@ -883,7 +882,12 @@ function apInit(){
   const dateInput = document.getElementById('apBaseDate');
   if (dateInput){
     dateInput.value = iso;
-    dateInput.addEventListener('change', () => apUpdateDates(dateInput.value));
+    dateInput.addEventListener('change', () => { apUpdateDates(dateInput.value); const a=document.getElementById('autoBaseDate'); if(a) a.value=dateInput.value; });
+  }
+  const autoDate = document.getElementById('autoBaseDate');
+  if (autoDate){
+    autoDate.value = iso;
+    autoDate.addEventListener('change', () => { apUpdateDates(autoDate.value); if(dateInput) dateInput.value=autoDate.value; });
   }
   apUpdateDates(iso);
   if (typeof debouncedPreview === 'function') debouncedPreview();
@@ -1400,7 +1404,6 @@ const AUTO_STEPS = [
   {k:'1',  label:'① データ取得'},
   {k:'2',  label:'② 抽出'},
   {k:'2b', label:"②' 理由ニュース"},
-  {k:'3',  label:'③ AI接続テスト'},
   {k:'4',  label:'④ スライド文章'},
   {k:'4b', label:"④' 全情報"},
   {k:'5',  label:'⑤ サムネ & X投稿文'},
@@ -1411,7 +1414,7 @@ let _autoStepsReady = false;
 function autoInitSteps(){
   if(_autoStepsReady) return;
   const cards = [...document.querySelectorAll('#tabAuto > .card')];
-  const map = [['1','① データ取得'],['2','② 抽出'],['2b','理由ニュース'],['3','AI接続'],['4','スライド文章'],['4b','全情報'],['5','サムネ'],['6','画像プロンプト'],['7','台本']];
+  const map = [['1','① データ取得'],['2','② 抽出'],['2b','理由ニュース'],['4','スライド文章'],['4b','全情報'],['5','サムネ'],['6','画像プロンプト'],['7','台本']];
   cards.forEach(function(c){
     const h = c.querySelector('h2');
     if(!h){ c.classList.add('astep-cfg'); return; }
@@ -1487,7 +1490,10 @@ async function autoFetchSources(){
     const ar=autoGenAnalysisRank(); if(ar) document.getElementById('autoRankOut').value=ar;
     const nr=autoGenNameRank();     if(nr) document.getElementById('autoMeigaraIn').value=nr;
     if(nr) autoConvertNames();
-    statusEl.textContent = `完了：${okCount}/${data.sources.length} 件取得（分析RANK・名称RANKを自動生成）`;
+    const errN = data.sources.length - okCount;
+    statusEl.textContent = errN>0
+      ? `⚠ ${okCount}/${data.sources.length} 件取得（${errN}件エラー・下を確認）`
+      : `完了：${okCount}/${data.sources.length} 件取得（分析RANK・名称RANKを自動生成）`;
     resultEl.innerHTML = autoRenderSources(data.sources);
   } catch(e){
     statusEl.textContent = '❌ ' + e.message + '（CF Functions が動くサーバーで開いていますか？）';
@@ -1506,15 +1512,25 @@ function autoSourceLines(s){
   return s.rows.slice(0,6).map(r=>`${r.rank}. ${r.code} ${r.name} ${r.rate}% 株価${r.price} 前日比${r.change}${r.value?(' 売買代金'+r.value):''}`).join('\n');
 }
 function autoRenderSources(sources){
-  return sources.map(s=>{
+  const anyErr = sources.some(s=>!s.ok);
+  const okCount = sources.filter(s=>s.ok).length;
+  const items = sources.map(s=>{
     const badge = s.ok ? '<span style="color:#4ade80">●</span>' : '<span style="color:#f87171">●</span>';
-    const body = s.error ? `<div style="font-size:11px;color:#f87171;">${autoEsc(s.error)}</div>`
-      : `<pre style="font-size:11px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;margin-top:4px;white-space:pre-wrap;max-height:160px;overflow:auto;">${autoEsc(autoSourceLines(s))}</pre>`;
+    const errMsg = s.error || s.reason || '';
+    const warn = (!s.ok) ? ` <span style="color:#f87171">⚠ ${autoEsc(errMsg||'取得エラー')}</span>` : '';
+    const body = (!s.ok && errMsg ? `<div style="font-size:11px;color:#f87171;margin:4px 0;">⚠ ${autoEsc(errMsg)}</div>` : '')
+      + `<pre style="font-size:11px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;margin-top:4px;white-space:pre-wrap;max-height:160px;overflow:auto;">${autoEsc(autoSourceLines(s))}</pre>`;
     const cnt = s.rowCount ? ` ${s.rowCount}行` : '';
-    return `<details style="margin-top:6px;border:1px solid var(--border);border-radius:6px;padding:6px 8px;">`
-         + `<summary style="font-size:12px;color:var(--text);cursor:pointer;">${badge} ${autoEsc(s.label)}<span style="color:var(--muted)"> (${s.status||'-'}${cnt})</span></summary>`
+    // エラーのソースだけ開いておく
+    return `<details ${!s.ok?'open':''} style="margin-top:6px;border:1px solid var(--border);border-radius:6px;padding:6px 8px;">`
+         + `<summary style="font-size:12px;color:var(--text);cursor:pointer;">${badge} ${autoEsc(s.label)}<span style="color:var(--muted)"> (${s.status||'-'}${cnt})</span>${warn}</summary>`
          + body + `</details>`;
   }).join('');
+  // 全体：正常時は折りたたむ／エラー時は開く
+  return `<details ${anyErr?'open':''} style="margin-top:8px;">`
+       + `<summary style="font-size:12px;color:${anyErr?'#f87171':'var(--muted)'};cursor:pointer;">`
+       + (anyErr ? `⚠ 取得結果 ${okCount}/${sources.length} 件（${sources.length-okCount}件エラー）` : `取得結果 ${okCount}/${sources.length} 件 正常（クリックで詳細）`)
+       + `</summary>${items}</details>`;
 }
 
 // ==================== 自動版：② 名称変換（辞書ルックアップ）====================
@@ -1704,8 +1720,10 @@ function autoVars(){
 }
 
 // ===== ②' ChatGPT工程（理由ニュース＋ファクトチェック：現行と同じ）=====
+// コピー成功時はテキストを変えず、ボタンの色を約1秒変えるだけ
+function autoFlash(btn){ if(!btn) return; btn.classList.add('copied-flash'); setTimeout(()=>btn.classList.remove('copied-flash'), 900); }
 function autoClip(text, btn){
-  const done=()=>{ const o=btn.textContent; btn.textContent='✔ コピー'; setTimeout(()=>btn.textContent=o,1500); };
+  const done=()=>autoFlash(btn);
   // クリップボードAPIが失敗したら execCommand にフォールバック（成功表示だけで未コピー、を防ぐ）
   if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(()=>apFallbackCopy(text, done));
   else apFallbackCopy(text, done);
@@ -1871,7 +1889,7 @@ async function autoRenderTts(){
 
 function autoCopyEl(id, btn){
   const t=(document.getElementById(id)||{}).value||'';
-  const done=()=>{ const o=btn.textContent; btn.textContent='✔'; setTimeout(()=>btn.textContent=o,1200); };
+  const done=()=>autoFlash(btn);
   if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(()=>apFallbackCopy(t, done));
   else apFallbackCopy(t, done);
 }
@@ -1957,7 +1975,7 @@ function autoSyncSlideText(){
 }
 function autoCopySlideText(btn){
   const t=document.getElementById('autoSlideText').value;
-  const done=()=>{ const o=btn.textContent; btn.textContent='✔ コピー'; setTimeout(()=>btn.textContent=o,1500); };
+  const done=()=>autoFlash(btn);
   if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(()=>apFallbackCopy(t, done)); else apFallbackCopy(t, done);
 }
 
@@ -2040,7 +2058,7 @@ function autoRefreshImgPromptView(){
 function autoCopyImagePrompt(btn){
   const t=autoBuildImagePrompt();
   autoRefreshImgPromptView();
-  const done=()=>{ const o=btn.textContent; btn.textContent='✔ コピー'; setTimeout(()=>btn.textContent=o,1500); };
+  const done=()=>autoFlash(btn);
   if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(()=>apFallbackCopy(t, done)); else apFallbackCopy(t, done);
   const st=document.getElementById('autoImgStatus');
   if(!((document.getElementById('autoFcReport')||{}).value||'').trim()) st.textContent='⚠ ②\'のChatGPTレポート欄が空です（材料なしのプロンプトになります）';

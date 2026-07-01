@@ -113,7 +113,7 @@ async function fetchOne(src) {
     out.status = res.status;
     const html = await res.text();
     out.bytes = html.length;
-    out.ok = res.status >= 200 && res.status < 300;
+    const httpOk = res.status >= 200 && res.status < 300;
     // 生テキスト（AIバックアップ用）
     out.text = htmlToText(html).slice(0, 12000);
     // 構造化パース
@@ -121,7 +121,23 @@ async function fetchOne(src) {
     else if (src.key.startsWith("kabutan_contrib")) { out.kind = "contrib"; out.rows = parseKabutanContrib(html); }
     else if (src.key.startsWith("kabutan_sector")) { out.kind = "sector"; out.rows = parseKabutanSector(html); }
     else if (src.key.startsWith("nikkei_")) { out.kind = "ranking"; out.rows = parseNikkei(html) || []; }
-    if (out.rows && out.rows.length) out.rowCount = out.rows.length;
+    const rc = out.rows ? out.rows.length : 0;
+    if (rc) out.rowCount = rc;
+    // ページは200でも中身が取れていなければエラー扱いにする
+    let dataOk = true, reason = "";
+    if (!httpOk) { dataOk = false; reason = `HTTP ${res.status}`; }
+    else if (src.key === "nomura_index") {
+      const names = (out.rows || []).map((r) => r.name);
+      if (!(names.includes("日経平均") && names.includes("TOPIX"))) { dataOk = false; reason = "指数（日経平均/TOPIX）が取得できていません"; }
+    } else if (src.key.startsWith("kabutan_contrib")) {
+      if (rc < 5) { dataOk = false; reason = `寄与度データが不足（${rc}件）`; }
+    } else if (src.key.startsWith("kabutan_sector")) {
+      if (rc < 5) { dataOk = false; reason = `業種データが不足（${rc}件）`; }
+    } else if (src.key.startsWith("nikkei_")) {
+      if (rc < 5) { dataOk = false; reason = `ランキングデータが不足（${rc}件）`; }
+    }
+    out.ok = dataOk;
+    if (!dataOk) out.reason = reason;
   } catch (e) {
     out.ok = false;
     out.error = String(e && e.message ? e.message : e);
