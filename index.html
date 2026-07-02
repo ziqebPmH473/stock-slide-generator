@@ -574,9 +574,10 @@ Appier G|4180|818|+96|+13.30%
       <strong style="font-size:11px;color:var(--text);">台本</strong>
       <button class="btn-sm" onclick="autoRunScript(this)">🔁 再生成</button>
       <button class="btn-mini" onclick="autoCopyEl('autoScriptOut',this)">📋</button>
+      <span id="autoScriptStats" style="font-size:11px;color:var(--accent);font-weight:600;">0文字 ／ 目安 0秒</span>
       <span id="autoScriptStatus" style="font-size:11px;color:var(--muted)"></span>
     </div>
-    <textarea id="autoScriptOut" style="min-height:300px !important;"></textarea>
+    <textarea id="autoScriptOut" style="min-height:300px !important;" oninput="updateScriptStats()"></textarea>
 
     <div class="a2" style="margin-top:8px;align-items:end;">
       <div>
@@ -889,6 +890,7 @@ function apInit(){
   // フィールド復元
   apLoadAll();
   apBindAutosave();
+  try{ updateScriptStats(); }catch(e){}
   // 基準日
   const dateInput = document.getElementById('apBaseDate');
   if (dateInput){
@@ -1898,8 +1900,20 @@ async function autoRunExtract(promptKey, outId, statusId, btn, full, modelCls){
   }catch(e){ if(st) st.textContent='❌ '+e.message; }
   finally{ if(btn){ btn.disabled=false; btn.textContent=old; } }
 }
+// 台本の文字数と読み上げ目安時間を表示（音声化前の目安。日本語ナレーション約7文字/秒で換算）
+const TTS_CHARS_PER_SEC = 7;
+function updateScriptStats(){
+  const el = document.getElementById('autoScriptStats');
+  if(!el) return;
+  const raw = (document.getElementById('autoScriptOut').value || '');
+  const chars = raw.replace(/\s/g,'').length; // 空白・改行を除いた文字数
+  const sec = Math.round(chars / TTS_CHARS_PER_SEC);
+  const m = Math.floor(sec/60), s = sec%60;
+  const timeStr = m>0 ? `${m}分${s}秒` : `${s}秒`;
+  el.textContent = `${chars.toLocaleString()}文字 ／ 目安 ${timeStr}`;
+}
 // 台本＝現行の台本プロンプト＋全情報（銘柄名一覧表・ChatGPTレポート含む）を最上位モデルで生成
-function autoRunScript(btn){ return autoRunExtract('script', 'autoScriptOut', 'autoScriptStatus', btn, true, 'high'); }
+async function autoRunScript(btn){ const r = await autoRunExtract('script', 'autoScriptOut', 'autoScriptStatus', btn, true, 'high'); updateScriptStats(); return r; }
 
 // base64 → ArrayBuffer
 function autoB64ToBuf(b64){ const bin=atob(b64); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i); return u.buffer; }
@@ -2266,6 +2280,7 @@ function autoSyncThumb(){
 apInit();
 autoLoadCustomDict();
 autoInitDict();
+switchTab('auto');   // 初期表示を自動版にする
 </script>
 </body>
 </html>
