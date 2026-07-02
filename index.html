@@ -9,6 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="meigara-dict.js"></script>
 <style>
 /* ===== APP UI ===== */
@@ -423,10 +424,10 @@ Appier G|4180|818|+96|+13.30%
     <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
       <div class="auto-row">
         <strong style="font-size:11px;color:var(--text);">銘柄一覧（東証data_j）</strong>
-        <label class="btn-sm" style="cursor:pointer;">📁 CSV取込<input type="file" accept=".csv,text/csv" style="display:none" onchange="autoImportMeigaraCsv(this)"></label>
+        <label class="btn-sm" style="cursor:pointer;">📁 Excel/CSV取込<input type="file" accept=".xls,.xlsx,.csv" style="display:none" onchange="autoImportMeigaraCsv(this)"></label>
         <span style="font-size:10px;color:var(--muted);">現在：<span id="autoDictInfo2">-</span></span>
       </div>
-      <p style="margin-bottom:0;">JPXの最新data_j（CSV）を取り込むと辞書を更新（ブラウザに保存・次回以降有効）。</p>
+      <p style="margin-bottom:0;">JPXの最新data_j（Excel .xls/.xlsx またはCSV）を取り込むと辞書を更新（ブラウザに保存・次回以降有効）。</p>
     </div>
   </div>
 
@@ -1653,20 +1654,28 @@ function autoInitDict(){
     thumbEl.value = (cur && cur.trim()) ? cur : THUMB_DEFAULT;
   }
 }
-// 東証data_j CSV（Shift-JIS）を取り込んで辞書を更新（localStorage保存）
+// 東証data_j（Excel .xls/.xlsx またはCSV/Shift-JIS）を取り込んで辞書を更新（localStorage保存）
 function autoImportMeigaraCsv(input){
   const file=input.files && input.files[0]; if(!file) return;
+  const isExcel=/\.(xlsx?|xlsm)$/i.test(file.name);
   const r=new FileReader();
   r.onload=e=>{
     try{
-      const buf=e.target.result;
-      let text; try{ text=new TextDecoder('shift_jis').decode(buf); }catch(_){ text=new TextDecoder('utf-8').decode(buf); }
-      const lines=text.split(/\r?\n/).filter(l=>l.trim());
+      let rows; // [ [col0,col1,col2,...], ... ]
+      if(isExcel){
+        if(typeof XLSX==='undefined'){ alert('Excel読込ライブラリが読み込めていません。CSVでお試しください。'); input.value=''; return; }
+        const wb=XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        rows=XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:''});
+      } else {
+        let text; try{ text=new TextDecoder('shift_jis').decode(e.target.result); }catch(_){ text=new TextDecoder('utf-8').decode(e.target.result); }
+        rows=text.split(/\r?\n/).filter(l=>l.trim()).map(l=>l.split(','));
+      }
       const map={}; let cnt=0;
-      for(let i=1;i<lines.length;i++){ const c=lines[i].split(','); const code=(c[1]||'').trim(); const name=(c[2]||'').trim(); if(!code||!name) continue; map[code]=name; cnt++; }
-      if(cnt<1000){ alert('銘柄が少なすぎます（'+cnt+'件）。東証data_jのCSVか確認してください。'); input.value=''; return; }
-      const date=((lines[1]||'').split(',')[0]||'').trim();
-      window.MEIGARA_DICT=map; window.MEIGARA_META={source:'取込CSV', date, count:cnt};
+      for(let i=1;i<rows.length;i++){ const code=String((rows[i]&&rows[i][1])||'').trim(); const name=String((rows[i]&&rows[i][2])||'').trim(); if(!code||!name) continue; map[code]=name; cnt++; }
+      if(cnt<1000){ alert('銘柄が少なすぎます（'+cnt+'件）。東証data_j（銘柄一覧）のファイルか確認してください。'); input.value=''; return; }
+      const date=String((rows[1]&&rows[1][0])||'').trim();
+      window.MEIGARA_DICT=map; window.MEIGARA_META={source:isExcel?'取込Excel':'取込CSV', date, count:cnt};
       localStorage.setItem(SSG_PREFIX+'meigara_dict', JSON.stringify(map));
       localStorage.setItem(SSG_PREFIX+'meigara_meta', JSON.stringify(window.MEIGARA_META));
       autoInitDict();
