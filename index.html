@@ -389,15 +389,15 @@ Appier G|4180|818|+96|+13.30%
       <button class="astep-pill" data-k="3" onclick="autoStep('3')"><b>③</b>音声生成</button>
       <button class="astep-pill" data-k="4" onclick="autoStep('4')"><b>④</b>スライド</button>
       <button class="astep-pill" data-k="7" onclick="autoStep('7')"><b>⑤</b>出力</button>
-      <button class="astep-gear" id="autoGearBtn" title="モデル設定" onclick="autoToggleCfg()" style="margin-left:6px;width:auto;padding:0 12px;">⚙</button>
+      <button class="astep-pill" data-k="s" onclick="autoStep('s')" style="margin-left:6px;"><b>⚙</b>設定</button>
     </div>
   </div>
   <div class="card">
+    <h2>⚙ 設定</h2>
     <div class="auto-row">
-      <strong style="font-size:12px;color:var(--text);">モデル設定</strong>
-      <label style="margin-left:auto;color:var(--muted);">テキストモデル</label>
+      <strong style="font-size:12px;color:var(--text);">テキストモデル</strong>
       <select id="autoModelOverride" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
-        <option value="" selected>自動（④⑤台本は上位／他は3.1Lite・上限で自動降格）</option>
+        <option value="" selected>自動（生成系は上位／抽出等は3.1Lite・上限で自動降格）</option>
         <option value="gemini-3.5-flash">Gemini 3.5 Flash（20回/日）</option>
         <option value="gemini-3-flash-preview">Gemini 3 Flash（20回/日）</option>
         <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite（500回/日）</option>
@@ -419,6 +419,14 @@ Appier G|4180|818|+96|+13.30%
       <details><summary style="font-size:11px;color:var(--muted);cursor:pointer;">全情報テキストを開く</summary>
         <textarea id="autoFullInfo"></textarea>
       </details>
+    </div>
+    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+      <div class="auto-row">
+        <strong style="font-size:11px;color:var(--text);">銘柄一覧（東証data_j）</strong>
+        <label class="btn-sm" style="cursor:pointer;">📁 CSV取込<input type="file" accept=".csv,text/csv" style="display:none" onchange="autoImportMeigaraCsv(this)"></label>
+        <span style="font-size:10px;color:var(--muted);">現在：<span id="autoDictInfo2">-</span></span>
+      </div>
+      <p style="margin-bottom:0;">JPXの最新data_j（CSV）を取り込むと辞書を更新（ブラウザに保存・次回以降有効）。</p>
     </div>
   </div>
 
@@ -1405,12 +1413,13 @@ const AUTO_STEPS = [
   {k:'3', label:'③ 音声生成'},
   {k:'4', label:'④ スライド'},
   {k:'7', label:'⑤ 出力'},
+  {k:'s', label:'⚙ 設定'},
 ];
 let _autoStepsReady = false;
 function autoInitSteps(){
   if(_autoStepsReady) return;
   const cards = [...document.querySelectorAll('#tabAuto > .card')];
-  const map = [['1','① データ取得'],['1','データ抽出'],['2','ファクトチェック'],['3','音声生成'],['4','スライド'],['7','出力']];
+  const map = [['s','設定'],['1','① データ取得'],['1','データ抽出'],['2','ファクトチェック'],['3','音声生成'],['4','スライド'],['7','出力']];
   cards.forEach(function(c){
     const h = c.querySelector('h2');
     if(!h){ c.classList.add('astep-cfg'); return; }
@@ -1628,17 +1637,44 @@ function autoConvertNames(){
   autoPersistState();
 }
 
+// ブラウザに保存済みの銘柄辞書があれば同梱版より優先して使う
+function autoLoadCustomDict(){
+  try{
+    const d=localStorage.getItem(SSG_PREFIX+'meigara_dict');
+    if(d){ window.MEIGARA_DICT=JSON.parse(d); const m=localStorage.getItem(SSG_PREFIX+'meigara_meta'); if(m) window.MEIGARA_META=JSON.parse(m); }
+  }catch(e){}
+}
 function autoInitDict(){
-  const info = document.getElementById('autoDictInfo');
-  if(info){
-    if(autoDictReady() && window.MEIGARA_META) info.textContent = `${window.MEIGARA_META.count}銘柄 / 基準日 ${window.MEIGARA_META.date}`;
-    else info.textContent = '⚠ 辞書未読込';
-  }
+  const txt = (autoDictReady() && window.MEIGARA_META) ? `${window.MEIGARA_META.count}銘柄 / 基準日 ${window.MEIGARA_META.date}` : '⚠ 辞書未読込';
+  ['autoDictInfo','autoDictInfo2'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=txt; });
   const thumbEl = document.getElementById('autoThumbInput');
   if(thumbEl && !thumbEl.value.trim()){
     const cur=(document.getElementById('thumbInput')||{}).value;
     thumbEl.value = (cur && cur.trim()) ? cur : THUMB_DEFAULT;
   }
+}
+// 東証data_j CSV（Shift-JIS）を取り込んで辞書を更新（localStorage保存）
+function autoImportMeigaraCsv(input){
+  const file=input.files && input.files[0]; if(!file) return;
+  const r=new FileReader();
+  r.onload=e=>{
+    try{
+      const buf=e.target.result;
+      let text; try{ text=new TextDecoder('shift_jis').decode(buf); }catch(_){ text=new TextDecoder('utf-8').decode(buf); }
+      const lines=text.split(/\r?\n/).filter(l=>l.trim());
+      const map={}; let cnt=0;
+      for(let i=1;i<lines.length;i++){ const c=lines[i].split(','); const code=(c[1]||'').trim(); const name=(c[2]||'').trim(); if(!code||!name) continue; map[code]=name; cnt++; }
+      if(cnt<1000){ alert('銘柄が少なすぎます（'+cnt+'件）。東証data_jのCSVか確認してください。'); input.value=''; return; }
+      const date=((lines[1]||'').split(',')[0]||'').trim();
+      window.MEIGARA_DICT=map; window.MEIGARA_META={source:'取込CSV', date, count:cnt};
+      localStorage.setItem(SSG_PREFIX+'meigara_dict', JSON.stringify(map));
+      localStorage.setItem(SSG_PREFIX+'meigara_meta', JSON.stringify(window.MEIGARA_META));
+      autoInitDict();
+      alert('銘柄一覧を更新しました（'+cnt+'件 / 基準日 '+date+'）。');
+    }catch(err){ alert('取込に失敗: '+err.message); }
+    finally{ input.value=''; }
+  };
+  r.readAsArrayBuffer(file);
 }
 
 // ==================== 自動版：④ スライド文章生成 ====================
@@ -2203,6 +2239,7 @@ function autoSyncThumb(){
 }
 
 apInit();
+autoLoadCustomDict();
 autoInitDict();
 </script>
 </body>
