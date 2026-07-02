@@ -408,6 +408,14 @@ Appier G|4180|818|+96|+13.30%
     </div>
     <p>モデルを固定するとそのモデルで実行（テスト用）。「自動」で各工程の推奨モデル＋上限時の自動降格になります。</p>
     <div class="auto-row" style="margin-top:8px;">
+      <strong style="font-size:12px;color:var(--text);">音声生成方式</strong>
+      <select id="autoTtsSplitMode" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
+        <option value="1" selected>一括生成（推奨・台本の欠落を防止）</option>
+        <option value="2">分割生成（長文を2分割して連結）</option>
+      </select>
+    </div>
+    <p>一括生成は台本全体を1回で音声化します（分割時に台本の一部が失われる問題を回避）。分割生成は長い台本を2分割して連結します（後半のこもり/声変わり対策）。</p>
+    <div class="auto-row" style="margin-top:8px;">
       <button class="btn-sm" id="autoTestBtn" onclick="autoTestGemini()">🔌 AI接続テスト</button>
       <span id="autoTestStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
@@ -823,7 +831,7 @@ async function apPasteTextbox(id){
 function apClearTextarea(id){ apSetValue(id, ''); }
 
 const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thumbInput',
-  'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoFullInfo','autoSnsThumb','autoSnsX','autoScriptOut','autoThumbInput'];
+  'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoFullInfo','autoSnsThumb','autoSnsX','autoScriptOut','autoThumbInput','autoTtsSplitMode'];
 const THUMB_DEFAULT = '日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%';
 const SSG_PREFIX = 'ssg_';
 
@@ -1264,12 +1272,12 @@ function buildSlides(data){
 let previewTimer=null;
 function debouncedPreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(renderPreview, 700); }
 
-// 自動版プレビューは 表紙・指数・上昇率・ニュース の4枚のみ表示
-const AUTO_PREVIEW_ONLY = ['表紙','指数','上昇率','ニュース'];
+// ④スライド工程のプレビューは サムネ・指数・上昇率・ニュース の4枚（表紙→サムネに差し替え）
+const AUTO_PREVIEW_SLIDE = ['サムネ','指数','上昇率','ニュース'];
 function renderPreview(){
   renderPreviewInto('previewArea','previewCard');
-  renderPreviewInto('autoPreviewArea','autoPreviewCard', AUTO_PREVIEW_ONLY);   // ④スライド内プレビュー
-  renderPreviewInto('autoPreviewArea2','autoPreviewCard2', AUTO_PREVIEW_ONLY); // ⑤出力の下部プレビュー
+  renderPreviewInto('autoPreviewArea','autoPreviewCard', AUTO_PREVIEW_SLIDE);   // ④スライド：4枚（表紙→サムネ）
+  renderPreviewInto('autoPreviewArea2','autoPreviewCard2');                     // ⑤出力：全スライド表示
 }
 function renderPreviewInto(areaId, cardId, onlyKeys){
   const area=document.getElementById(areaId);
@@ -1506,15 +1514,21 @@ function autoRestoreState(){
   }catch(e){}
 }
 
-// ②「スライド文章を生成」＝スライド→全情報→サムネ/X→台本 まで一括生成
+// ②ファクトチェック完了＝台本→（全情報）→サムネ案&X投稿文→スライド文章 の順で一括生成
+// サムネ案・X投稿文は同じ「全情報」を材料に1回でまとめて生成するため、材料の全情報を必要となる前に生成しておく
 async function autoRunAll(realBtn){
   if(!AutoState.sources){ alert('先に①データ取得を実行してください'); return; }
   const o=realBtn.textContent; realBtn.disabled=true;
   try{
-    autoStatus('スライド文章を生成中…（1/4）'); realBtn.textContent='生成中…(1/4)'; await autoGenerateSlideText();
-    autoStatus('全情報を生成中…（2/4）'); realBtn.textContent='生成中…(2/4)'; await autoGenerateFullInfo({});
-    autoStatus('サムネ案・X投稿文を生成中…（3/4）'); realBtn.textContent='生成中…(3/4)'; await autoGenerateSns({});
-    autoStatus('台本を生成中…（4/4）'); realBtn.textContent='生成中…(4/4)'; await autoRunScript({});
+    // 1. 台本（取得データ＋ファクトチェックのみで生成可能・他工程に依存しない）
+    autoStatus('台本を生成中…（1/3）'); realBtn.textContent='生成中…(1/3)'; await autoRunScript({});
+    // サムネ案・X投稿文の材料となる「全情報」を先に生成（順序考慮）
+    autoStatus('全情報を生成中…（サムネ/X用の材料）'); realBtn.textContent='生成中…(全情報)'; await autoGenerateFullInfo({});
+    const fullInfo=(document.getElementById('autoFullInfo')||{}).value||'';
+    // 2. サムネ案＆X投稿文（全情報を材料にまとめて生成）
+    autoStatus('サムネ案・X投稿文を生成中…（2/3）'); realBtn.textContent='生成中…(2/3)'; await autoGenerateSns({}, fullInfo);
+    // 3. スライド文章
+    autoStatus('スライド文章を生成中…（3/3）'); realBtn.textContent='生成中…(3/3)'; await autoGenerateSlideText();
     autoStatusDone('✅ 一括生成が完了しました'); realBtn.textContent='✅ 完了'; autoStep('3');
   }catch(e){ autoStatusDone('❌ '+e.message); realBtn.textContent='❌ '+e.message; }
   finally{ realBtn.disabled=false; setTimeout(()=>{realBtn.textContent=o;},2500); autoPersistState(); }
@@ -1979,11 +1993,13 @@ async function autoGenerateTts(btn){
   const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…';
   { const p=document.getElementById('autoTtsPlayer'); if(p) p.innerHTML=''; }
   try{
-    // 台本を約半分ずつに分割して生成し、連結（後半のこもり/声変わり対策）
-    const parts=autoSplitScript(text, 2);
+    // 音声生成方式（設定）：一括生成=1（台本全体を1回）／分割生成=2（2分割して連結）
+    const splitMode=parseInt((document.getElementById('autoTtsSplitMode')||{}).value||'1',10)||1;
+    const parts=autoSplitScript(text, splitMode);
     const b64s=[]; let sec=0;
     for(let i=0;i<parts.length;i++){
-      st.textContent=`音声生成中… ${i+1}/${parts.length}`; autoStatus(`音声を生成中…（${i+1}/${parts.length}分割）`);
+      st.textContent = parts.length>1 ? `音声生成中… ${i+1}/${parts.length}` : '音声生成中…';
+      autoStatus(parts.length>1 ? `音声を生成中…（${i+1}/${parts.length}分割）` : '音声を生成中…（一括）');
       const res=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ text:parts[i], voice, model })});
       const data=await res.json();
       if(!data.ok) throw new Error(data.error||'不明なエラー');
@@ -2152,9 +2168,9 @@ function autoCopySummaryImagePrompt(btn){
 function autoCopyCoverImagePrompt(btn){ autoClip(AP_COPY_TEXTS.photoTop, btn); }
 
 // ⑤ Geminiで直接生成（サムネ／X投稿文を別々の欄へ）
-async function autoGenerateSns(btn){
+async function autoGenerateSns(btn, materialOverride){
   const st=document.getElementById('autoSnsStatus');
-  const material=autoSnsMaterial();
+  const material=(materialOverride && materialOverride.trim()) ? materialOverride.trim() : autoSnsMaterial();
   if(!material){ st.textContent='先に④スライド文章か④\'全情報を生成してください'; return; }
   const prompt = AUTO_SNS_PROMPT;
   const resources=[{label:'本日の東証マーケットのデータ・サマリ', text: material}];
