@@ -1456,6 +1456,12 @@ function autoStep(k){
   document.querySelectorAll('#tabAuto .astep').forEach(function(c){ c.classList.toggle('current', c.dataset.astep===k); });
   document.querySelectorAll('#autoPills .astep-pill').forEach(function(p){ p.classList.toggle('active', p.dataset.k===k); });
   window.scrollTo(0, 0);
+  // 工程切替でプレビュー領域が可視になった直後に、実幅で再描画する
+  // （非表示中は clientWidth=0 で幅を過大評価し、初回1列4枚縦積み→2列にズレるのを防ぐ）
+  if(typeof renderPreview==='function'){
+    const has=((document.getElementById('mainInput')||{}).value||'').trim() || ((document.getElementById('thumbInput')||{}).value||'').trim();
+    if(has) renderPreview();
+  }
 }
 function autoStepMove(d){
   const i = AUTO_STEPS.findIndex(function(s){ return s.k===(window.__autoStepK||'1'); });
@@ -1964,11 +1970,17 @@ function autoResplitScript(btn){
 }
 // 台本全文（前半＋後半）をコピー
 function autoCopyScript(btn){ autoClip(autoScriptFull(), btn); }
+// 生成文の無駄な空行を除去（改行が2回以上連続 → 1回に。空白のみの行も空行として除去）
+// ※スライド文章・全情報など構造区切りに空行を使う出力には適用しない
+function autoStripBlankLines(text){
+  return (text||'').replace(/\r\n/g,'\n').replace(/\n[ \t　]*(?=\n)/g,'').trim();
+}
 // 台本＝現行の台本プロンプト＋全情報（銘柄名一覧表・ChatGPTレポート含む）を最上位モデルで生成
 // 生成直後は全文を前半欄に受け取り、中央付近の改行で前半・後半へ自動分割する
 async function autoRunScript(btn){
   const r = await autoRunExtract('script', 'autoScriptOut', 'autoScriptStatus', btn, true, 'high');
   if(r!==undefined){
+    const e1=document.getElementById('autoScriptOut'); if(e1) e1.value=autoStripBlankLines(e1.value); // 無駄な空行を除去
     const e2=document.getElementById('autoScriptOut2'); if(e2) e2.value=''; // 旧・後半をクリア
     autoResplitScript();
   }
@@ -2245,8 +2257,8 @@ async function autoGenerateSns(btn, materialOverride){
     const parts=data.text.split(/\n?===+\n?/);
     const thumb=(parts[0]||'').replace(/^🎨\s*サムネ案\s*/,'').trim();
     const x=(parts[1]||'').replace(/^🕊️?\s*X投稿文\s*/,'').trim();
-    document.getElementById('autoSnsThumb').value = thumb || data.text;
-    document.getElementById('autoSnsX').value = x;
+    document.getElementById('autoSnsThumb').value = autoStripBlankLines(thumb || data.text);
+    document.getElementById('autoSnsX').value = autoStripBlankLines(x);
     autoPersistState();
     st.textContent='✅ 生成完了'+autoModelNote(data);
   }catch(e){ st.textContent='❌ '+e.message; }
