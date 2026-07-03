@@ -411,10 +411,10 @@ Appier G|4180|818|+96|+13.30%
       <strong style="font-size:12px;color:var(--text);">音声生成方式</strong>
       <select id="autoTtsSplitMode" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
         <option value="1" selected>一括生成（推奨・台本の欠落を防止）</option>
-        <option value="2">分割生成（長文を2分割して連結）</option>
+        <option value="2">分割生成（前半・後半を別々に生成して連結）</option>
       </select>
     </div>
-    <p>一括生成は台本全体を1回で音声化します（分割時に台本の一部が失われる問題を回避）。分割生成は長い台本を2分割して連結します（後半のこもり/声変わり対策）。</p>
+    <p>一括生成は台本全体を1回で音声化します（分割時に台本の一部が失われる問題を回避）。分割生成は③音声生成の台本欄「前半／後半」を分割点として2本を生成し連結します（後半のこもり/声変わり対策）。分割点は改行位置で調整でき、「🔀 中央で分割」で中央付近の改行に揃えられます。</p>
     <div class="auto-row" style="margin-top:8px;">
       <button class="btn-sm" id="autoTestBtn" onclick="autoTestGemini()">🔌 AI接続テスト</button>
       <span id="autoTestStatus" style="font-size:11px;color:var(--muted);"></span>
@@ -573,11 +573,21 @@ Appier G|4180|818|+96|+13.30%
     <div class="auto-row">
       <strong style="font-size:11px;color:var(--text);">台本</strong>
       <button class="btn-sm" onclick="autoRunScript(this)">🔁 再生成</button>
-      <button class="btn-mini" onclick="autoCopyEl('autoScriptOut',this)">📋</button>
-      <span id="autoScriptStats" style="font-size:11px;color:var(--accent);font-weight:600;">0文字 ／ 目安 0秒</span>
+      <button class="btn-mini" onclick="autoCopyScript(this)">📋</button>
+      <button class="btn-mini" title="改行位置で前半・後半をほぼ均等に分割し直します" onclick="autoResplitScript(this)">🔀 中央で分割</button>
       <span id="autoScriptStatus" style="font-size:11px;color:var(--muted)"></span>
     </div>
-    <textarea id="autoScriptOut" style="min-height:300px !important;" oninput="updateScriptStats()"></textarea>
+    <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted);margin:2px 0;">
+      <span>前半（分割生成の1本目）</span>
+      <span id="autoScriptStats" style="color:var(--accent);font-weight:600;">0文字 ／ 目安 0秒</span>
+    </div>
+    <textarea id="autoScriptOut" style="min-height:150px !important;" oninput="updateScriptStats()"></textarea>
+    <div style="text-align:center;font-size:11px;color:var(--muted);border-top:1px dashed var(--border);margin:6px 0 4px;padding-top:5px;">✂ 分割点（この境界で前半／後半を別々に音声化。改行位置で調整）</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted);margin:2px 0;">
+      <span>後半（分割生成の2本目）</span>
+      <span id="autoScriptStats2" style="color:var(--accent);font-weight:600;">0文字 ／ 目安 0秒</span>
+    </div>
+    <textarea id="autoScriptOut2" style="min-height:150px !important;" oninput="updateScriptStats()"></textarea>
 
     <div class="a2" style="margin-top:8px;align-items:end;">
       <div>
@@ -832,7 +842,7 @@ async function apPasteTextbox(id){
 function apClearTextarea(id){ apSetValue(id, ''); }
 
 const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thumbInput',
-  'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoFullInfo','autoSnsThumb','autoSnsX','autoScriptOut','autoThumbInput','autoTtsSplitMode'];
+  'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoFullInfo','autoSnsThumb','autoSnsX','autoScriptOut','autoScriptOut2','autoThumbInput','autoTtsSplitMode'];
 const THUMB_DEFAULT = '日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%';
 const SSG_PREFIX = 'ssg_';
 
@@ -1909,18 +1919,62 @@ async function autoRunExtract(promptKey, outId, statusId, btn, full, modelCls){
 }
 // 台本の文字数と読み上げ目安時間を表示（音声化前の目安。日本語ナレーション約7文字/秒で換算）
 const TTS_CHARS_PER_SEC = 7;
-function updateScriptStats(){
-  const el = document.getElementById('autoScriptStats');
-  if(!el) return;
-  const raw = (document.getElementById('autoScriptOut').value || '');
-  const chars = raw.replace(/\s/g,'').length; // 空白・改行を除いた文字数
+function autoFmtScriptStat(raw){
+  const chars = (raw||'').replace(/\s/g,'').length; // 空白・改行を除いた文字数
   const sec = Math.round(chars / TTS_CHARS_PER_SEC);
   const m = Math.floor(sec/60), s = sec%60;
   const timeStr = m>0 ? `${m}分${s}秒` : `${s}秒`;
-  el.textContent = `${chars.toLocaleString()}文字 ／ 目安 ${timeStr}`;
+  return `${chars.toLocaleString()}文字 ／ 目安 ${timeStr}`;
 }
+function updateScriptStats(){
+  const e1 = document.getElementById('autoScriptStats');
+  const e2 = document.getElementById('autoScriptStats2');
+  if(e1) e1.textContent = autoFmtScriptStat((document.getElementById('autoScriptOut')||{}).value);
+  if(e2) e2.textContent = autoFmtScriptStat((document.getElementById('autoScriptOut2')||{}).value);
+}
+// 前半＋後半を結合した台本全文（一括生成・コピー・全文の材料用）
+function autoScriptFull(){
+  const a=((document.getElementById('autoScriptOut')||{}).value||'').trim();
+  const b=((document.getElementById('autoScriptOut2')||{}).value||'').trim();
+  return b ? (a+'\n'+b) : a;
+}
+// 分割生成用パーツ（前半・後半をそのまま。空欄は除外）
+function autoScriptParts(){
+  const a=((document.getElementById('autoScriptOut')||{}).value||'').trim();
+  const b=((document.getElementById('autoScriptOut2')||{}).value||'').trim();
+  return [a,b].filter(Boolean);
+}
+// 文字列を中央付近の「改行位置」で2分割（区切りは必ず改行に揃える。改行が無ければ後半は空）
+function autoSplitAtMiddleNewline(text){
+  const t=(text||'').replace(/\r\n/g,'\n').trim();
+  const idxs=[]; for(let i=0;i<t.length;i++){ if(t[i]==='\n') idxs.push(i); }
+  if(!idxs.length) return [t, ''];
+  const mid=t.length/2;
+  let best=idxs[0];
+  for(const i of idxs){ if(Math.abs(i-mid)<Math.abs(best-mid)) best=i; }
+  return [t.slice(0,best).trim(), t.slice(best+1).trim()];
+}
+// 前半＋後半を結合し直し、中央付近の改行で前半・後半へ分割し直す
+function autoResplitScript(btn){
+  const [a,b]=autoSplitAtMiddleNewline(autoScriptFull());
+  const e1=document.getElementById('autoScriptOut'), e2=document.getElementById('autoScriptOut2');
+  if(e1) e1.value=a; if(e2) e2.value=b;
+  updateScriptStats();
+  if(typeof apSaveField==='function'){ apSaveField('autoScriptOut'); apSaveField('autoScriptOut2'); }
+}
+// 台本全文（前半＋後半）をコピー
+function autoCopyScript(btn){ autoClip(autoScriptFull(), btn); }
 // 台本＝現行の台本プロンプト＋全情報（銘柄名一覧表・ChatGPTレポート含む）を最上位モデルで生成
-async function autoRunScript(btn){ const r = await autoRunExtract('script', 'autoScriptOut', 'autoScriptStatus', btn, true, 'high'); updateScriptStats(); return r; }
+// 生成直後は全文を前半欄に受け取り、中央付近の改行で前半・後半へ自動分割する
+async function autoRunScript(btn){
+  const r = await autoRunExtract('script', 'autoScriptOut', 'autoScriptStatus', btn, true, 'high');
+  if(r!==undefined){
+    const e2=document.getElementById('autoScriptOut2'); if(e2) e2.value=''; // 旧・後半をクリア
+    autoResplitScript();
+  }
+  updateScriptStats();
+  return r;
+}
 
 // base64 → ArrayBuffer
 function autoB64ToBuf(b64){ const bin=atob(b64); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i); return u.buffer; }
@@ -1947,22 +2001,6 @@ function autoBufToMp3(buffer){
   return new Blob(out,{type:'audio/mpeg'});
 }
 // こもり軽減EQ（gemini-voiceと同一仕様。strength 0〜1）＋形式変換。WAV(base64) → {blob, ext}
-// テキストを句点でおおよそn分割（長文の音声が後半こもる/声変わりするのを防ぐ）
-function autoSplitScript(text, n){
-  const t=text.trim();
-  if(n<=1 || t.length<300) return [t];
-  const per=Math.ceil(t.length/n);
-  const parts=[]; let start=0;
-  for(let i=1;i<n;i++){
-    let target=per*i;
-    let cut=t.indexOf('。', target);
-    if(cut<0 || cut>target+per*0.6) cut=t.lastIndexOf('。', target);
-    if(cut<=start) cut=target;
-    parts.push(t.slice(start, cut+1)); start=cut+1;
-  }
-  parts.push(t.slice(start));
-  return parts.map(s=>s.trim()).filter(Boolean);
-}
 // Float32(モノ) → WAV ArrayBuffer
 function autoFloatToWavBuf(s, sr){
   const len=s.length, ab=new ArrayBuffer(44+len*2), v=new DataView(ab);
@@ -2007,16 +2045,16 @@ async function autoProcessAudio(wavBuf, strength, format){
 // ⑦ 台本テキスト → TTS（生成のみ。生の音声をAutoStateに保持）
 async function autoGenerateTts(btn){
   const st=document.getElementById('autoTtsStatus');
-  const text=(document.getElementById('autoScriptOut').value||'').trim();
+  const text=autoScriptFull().trim();
   if(!text){ st.textContent='台本が空です（先に「台本をAI実行」または手入力）'; return; }
   const voice=document.getElementById('autoTtsVoice').value;
   const model=document.getElementById('autoTtsModel').value;
   const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…';
   { const p=document.getElementById('autoTtsPlayer'); if(p) p.innerHTML=''; }
   try{
-    // 音声生成方式（設定）：一括生成=1（台本全体を1回）／分割生成=2（2分割して連結）
+    // 音声生成方式（設定）：一括生成=1（台本全体を1回）／分割生成=2（前半・後半の分割点で2本生成して連結）
     const splitMode=parseInt((document.getElementById('autoTtsSplitMode')||{}).value||'1',10)||1;
-    const parts=autoSplitScript(text, splitMode);
+    const parts = splitMode===2 ? autoScriptParts() : [text];
     const b64s=[]; let sec=0;
     for(let i=0;i<parts.length;i++){
       st.textContent = parts.length>1 ? `音声生成中… ${i+1}/${parts.length}` : '音声生成中…';
