@@ -567,8 +567,7 @@ Appier G|4180|818|+96|+13.30%
       <strong style="font-size:11px;color:var(--text);">台本</strong>
       <button class="btn-sm" onclick="autoRunScript(this)">🔁 再生成</button>
       <button class="btn-mini" onclick="autoCopyScript(this)">📋</button>
-      <button class="btn-mini" title="改行位置で音声①・②へほぼ均等に分割し直します" onclick="autoResplitScript(this)">🔀 中央で分割</button>
-      <button class="btn-mini" title="音声①・②を音声①にまとめます（1本の音声になります）" onclick="autoMergeScript(this)">🔗 1つにまとめる</button>
+      <button class="btn-mini" id="autoSplitToggleBtn" title="音声②が空なら中央の改行で2つに分割、入っていれば1つにまとめます" onclick="autoToggleScriptSplit(this)">🔀 2つに分割</button>
       <span id="autoScriptStatus" style="font-size:11px;color:var(--muted)"></span>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted);margin:2px 0;">
@@ -1935,6 +1934,7 @@ function updateScriptStats(){
   const e2 = document.getElementById('autoScriptStats2');
   if(e1) e1.textContent = autoFmtScriptStat((document.getElementById('autoScriptOut')||{}).value);
   if(e2) e2.textContent = autoFmtScriptStat((document.getElementById('autoScriptOut2')||{}).value);
+  updateSplitToggleLabel();
 }
 // 前半＋後半を結合した台本全文（一括生成・コピー・全文の材料用）
 function autoScriptFull(){
@@ -1972,6 +1972,18 @@ function autoMergeScript(btn){
   if(e1) e1.value=autoScriptFull(); if(e2) e2.value='';
   updateScriptStats();
   if(typeof apSaveField==='function'){ apSaveField('autoScriptOut'); apSaveField('autoScriptOut2'); }
+}
+// 1つのトグル：音声②が空なら「分割」、入っていれば「まとめる」
+function autoToggleScriptSplit(btn){
+  const has2=(((document.getElementById('autoScriptOut2')||{}).value||'').trim())!=='';
+  if(has2) autoMergeScript(btn); else autoResplitScript(btn);
+}
+// トグルボタンの表示を現在の状態に合わせる（②が空→「分割」／入り→「まとめる」）
+function updateSplitToggleLabel(){
+  const btn=document.getElementById('autoSplitToggleBtn');
+  if(!btn) return;
+  const has2=(((document.getElementById('autoScriptOut2')||{}).value||'').trim())!=='';
+  btn.textContent = has2 ? '🔗 1つにまとめる' : '🔀 2つに分割';
 }
 // 台本全文（前半＋後半）をコピー
 function autoCopyScript(btn){ autoClip(autoScriptFull(), btn); }
