@@ -644,6 +644,10 @@ Appier G|4180|818|+96|+13.30%
       <label style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);"><span>🔆 クリア感補正の強さ（こもり軽減）</span><b id="autoTtsClarityVal" style="color:var(--accent);">5%</b></label>
       <input type="range" id="autoTtsClarity" min="0" max="100" value="5" style="width:100%;cursor:pointer;margin:2px 0;" oninput="document.getElementById('autoTtsClarityVal').textContent=this.value+'%'" onchange="autoRenderTts()">
     </div>
+    <div id="autoTtsGapRow">
+      <label style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);"><span>⏸ 結合部分の間（無音・分割生成時のみ）</span><b id="autoTtsGapVal" style="color:var(--accent);">250ms</b></label>
+      <input type="range" id="autoTtsGap" min="0" max="1000" step="50" value="250" style="width:100%;cursor:pointer;margin:2px 0;" oninput="document.getElementById('autoTtsGapVal').textContent=this.value+'ms'" onchange="autoRenderTts()">
+    </div>
     <div id="autoTtsPlayer" style="margin-top:8px;"></div>
     <div class="auto-row" style="margin-top:8px;">
       <label style="display:flex;align-items:center;gap:5px;">出力形式
@@ -2022,14 +2026,28 @@ function autoFloatToWavBuf(s, sr){
   return ab;
 }
 // 複数のWAV(base64) → 連結した1本のWAV ArrayBuffer
-async function autoConcatWavs(b64list){
+// 境界（内側）の無音をトリムして揃え、チャンク間に gapMs の無音を挟む。
+// ・先頭チャンクの頭／末尾チャンクの尻は元のまま（外側は触らない）
+// ・トリムで語尾を切らないよう guard 分だけ残す
+async function autoConcatWavs(b64list, gapMs){
+  if(!b64list || b64list.length===0) return new ArrayBuffer(44);
   if(b64list.length===1) return autoB64ToBuf(b64list[0]);
   const AC=window.AudioContext||window.webkitAudioContext; const ctx=new AC();
   const chans=[]; let sr=24000;
   for(const b of b64list){ const d=await ctx.decodeAudioData(autoB64ToBuf(b).slice(0)); chans.push(d.getChannelData(0).slice()); sr=d.sampleRate; }
   ctx.close();
-  const total=chans.reduce((a,c)=>a+c.length,0), all=new Float32Array(total); let off=0;
-  for(const c of chans){ all.set(c,off); off+=c.length; }
+  const thr=0.006, guard=Math.round(sr*0.03); // 無音しきい値／語尾を残すガード30ms
+  const trimmed=chans.map((c,idx)=>{
+    let start=0, end=c.length;
+    if(idx>0){ while(start<end && Math.abs(c[start])<thr) start++; start=Math.max(0, start-guard); }               // 内側の頭を詰める
+    if(idx<chans.length-1){ while(end>start && Math.abs(c[end-1])<thr) end--; end=Math.min(c.length, end+guard); } // 内側の尻を詰める
+    return c.subarray(start,end);
+  });
+  const gap=Math.max(0, Math.round(sr*(gapMs==null?0:gapMs)/1000));
+  const silence=new Float32Array(gap);
+  const pieces=[]; trimmed.forEach((c,i)=>{ if(i>0) pieces.push(silence); pieces.push(c); });
+  const total=pieces.reduce((a,p)=>a+p.length,0), all=new Float32Array(total); let off=0;
+  for(const p of pieces){ all.set(p,off); off+=p.length; }
   return autoFloatToWavBuf(all, sr);
 }
 async function autoProcessAudio(wavBuf, strength, format){
@@ -2077,7 +2095,7 @@ async function autoGenerateTts(btn){
       b64s.push(data.audioBase64); sec+=(data.seconds||0);
     }
     st.textContent='連結・加工中…';
-    AutoState.ttsRaw=await autoConcatWavs(b64s); AutoState.ttsSeconds=Math.round(sec); AutoState.ttsVoice=voice;
+    AutoState.ttsParts=b64s; AutoState.ttsSeconds=Math.round(sec); AutoState.ttsVoice=voice; AutoState.ttsRaw=null; // 生の分割音声を保持（間の調整で再連結）
     await autoRenderTts();
     autoStatusDone('✅ 音声生成完了');
     autoStep('4');
@@ -2087,15 +2105,20 @@ async function autoGenerateTts(btn){
 // 保持した生音声に、現在のスライダー/形式を適用してプレイヤー・DLを更新（再生成なし）
 let autoTtsUrl=null;
 async function autoRenderTts(){
-  if(!AutoState.ttsRaw) return;
+  if(!AutoState.ttsParts || !AutoState.ttsParts.length) return;
   const st=document.getElementById('autoTtsStatus');
   const player=document.getElementById('autoTtsPlayer');
   const dl=document.getElementById('autoTtsDlBtn');
   const strength=(parseInt(document.getElementById('autoTtsClarity').value,10)||0)/100;
+  const gapMs=parseInt((document.getElementById('autoTtsGap')||{}).value||'0',10)||0;
   const format=document.getElementById('autoTtsFormat').value;
+  // 「間」スライダーは分割（2本以上）のときだけ意味がある
+  { const gapRow=document.getElementById('autoTtsGapRow'); if(gapRow) gapRow.style.display = AutoState.ttsParts.length>1 ? '' : 'none'; }
   if(st) st.textContent='補正・変換中…';
   try{
-    const { blob, ext }=await autoProcessAudio(AutoState.ttsRaw, strength, format);
+    // 分割音声を現在の「間」で連結し直してから補正・変換（保持した生音声から再構築・再生成なし）
+    const raw=await autoConcatWavs(AutoState.ttsParts, gapMs);
+    const { blob, ext }=await autoProcessAudio(raw, strength, format);
     if(autoTtsUrl) URL.revokeObjectURL(autoTtsUrl);
     autoTtsUrl=URL.createObjectURL(blob);
     if(player) player.innerHTML=`<audio controls src="${autoTtsUrl}" style="width:100%;"></audio>`;
