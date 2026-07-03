@@ -482,12 +482,12 @@ Appier G|4180|818|+96|+13.30%
   <div class="card">
     <h2>② ファクトチェック</h2>
     <div class="auto-row">
-      <button class="btn-sm" onclick="autoPaste('autoFcReport')">📋 貼付</button>
+      <button class="btn-sm" onclick="autoPasteFc(this)">📋 貼付</button>
       <button class="btn-sm" onclick="document.getElementById('autoFcReport').value='';">✕ クリア</button>
     </div>
     <textarea id="autoFcReport" placeholder="ChatGPTのレポートを貼付" style="min-height:140px;"></textarea>
     <div class="auto-row" style="margin-top:6px;">
-      <button class="btn-copy" onclick="autoCopyFactCheck(this)">✅ CK</button>
+      <button class="btn-copy" id="autoFcCkBtn" onclick="autoCopyFactCheck(this)">✅ CK</button>
       <button class="btn-copy" onclick="autoCopyFactCheckFix(this)">🔧 修正</button>
     </div>
     <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
@@ -1831,9 +1831,16 @@ function autoClip(text, btn){
   else apFallbackCopy(text, done);
 }
 async function autoPaste(id){
-  const el=document.getElementById(id); if(!el) return;
-  try{ el.value = await navigator.clipboard.readText(); el.dispatchEvent(new Event('input',{bubbles:true})); }
-  catch(e){ el.focus(); alert('クリップボードを読み取れませんでした。Ctrl+V で貼り付けてください。'); }
+  const el=document.getElementById(id); if(!el) return false;
+  try{ el.value = await navigator.clipboard.readText(); el.dispatchEvent(new Event('input',{bubbles:true})); return true; }
+  catch(e){ el.focus(); alert('クリップボードを読み取れませんでした。Ctrl+V で貼り付けてください。'); return false; }
+}
+// ②ファクトチェック：レポートを貼り付けた直後に「✅ CK」（FC用プロンプトのコピー）も実行する
+// ※貼付＝クリップボード読取→CK＝クリップボード書込 の順なので上書き競合は起きない
+async function autoPasteFc(pasteBtn){
+  const ok = await autoPaste('autoFcReport');
+  if(!ok) return; // 貼付失敗（Ctrl+V案内）時はクリップボードを上書きしない
+  autoCopyFactCheck(document.getElementById('autoFcCkBtn'));
 }
 function autoReasonVars(){ const v=autoVars(); v.textbox=(document.getElementById('autoRankOut')||{}).value||''; return v; }
 function autoCopyReasonNews(btn){ autoClip(apReplaceVariables(AP_COPY_TEXTS.top10ReasonNewsNG, autoReasonVars()), btn); }
