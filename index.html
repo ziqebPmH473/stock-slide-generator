@@ -638,8 +638,8 @@ Appier G|4180|818|+96|+13.30%
       <input type="range" id="autoTtsClarity" min="0" max="100" value="5" style="width:100%;cursor:pointer;margin:2px 0;" oninput="document.getElementById('autoTtsClarityVal').textContent=this.value+'%'" onchange="autoRenderTts()">
     </div>
     <div id="autoTtsGapRow">
-      <label style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);"><span>⏸ 結合部分の間（無音・分割生成時のみ）</span><b id="autoTtsGapVal" style="color:var(--accent);">250ms</b></label>
-      <input type="range" id="autoTtsGap" min="0" max="1000" step="50" value="250" style="width:100%;cursor:pointer;margin:2px 0;" oninput="document.getElementById('autoTtsGapVal').textContent=this.value+'ms'" onchange="autoRenderTts()">
+      <label style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);"><span>⏸ 結合部分の間（無音・分割生成時のみ）</span><b id="autoTtsGapVal" style="color:var(--accent);">500ms</b></label>
+      <input type="range" id="autoTtsGap" min="0" max="1000" step="50" value="500" style="width:100%;cursor:pointer;margin:2px 0;" oninput="document.getElementById('autoTtsGapVal').textContent=this.value+'ms'" onchange="autoRenderTts()">
     </div>
     <div id="autoTtsPlayer" style="margin-top:8px;"></div>
     <div class="auto-row" style="margin-top:8px;">
