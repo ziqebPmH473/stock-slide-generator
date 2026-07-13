@@ -491,6 +491,14 @@ Appier G|4180|818|+96|+13.30%
   <div class="card">
     <h2>④ スライド</h2>
 
+    <!-- ③で生成した音声をこの工程でも試聴・DLできるようにミラー表示 -->
+    <div id="autoTtsPlayer4Wrap" style="display:none;margin:0 0 12px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;">
+      <div class="auto-row" style="margin-bottom:6px;"><strong style="font-size:12px;color:var(--text);">🔊 生成した音声</strong>
+        <span id="autoTtsStatus4" style="font-size:11px;color:var(--muted);"></span></div>
+      <div id="autoTtsPlayer4"></div>
+      <a id="autoTtsDlBtn4" class="btn-sm" style="display:none;text-decoration:none;margin-top:6px;" download="narration.mp3">⬇ ダウンロード</a>
+    </div>
+
     <strong style="font-size:12px;color:var(--text);">ChatGPT用プロンプト</strong>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0;">
       <button class="btn-copy" onclick="autoCopyImagePrompt(this)">📋 ニュース画像</button>
@@ -2086,52 +2094,70 @@ async function autoGenerateTts(btn){
   if(!text){ st.textContent='台本が空です（先に「台本をAI実行」または手入力）'; return; }
   const voice=document.getElementById('autoTtsVoice').value;
   const model=document.getElementById('autoTtsModel').value;
+  const st4=document.getElementById('autoTtsStatus4');
   const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…';
   { const p=document.getElementById('autoTtsPlayer'); if(p) p.innerHTML=''; }
+  // ④スライドの音声枠を表示＆リセット（押した瞬間に④へ進むので、進捗はここで見せる）
+  { const p4=document.getElementById('autoTtsPlayer4'); if(p4) p4.innerHTML=''; }
+  { const dl4=document.getElementById('autoTtsDlBtn4'); if(dl4) dl4.style.display='none'; }
+  { const w4=document.getElementById('autoTtsPlayer4Wrap'); if(w4) w4.style.display=''; }
+  if(st4) st4.textContent='音声を生成中…';
+  autoStep('4');   // 押した瞬間に④スライドタブへ進む（生成はこのまま裏で継続）
   try{
     // 各テキストボックス＝1音声。空欄（空白のみ含む）のボックスは自動で対象外。
     // 1本にしたい場合は1つのボックスにだけ入力すればよい（＝従来の一括に相当）。
     const parts = autoScriptParts();
     const b64s=[]; let sec=0;
     for(let i=0;i<parts.length;i++){
-      st.textContent = parts.length>1 ? `音声生成中… ${i+1}/${parts.length}` : '音声生成中…';
+      const prog = parts.length>1 ? `音声生成中… ${i+1}/${parts.length}` : '音声生成中…';
+      st.textContent = prog; if(st4) st4.textContent = prog;
       autoStatus(parts.length>1 ? `音声を生成中…（${i+1}/${parts.length}分割）` : '音声を生成中…（一括）');
       const res=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ text:parts[i], voice, model })});
       const data=await res.json();
       if(!data.ok) throw new Error(data.error||'不明なエラー');
       b64s.push(data.audioBase64); sec+=(data.seconds||0);
     }
-    st.textContent='連結・加工中…';
+    st.textContent='連結・加工中…'; if(st4) st4.textContent='連結・加工中…';
     AutoState.ttsParts=b64s; AutoState.ttsSeconds=Math.round(sec); AutoState.ttsVoice=voice; AutoState.ttsRaw=null; // 生の分割音声を保持（間の調整で再連結）
     await autoRenderTts();
     autoStatusDone('✅ 音声生成完了');
-    autoStep('4');
-  }catch(e){ st.textContent='❌ '+e.message; autoStatusDone('❌ 音声生成失敗'); }
+  }catch(e){ st.textContent='❌ '+e.message; if(st4) st4.textContent='❌ '+e.message; autoStatusDone('❌ 音声生成失敗'); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
 // 保持した生音声に、現在のスライダー/形式を適用してプレイヤー・DLを更新（再生成なし）
 let autoTtsUrl=null;
 async function autoRenderTts(){
   if(!AutoState.ttsParts || !AutoState.ttsParts.length) return;
+  // ③音声生成タブと④スライドタブの両方に同じプレイヤー/DL/状態を表示
   const st=document.getElementById('autoTtsStatus');
   const player=document.getElementById('autoTtsPlayer');
   const dl=document.getElementById('autoTtsDlBtn');
+  const st4=document.getElementById('autoTtsStatus4');
+  const player4=document.getElementById('autoTtsPlayer4');
+  const dl4=document.getElementById('autoTtsDlBtn4');
+  const wrap4=document.getElementById('autoTtsPlayer4Wrap');
   const strength=(parseInt(document.getElementById('autoTtsClarity').value,10)||0)/100;
   const gapMs=parseInt((document.getElementById('autoTtsGap')||{}).value||'0',10)||0;
   const format=document.getElementById('autoTtsFormat').value;
   // 「間」スライダーは分割（2本以上）のときだけ意味がある
   { const gapRow=document.getElementById('autoTtsGapRow'); if(gapRow) gapRow.style.display = AutoState.ttsParts.length>1 ? '' : 'none'; }
-  if(st) st.textContent='補正・変換中…';
+  if(st) st.textContent='補正・変換中…'; if(st4) st4.textContent='補正・変換中…';
+  if(wrap4) wrap4.style.display='';
   try{
     // 分割音声を現在の「間」で連結し直してから補正・変換（保持した生音声から再構築・再生成なし）
     const raw=await autoConcatWavs(AutoState.ttsParts, gapMs);
     const { blob, ext }=await autoProcessAudio(raw, strength, format);
     if(autoTtsUrl) URL.revokeObjectURL(autoTtsUrl);
     autoTtsUrl=URL.createObjectURL(blob);
-    if(player) player.innerHTML=`<audio controls src="${autoTtsUrl}" style="width:100%;"></audio>`;
+    const audioHtml=`<audio controls src="${autoTtsUrl}" style="width:100%;"></audio>`;
+    const summary=`✅ ${AutoState.ttsSeconds}秒 / ${AutoState.ttsVoice} / ${ext.toUpperCase()}${strength>0?('・補正'+Math.round(strength*100)+'%'):''}`;
+    if(player) player.innerHTML=audioHtml;
     if(dl){ dl.href=autoTtsUrl; dl.download='narration.'+ext; dl.textContent='⬇ '+ext.toUpperCase(); dl.style.display=''; }
-    if(st) st.textContent=`✅ ${AutoState.ttsSeconds}秒 / ${AutoState.ttsVoice} / ${ext.toUpperCase()}${strength>0?('・補正'+Math.round(strength*100)+'%'):''}`;
-  }catch(e){ if(st) st.textContent='❌ 加工失敗: '+e.message; }
+    if(st) st.textContent=summary;
+    if(player4) player4.innerHTML=audioHtml;
+    if(dl4){ dl4.href=autoTtsUrl; dl4.download='narration.'+ext; dl4.textContent='⬇ '+ext.toUpperCase(); dl4.style.display=''; }
+    if(st4) st4.textContent=summary;
+  }catch(e){ if(st) st.textContent='❌ 加工失敗: '+e.message; if(st4) st4.textContent='❌ 加工失敗: '+e.message; }
 }
 
 function autoCopyEl(id, btn){
