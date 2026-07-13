@@ -2009,20 +2009,12 @@ async function autoRunScript(btn){
 function autoB64ToBuf(b64){ const bin=atob(b64); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i); return u.buffer; }
 // 重い同期処理の途中でUIに制御を返すためのyield（フリーズ防止）
 function _ttsYield(){ return new Promise(r=>setTimeout(r)); }
-// AudioBuffer(モノ) → WAV Blob（長尺でもUIをブロックしないよう分割してyield）
-async function autoBufToWav(buffer){
-  const sr=buffer.sampleRate, s=buffer.getChannelData(0), len=s.length;
-  const ab=new ArrayBuffer(44+len*2), v=new DataView(ab);
-  const w=(o,str)=>{ for(let i=0;i<str.length;i++)v.setUint8(o+i,str.charCodeAt(i)); };
-  w(0,'RIFF'); v.setUint32(4,36+len*2,true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true);
-  v.setUint16(20,1,true); v.setUint16(22,1,true); v.setUint32(24,sr,true); v.setUint32(28,sr*2,true);
-  v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,len*2,true);
-  let o=44; for(let i=0;i<len;i++){ let x=Math.max(-1,Math.min(1,s[i])); v.setInt16(o,x<0?x*0x8000:x*0x7FFF,true); o+=2; if((i&0x3FFFF)===0x3FFFF) await _ttsYield(); }
-  return new Blob([ab],{type:'audio/wav'});
+// Float32(モノ)+サンプルレート → WAV Blob（長尺でもUIをブロックしないよう分割してyield）
+async function autoBufToWav(s, sr){
+  return new Blob([await autoFloatToWavBuf(s, sr)],{type:'audio/wav'});
 }
-// AudioBuffer(モノ) → MP3 Blob（lamejs／長尺でもUIをブロックしないよう定期的にyield）
-async function autoBufToMp3(buffer){
-  const sr=buffer.sampleRate, s=buffer.getChannelData(0);
+// Float32(モノ)+サンプルレート → MP3 Blob（lamejs／長尺でもUIをブロックしないよう定期的にyield）
+async function autoBufToMp3(s, sr){
   const enc=new lamejs.Mp3Encoder(1, sr, 160);
   const i16=new Int16Array(s.length);
   for(let i=0;i<s.length;i++){ let x=Math.max(-1,Math.min(1,s[i])); i16[i]=x<0?x*0x8000:x*0x7FFF; if((i&0x3FFFF)===0x3FFFF) await _ttsYield(); }
@@ -2040,17 +2032,18 @@ async function autoFloatToWavBuf(s, sr){
   let o=44; for(let i=0;i<len;i++){ let x=Math.max(-1,Math.min(1,s[i])); v.setInt16(o,x<0?x*0x8000:x*0x7FFF,true); o+=2; if((i&0x3FFFF)===0x3FFFF) await _ttsYield(); }
   return ab;
 }
-// 複数のWAV(base64) → 連結した1本のWAV ArrayBuffer
+// 複数のWAV(base64) → 連結した1本の音声サンプル { samples:Float32, sampleRate }
 // 境界（内側）の無音をトリムして揃え、チャンク間に gapMs の無音を挟む。
 // ・先頭チャンクの頭／末尾チャンクの尻は元のまま（外側は触らない）
 // ・トリムで語尾を切らないよう guard 分だけ残す
+// ※WAVへ書き出さず生のサンプルを返す（変換側で再デコード不要にして高速化）
 async function autoConcatWavs(b64list, gapMs){
-  if(!b64list || b64list.length===0) return new ArrayBuffer(44);
-  if(b64list.length===1) return autoB64ToBuf(b64list[0]);
+  if(!b64list || b64list.length===0) return { samples:new Float32Array(0), sampleRate:24000 };
   const AC=window.AudioContext||window.webkitAudioContext; const ctx=new AC();
   const chans=[]; let sr=24000;
   for(const b of b64list){ const d=await ctx.decodeAudioData(autoB64ToBuf(b).slice(0)); chans.push(d.getChannelData(0).slice()); sr=d.sampleRate; }
   ctx.close();
+  if(b64list.length===1) return { samples:chans[0], sampleRate:sr };
   const thr=0.006, guard=Math.round(sr*0.03); // 無音しきい値／語尾を残すガード30ms
   const trimmed=chans.map((c,idx)=>{
     let start=0, end=c.length;
@@ -2063,29 +2056,26 @@ async function autoConcatWavs(b64list, gapMs){
   const pieces=[]; trimmed.forEach((c,i)=>{ if(i>0) pieces.push(silence); pieces.push(c); });
   const total=pieces.reduce((a,p)=>a+p.length,0), all=new Float32Array(total); let off=0;
   for(const p of pieces){ all.set(p,off); off+=p.length; }
-  return await autoFloatToWavBuf(all, sr);
+  return { samples:all, sampleRate:sr };
 }
-async function autoProcessAudio(wavBuf, strength, format){
-  const buf=wavBuf;
-  if(strength<=0 && format==='wav') return { blob:new Blob([buf],{type:'audio/wav'}), ext:'wav' };
-  const AC=window.AudioContext||window.webkitAudioContext;
-  const actx=new AC();
-  let decoded=await actx.decodeAudioData(buf.slice(0));
-  actx.close();
-  let rendered=decoded;
-  if(strength>0){
+// { samples:Float32, sampleRate } を受け取り、EQ補正（任意）→ 形式変換して {blob, ext} を返す
+async function autoProcessAudio(concat, strength, format){
+  let samples=concat.samples, sr=concat.sampleRate;
+  if(strength>0 && samples.length){
     await _ttsYield();  // 補正前に一度UIへ制御を返す（「補正・変換中…」の描画・フリーズ感の軽減）
-    const off=new OfflineAudioContext(1, decoded.length, decoded.sampleRate);
-    const src=off.createBufferSource(); src.buffer=decoded;
+    const off=new OfflineAudioContext(1, samples.length, sr);
+    const srcBuf=off.createBuffer(1, samples.length, sr); srcBuf.copyToChannel(samples, 0);
+    const src=off.createBufferSource(); src.buffer=srcBuf;
     const lowCut=off.createBiquadFilter(); lowCut.type='lowshelf'; lowCut.frequency.value=250; lowCut.gain.value=-6*strength;  // こもりの元(低中域)を削る
     const shelf=off.createBiquadFilter(); shelf.type='highshelf'; shelf.frequency.value=3000; shelf.gain.value=12*strength;   // 明瞭感
     const peak=off.createBiquadFilter(); peak.type='peaking'; peak.frequency.value=5000; peak.Q.value=1.0; peak.gain.value=6*strength; // 子音の芯
     const gain=off.createGain(); gain.gain.value=0.85;                                                                        // クリップ防止
     src.connect(lowCut); lowCut.connect(shelf); shelf.connect(peak); peak.connect(gain); gain.connect(off.destination);
     src.start(0);
-    rendered=await off.startRendering();
+    const rendered=await off.startRendering();
+    samples=rendered.getChannelData(0); sr=rendered.sampleRate;
   }
-  return format==='mp3' ? { blob:await autoBufToMp3(rendered), ext:'mp3' } : { blob:await autoBufToWav(rendered), ext:'wav' };
+  return format==='mp3' ? { blob:await autoBufToMp3(samples, sr), ext:'mp3' } : { blob:await autoBufToWav(samples, sr), ext:'wav' };
 }
 
 // ⑦ 台本テキスト → TTS（生成のみ。生の音声をAutoStateに保持）
