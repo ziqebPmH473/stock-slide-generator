@@ -1867,7 +1867,8 @@ async function autoPasteFc(pasteBtn){
 function autoReasonVars(){ const v=autoVars(); v.textbox=(document.getElementById('autoRankOut')||{}).value||''; return v; }
 function autoCopyReasonNews(btn){ autoClip(apReplaceVariables(AP_COPY_TEXTS.top10ReasonNewsNG, autoReasonVars()), btn); }
 function autoCopyFactCheck(btn){
-  const base=apReplaceVariables(AP_COPY_TEXTS.top10ReasonNewsNG, autoReasonVars());
+  // ファクトチェックの--指示--には@iterative-fact-check-and-revise（理由ニュース生成時のみ有効なマーカー）は含めない
+  const base=apReplaceVariables(AP_COPY_TEXTS.top10ReasonNewsNG, autoReasonVars()).replace(/^@iterative-fact-check-and-revise\s*/, '');
   const report=(document.getElementById('autoFcReport').value||'').trim();
   const final=`以下のレポートは、以下の指示でAIが生成したものです。\nレポートのファクトチェックを行い、誤っている個所と指示に沿っていない箇所のみを指摘してください。\n指摘は件数が多くても構わないので、すべて指摘してください。\n指摘がある場合には、指摘箇所、指摘内容、修正後内容を記載してください。\nレイアウトや出力形式に関する指摘は不要です。\n\n--指示--\n${base}\n\n--レポート--\n\n${report}`;
   autoClip(final, btn);
