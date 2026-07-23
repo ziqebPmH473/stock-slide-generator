@@ -398,9 +398,11 @@ Appier G|4180|818|+96|+13.30%
     <div class="auto-row">
       <strong style="font-size:12px;color:var(--text);">テキストモデル</strong>
       <select id="autoModelOverride" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
-        <option value="" selected>自動（生成系は上位／抽出等は3.1Lite・上限で自動降格）</option>
+        <option value="" selected>自動（生成系は上位／抽出等は3.5Lite・上限で自動降格）</option>
+        <option value="gemini-3.6-flash">Gemini 3.6 Flash（20回/日）</option>
         <option value="gemini-3.5-flash">Gemini 3.5 Flash（20回/日）</option>
         <option value="gemini-3-flash-preview">Gemini 3 Flash（20回/日）</option>
+        <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite（500回/日）</option>
         <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite（500回/日）</option>
         <option value="gemini-2.5-flash">Gemini 2.5 Flash（20回/日）</option>
         <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite（20回/日）</option>
@@ -1505,8 +1507,8 @@ function autoModelChain(cls){
   const ov=(document.getElementById('autoModelOverride')||{}).value||'';
   if(ov) return [ov];
   return cls==='high'
-    ? ['gemini-3.5-flash','gemini-3-flash-preview','gemini-3.1-flash-lite','gemini-2.5-flash']
-    : ['gemini-3.1-flash-lite','gemini-3-flash-preview','gemini-2.5-flash-lite','gemini-2.5-flash'];
+    ? ['gemini-3.6-flash','gemini-3.5-flash','gemini-3-flash-preview','gemini-3.1-flash-lite','gemini-2.5-flash']
+    : ['gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-3-flash-preview','gemini-2.5-flash-lite','gemini-2.5-flash'];
 }
 // 使用モデル/降格の表示用サフィックス
 function autoModelNote(data){
@@ -2372,7 +2374,7 @@ async function autoTestGemini(){
   try{
     const res=await fetch('/api/analyze',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ prompt:'「接続テスト成功」とだけ日本語で返してください。', models:['gemini-3.1-flash-lite'] })
+      body:JSON.stringify({ prompt:'「接続テスト成功」とだけ日本語で返してください。', models:['gemini-3.5-flash-lite'] })
     });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'不明なエラー');
