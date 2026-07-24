@@ -409,6 +409,11 @@ Appier G|4180|818|+96|+13.30%
       </select>
     </div>
     <p>モデルを固定するとそのモデルで実行（テスト用）。「自動」で各工程の推奨モデル＋上限時の自動降格になります。</p>
+    <div class="auto-row" style="margin-top:6px;flex-wrap:wrap;">
+      <strong style="font-size:12px;color:var(--text);">固定ハッシュタグ</strong>
+      <input id="autoFixedHashtags" type="text" placeholder="例：#株式投資 #日本株" style="flex:1;min-width:180px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
+    </div>
+    <p>X投稿文の末尾に、生成されたハッシュタグに続けて自動で付加します（スペース区切り／改行区切りどちらも可）。空欄なら付加しません。</p>
     <p>音声は③音声生成の台本欄の各ボックス（音声①／音声②…）ごとに1本ずつ生成し、連結します。空欄（空白のみ含む）のボックスは対象外。1本にしたい場合は1つのボックスにだけ入力してください。連結時の間は⑤出力の「間（無音）」で調整できます。</p>
     <div class="auto-row" style="margin-top:8px;">
       <button class="btn-sm" id="autoTestBtn" onclick="autoTestGemini()">🔌 AI接続テスト</button>
@@ -850,6 +855,8 @@ function apClearTextarea(id){ apSetValue(id, ''); }
 
 const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thumbInput',
   'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoFullInfo','autoSnsThumb','autoSnsX','autoScriptOut','autoScriptOut2','autoThumbInput'];
+// 設定系（テキスト一括リセットの対象外・常時保持）
+const AP_SETTING_IDS = ['autoFixedHashtags'];
 const THUMB_DEFAULT = '日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%';
 const SSG_PREFIX = 'ssg_';
 
@@ -859,7 +866,7 @@ function apSaveField(id){
   localStorage.setItem(SSG_PREFIX + id, el.value);
 }
 function apLoadAll(){
-  for (const id of AP_STORAGE_IDS){
+  for (const id of AP_STORAGE_IDS.concat(AP_SETTING_IDS)){
     const el = document.getElementById(id);
     if (!el) continue;
     const v = localStorage.getItem(SSG_PREFIX + id);
@@ -867,7 +874,7 @@ function apLoadAll(){
   }
 }
 function apBindAutosave(){
-  for (const id of AP_STORAGE_IDS){
+  for (const id of AP_STORAGE_IDS.concat(AP_SETTING_IDS)){
     const el = document.getElementById(id);
     if (!el) continue;
     el.addEventListener('input', () => apSaveField(id));
@@ -2297,6 +2304,16 @@ function autoCopySummaryImagePrompt(btn){
 // 表紙画像プロンプト（photoTop・現行と同一）
 function autoCopyCoverImagePrompt(btn){ autoClip(AP_COPY_TEXTS.photoTop, btn); }
 
+// 固定ハッシュタグを投稿文末尾に付加（重複は除外）
+function autoAppendFixedHashtags(text){
+  const raw=((document.getElementById('autoFixedHashtags')||{}).value||'').trim();
+  if(!raw) return text;
+  const tags=raw.split(/[\s　]+/).filter(Boolean).map(t=>t.startsWith('#')?t:'#'+t);
+  const existing=new Set((text.match(/#[^\s#　]+/g)||[]));
+  const add=tags.filter(t=>!existing.has(t));
+  if(!add.length) return text;
+  return (text.replace(/\s+$/,'')+' '+add.join(' ')).trim();
+}
 // ⑤ Geminiで直接生成（サムネ／X投稿文を別々の欄へ）
 async function autoGenerateSns(btn, materialOverride){
   const st=document.getElementById('autoSnsStatus');
@@ -2317,7 +2334,7 @@ async function autoGenerateSns(btn, materialOverride){
     const thumb=(parts[0]||'').replace(/^🎨\s*サムネ案\s*/,'').trim();
     const x=(parts[1]||'').replace(/^🕊️?\s*X投稿文\s*/,'').trim();
     document.getElementById('autoSnsThumb').value = autoStripBlankLines(thumb || data.text);
-    document.getElementById('autoSnsX').value = autoStripBlankLines(x);
+    document.getElementById('autoSnsX').value = autoAppendFixedHashtags(autoStripBlankLines(x));
     autoPersistState();
     st.textContent='✅ 生成完了'+autoModelNote(data);
   }catch(e){ st.textContent='❌ '+e.message; }
