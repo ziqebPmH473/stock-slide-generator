@@ -2134,6 +2134,12 @@ async function autoGenerateTts(btn){
   }catch(e){ st.textContent='❌ '+e.message; if(st4) st4.textContent='❌ '+e.message; autoStatusDone('❌ 音声生成失敗'); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
+// 音声ファイル名：tsemarket_基準日（yyyymmdd）
+function autoAudioFileName(ext){
+  const v=(document.getElementById('autoBaseDate')||{}).value||'';
+  const d=v.replace(/-/g,'') || (()=>{ const n=new Date(); return `${n.getFullYear()}${String(n.getMonth()+1).padStart(2,'0')}${String(n.getDate()).padStart(2,'0')}`; })();
+  return `tsemarket_${d}.${ext}`;
+}
 // 保持した生音声に、現在のスライダー/形式を適用してプレイヤー・DLを更新（再生成なし）
 let autoTtsUrl=null;
 async function autoRenderTts(){
@@ -2162,10 +2168,10 @@ async function autoRenderTts(){
     const audioHtml=`<audio controls src="${autoTtsUrl}" style="width:100%;"></audio>`;
     const summary=`✅ ${AutoState.ttsSeconds}秒 / ${AutoState.ttsVoice} / ${ext.toUpperCase()}${strength>0?('・補正'+Math.round(strength*100)+'%'):''}`;
     if(player) player.innerHTML=audioHtml;
-    if(dl){ dl.href=autoTtsUrl; dl.download='narration.'+ext; dl.textContent='⬇ '+ext.toUpperCase(); dl.style.display=''; }
+    if(dl){ dl.href=autoTtsUrl; dl.download=autoAudioFileName(ext); dl.textContent='⬇ '+ext.toUpperCase(); dl.style.display=''; }
     if(st) st.textContent=summary;
     if(player4) player4.innerHTML=audioHtml;
-    if(dl4){ dl4.href=autoTtsUrl; dl4.download='narration.'+ext; dl4.textContent='⬇ '+ext.toUpperCase(); dl4.style.display=''; }
+    if(dl4){ dl4.href=autoTtsUrl; dl4.download=autoAudioFileName(ext); dl4.textContent='⬇ '+ext.toUpperCase(); dl4.style.display=''; }
     if(st4) st4.textContent=summary;
   }catch(e){ if(st) st.textContent='❌ 加工失敗: '+e.message; if(st4) st4.textContent='❌ 加工失敗: '+e.message; }
 }
