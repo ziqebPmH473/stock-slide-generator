@@ -1188,6 +1188,7 @@ const VTHUMB = {
   paddingX:  56,     // 帯の左右余白 (px)
   lineHeight:1.14,   // 行間（枠内で改行したときの行送り）
   maxLines:  3,      // 1段あたりの最大行数（改行を入れていない場合の自動折返し上限）
+  fontScale2:1.35,   // 2段構成のときの基本フォントサイズ倍率（帯が広いので大きめに）
   ratios3:   [0.34,0.34,0.32],   // 3段構成のときの各段の高さ比率
   ratios2:   [0.50,0.50],        // 2段構成のときの各段の高さ比率
   // 上部バー
@@ -1308,29 +1309,41 @@ function slideVThumb(key){
   const sz = VTHUMB_SIZES[key] || VTHUMB_SIZES['916'];
   const W = sz.w, H = sz.h;
   const contentH = Math.min(H, Math.round(W*1.25));   // 文字を置く中央エリア（4:5相当）
-  const padV = Math.round((H-contentH)/2);
   const n = vThumbBandCount();
   const ratios = (n===2 ? VTHUMB.ratios2 : VTHUMB.ratios3);
-  const bodyH = contentH - VTHUMB.headH - VTHUMB.footH;
+  // 2段構成：上下のバーは中央に寄せず画像の上端・下端に置き、帯だけを中央に配置する
+  // 3段構成：従来どおり上下バーごと中央エリア（4:5相当）に収める
+  let padTop, padBot, bodyH;
+  if(n===2){
+    bodyH = Math.min(contentH, H-VTHUMB.headH-VTHUMB.footH);
+    padTop = Math.round((H-VTHUMB.headH-VTHUMB.footH-bodyH)/2);
+    padBot = H-VTHUMB.headH-VTHUMB.footH-bodyH-padTop;
+  }else{
+    padTop = Math.round((H-contentH)/2);
+    padBot = H-contentH-padTop;
+    bodyH  = contentH-VTHUMB.headH-VTHUMB.footH;
+  }
   const heights = ratios.map(r=>Math.round(bodyH*r));
   heights[heights.length-1] = bodyH - heights.slice(0,-1).reduce((a,b)=>a+b,0);
   const texts = vThumbTexts();
   const usable = W-VTHUMB.paddingX*2;
+  const scale = (n===2 ? VTHUMB.fontScale2 : 1);   // 2段構成は帯が広いぶん文字を大きく
   const bands = texts.map((t,i)=>{
     const st = VTHUMB_BAND_STYLE[i];
     const weight = VTHUMB_WEIGHT[st.weight]();
     const lines = vThumbLines(t);
-    const base = st.bg==='#fff' ? VTHUMB.fontMid : VTHUMB.fontTopBot;
+    const base = Math.round((st.bg==='#fff' ? VTHUMB.fontMid : VTHUMB.fontTopBot)*scale);
     const fs = vThumbFit(lines, base, usable, heights[i], weight);
     return vThumbBand(lines, fs, weight, heights[i], st.bg, st.color);
   }).join('');
+  const gapTop = `<div style="background:#000;height:${padTop}px;"></div>`;
+  const gapBot = `<div style="background:#000;height:${padBot}px;"></div>`;
+  const inner = (n===2)
+    ? `${vThumbHeader()}${gapTop}${bands}${gapBot}${vThumbFooter()}`
+    : `${gapTop}${vThumbHeader()}${bands}${vThumbFooter()}${gapBot}`;
   return `<div class="slide" id="s-vthumb" style="width:${W}px;height:${H}px;background:#000;">
   <div style="display:flex;flex-direction:column;height:${H}px;">
-    <div style="background:#000;height:${padV}px;"></div>
-    ${vThumbHeader()}
-    ${bands}
-    ${vThumbFooter()}
-    <div style="background:#000;flex:1;"></div>
+    ${inner}
   </div>
 </div>`;
 }
