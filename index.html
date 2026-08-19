@@ -684,7 +684,28 @@ Appier G|4180|818|+96|+13.30%
           <option value="916">9:16（1080×1920）ストーリー/リール</option>
         </select>
       </label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);">構成
+        <select id="vThumbBands" onchange="vThumbBandsChanged()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
+          <option value="3" selected>3段構成</option>
+          <option value="2">2段構成</option>
+        </select>
+      </label>
       <span id="vThumbStatus" style="font-size:11px;color:var(--muted);"></span>
+    </div>
+    <div style="margin-top:6px;">
+      <div class="auto-row">
+        <strong style="font-size:11px;color:var(--text);">縦型サムネの文言（枠ごとに1段・枠内の改行がそのまま改行位置）</strong>
+        <button class="btn-mini" onclick="vThumbSyncFromThumb(true)" title="サムネ文言を「：」で分割して取り込みます">📥 サムネ文言から取込</button>
+        <span style="font-size:10px;color:var(--muted);"><span style="color:#ff914d">*橙*</span><span style="color:#5ce1e6">#水#</span><span style="color:#ffde59">%黄%</span></span>
+      </div>
+      <div class="a2" style="margin-top:4px;">
+        <div><span style="font-size:10px;color:var(--muted);">1段目（黒帯）</span>
+          <textarea id="vThumbL1" style="min-height:48px !important;" oninput="renderVThumbPreview()"></textarea></div>
+        <div><span style="font-size:10px;color:var(--muted);">2段目（白帯）</span>
+          <textarea id="vThumbL2" style="min-height:48px !important;" oninput="renderVThumbPreview()"></textarea></div>
+      </div>
+      <div id="vThumbL3Box" style="margin-top:4px;"><span style="font-size:10px;color:var(--muted);">3段目（黒帯）</span>
+        <textarea id="vThumbL3" style="min-height:48px !important;" oninput="renderVThumbPreview()"></textarea></div>
     </div>
     <div id="vThumbPreviewWrap" style="margin-top:6px;display:none;"><div class="preview-slide-wrap" id="vThumbPreview" title="クリックでダウンロード" onclick="downloadVThumb(document.getElementById('vThumbBtn'))"></div></div>
 
@@ -876,7 +897,7 @@ async function apPasteTextbox(id){
 function apClearTextarea(id){ apSetValue(id, ''); }
 
 const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thumbInput',
-  'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoFullInfo','autoSnsThumb','autoSnsX','autoScriptOut','autoScriptOut2','autoThumbInput','autoScriptFinal'];
+  'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoFullInfo','autoSnsThumb','autoSnsX','autoScriptOut','autoScriptOut2','autoThumbInput','autoScriptFinal','vThumbL1','vThumbL2','vThumbL3'];
 // 設定系（テキスト一括リセットの対象外・常時保持）
 const AP_SETTING_IDS = ['autoFixedHashtags'];
 const THUMB_DEFAULT = '日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%';
@@ -1157,23 +1178,50 @@ function slideThumb(text){
 }
 
 // ==================== 縦型サムネ（SNS用・Instagram等）====================
-// 横サムネ（1280×720）と同じ「黒／白／黒」3段構成を縦に組み直したもの。
-// 9:16 は上下に黒の余白を足し、文字は中央の 4:5 相当エリアに収める（UI被り対策）。
+// 上部に「マーケット速報＋日付」バー、下部に黒バー（右に「タップで動画を再生」）を置き、
+// その間に本文の帯（2段構成／3段構成を選択可）を積む。
+// 各段は別々の入力枠（1段目/2段目/3段目）で編集し、枠内の改行はそのまま改行位置になる。
 const VTHUMB_SIZES = { '45':{w:1080,h:1350,label:'4x5'}, '916':{w:1080,h:1920,label:'9x16'} };
 const VTHUMB = {
-  rTop:      0.32,   // 上段の高さ比率（中央エリアに対して）
-  rMid:      0.36,   // 中段の高さ比率
-  fontMid:   210,    // 中段 基本フォントサイズ (px) ← 長い場合は自動縮小＆2行折返し
-  fontTopBot:150,    // 上下段 基本フォントサイズ (px)
-  paddingX:  56,     // 左右余白 (px)
-  lineHeight:1.18,   // 折返し時の行間
-  maxLines:  2,      // 1段あたりの最大行数
+  fontMid:   210,    // 白帯（強調段）の基本フォントサイズ (px) ← 長い場合は自動縮小
+  fontTopBot:150,    // 黒帯の基本フォントサイズ (px)
+  paddingX:  56,     // 帯の左右余白 (px)
+  lineHeight:1.14,   // 行間（枠内で改行したときの行送り）
+  maxLines:  3,      // 1段あたりの最大行数（改行を入れていない場合の自動折返し上限）
+  ratios3:   [0.34,0.34,0.32],   // 3段構成のときの各段の高さ比率
+  ratios2:   [0.50,0.50],        // 2段構成のときの各段の高さ比率
+  // 上部バー
+  headH:     78,     // 上部バーの高さ (px)
+  headLabel: 'マーケット速報',
+  headFs:    34,     // 上部バーの文字サイズ (px)
+  headBg:    '#000', // 上部バーの背景色
+  headColor: '#ffffff',
+  headAccent:'#ff914d',  // 見出し左のアクセント色
+  // 下部バー
+  footH:     104,    // 下部バーの高さ (px)
+  footLabel: 'タップで動画を再生',
+  footFs:    38,     // 下部バーの文字サイズ (px)
+  footBg:    '#000', // 下部バーの背景色（白ではなく黒）
+  footColor: '#ff914d',
 };
 
-// 幅と段の高さに収まる最大フォントサイズを求める（実際に計測して最大2行まで折返し）
+// 段ごとの見た目（黒地→白文字／白地→紺文字）
+const VTHUMB_BAND_STYLE = [
+  { bg:'#000', color:'#ffffff', weight:'top' },
+  { bg:'#fff', color:'#004aad', weight:'mid' },
+  { bg:'#000', color:'#ffffff', weight:'bot' },
+];
+const VTHUMB_WEIGHT = { top:()=>THUMB.fontWeightTop, mid:()=>THUMB.fontWeightMid, bot:()=>THUMB.fontWeightBot };
+
+// 1段分のテキスト（改行込み）→ 行ごとのセグメント配列
+function vThumbLines(text){
+  return String(text||'').split('\n').map(s=>s.trim()).filter(Boolean).map(parseThumbnailMarkup);
+}
+
+// 幅と段の高さに収まる最大フォントサイズを求める（改行位置を保ったまま実測）
 let _vThumbMeasureEl=null;
-function vThumbFit(segs, base, usableW, bandH, weight){
-  if(!thumbCharWidth(segs)) return base;
+function vThumbFit(lines, base, usableW, bandH, weight){
+  if(!lines.length) return base;
   if(!_vThumbMeasureEl){
     _vThumbMeasureEl=document.createElement('div');
     _vThumbMeasureEl.style.cssText="position:fixed;left:-5000px;top:0;visibility:hidden;text-align:center;font-family:'Noto Sans JP',sans-serif;";
@@ -1183,70 +1231,154 @@ function vThumbFit(segs, base, usableW, bandH, weight){
   m.style.width=usableW+'px';
   m.style.fontWeight=weight;
   m.style.lineHeight=VTHUMB.lineHeight;
-  m.innerHTML=segsToHtml(segs,'#ffffff');
-  for(let f=base; f>=32; f-=2){
+  m.innerHTML=lines.map(segs=>segsToHtml(segs,'#ffffff')).join('<br>');
+  // 入力された改行数が上限。改行なしなら自動折返しを maxLines まで許容
+  const limit = lines.length>1 ? lines.length : VTHUMB.maxLines;
+  for(let f=base; f>=28; f-=2){
     m.style.fontSize=f+'px';
     const h=m.offsetHeight;
-    const lines=Math.max(1, Math.round(h/(f*VTHUMB.lineHeight)));
-    if(lines<=VTHUMB.maxLines && h<=bandH*0.86) return f;
+    const n=Math.max(1, Math.round(h/(f*VTHUMB.lineHeight)));
+    if(n<=limit && h<=bandH*0.88) return f;
   }
-  return 32;
+  return 28;
 }
 
-function vThumbBand(segs, fs, weight, h, bg, defColor){
+function vThumbBand(lines, fs, weight, h, bg, defColor){
+  const html=lines.map(segs=>segsToHtml(segs, defColor)).join('<br>');
   return `<div style="background:${bg};height:${h}px;display:flex;align-items:center;justify-content:center;padding:0 ${VTHUMB.paddingX}px;overflow:hidden;">
-      <div style="font-size:${fs}px;font-weight:${weight};line-height:${VTHUMB.lineHeight};text-align:center;font-family:'Noto Sans JP',sans-serif;">${segsToHtml(segs, defColor)}</div>
+      <div style="font-size:${fs}px;font-weight:${weight};line-height:${VTHUMB.lineHeight};text-align:center;font-family:'Noto Sans JP',sans-serif;">${html}</div>
     </div>`;
 }
 
-function slideVThumb(text, key){
+// 上部バーに出す日付（例: 2026.8.19）。スライド文章の「日付:」があればそれを使う
+function vThumbDateLabel(){
+  const raw=(parseInput(((document.getElementById('mainInput')||{}).value)||'').date||'').trim();
+  let y,mo,d;
+  const m=raw.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+  if(m){ y=+m[1]; mo=+m[2]; d=+m[3]; }
+  else { const t=new Date(); y=t.getFullYear(); mo=t.getMonth()+1; d=t.getDate(); }
+  return `${y}.${mo}.${d}`;
+}
+
+function vThumbHeader(){
+  const ff=`'Noto Sans JP',sans-serif`;
+  return `<div style="background:${VTHUMB.headBg};height:${VTHUMB.headH}px;display:flex;align-items:center;justify-content:space-between;padding:0 ${VTHUMB.paddingX}px;font-family:${ff};overflow:hidden;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:10px;height:${Math.round(VTHUMB.headFs*1.1)}px;background:${VTHUMB.headAccent};"></div>
+        <div style="font-size:${VTHUMB.headFs}px;font-weight:700;color:${VTHUMB.headColor};line-height:1;">${esc(VTHUMB.headLabel)}</div>
+      </div>
+      <div style="font-size:${VTHUMB.headFs}px;font-weight:700;color:${VTHUMB.headColor};line-height:1;">${esc(vThumbDateLabel())}</div>
+    </div>`;
+}
+
+function vThumbFooter(){
+  const ff=`'Noto Sans JP',sans-serif`;
+  return `<div style="background:${VTHUMB.footBg};height:${VTHUMB.footH}px;display:flex;align-items:center;justify-content:flex-end;padding:0 ${VTHUMB.paddingX}px;font-family:${ff};overflow:hidden;">
+      <div style="font-size:${VTHUMB.footFs}px;font-weight:700;color:${VTHUMB.footColor};line-height:1;">${esc(VTHUMB.footLabel)} ▶</div>
+    </div>`;
+}
+
+// 現在の段構成（2 or 3）
+function vThumbBandCount(){
+  const v=parseInt(((document.getElementById('vThumbBands')||{}).value)||'3',10);
+  return v===2 ? 2 : 3;
+}
+
+// 1〜3段目の入力枠の内容。空なら「サムネ文言」を「：」で分割したものにフォールバック
+function vThumbTexts(){
+  const n=vThumbBandCount();
+  const els=[1,2,3].map(i=>document.getElementById('vThumbL'+i));
+  const vals=els.map(el=>(el&&el.value||'').trim());
+  if(vals.some(Boolean)) return vals.slice(0,n);
+  const src=((document.getElementById('thumbInput')||{}).value||'').trim();
+  return vThumbSplitSource(src, n);
+}
+
+// 「：」区切りのサムネ文言 → 段ごとのテキストへ分割
+function vThumbSplitSource(text, n){
+  const parts=String(text||'').split(/[：:]/).map(s=>s.trim()).filter(Boolean);
+  if(!parts.length) return new Array(n).fill('');
+  if(n===3) return [parts[0]||'', parts[1]||'', parts.slice(2).join('') || ''];
+  // 2段構成：3つ以上ある場合は 1段目にまとめず、末尾を2段目に寄せる
+  if(parts.length<=2) return [parts[0]||'', parts[1]||''];
+  return [parts.slice(0,parts.length-1).join('\n'), parts[parts.length-1]];
+}
+
+function slideVThumb(key){
   const sz = VTHUMB_SIZES[key] || VTHUMB_SIZES['45'];
   const W = sz.w, H = sz.h;
   const contentH = Math.min(H, Math.round(W*1.25));   // 文字を置く中央エリア（4:5相当）
   const padV = Math.round((H-contentH)/2);
-  const hTop = Math.round(contentH*VTHUMB.rTop);
-  const hMid = Math.round(contentH*VTHUMB.rMid);
-  const hBot = contentH-hTop-hMid;
-  const parts = text.split(/[：:]/);
-  const topSegs = parseThumbnailMarkup(parts[0]||'');
-  const midSegs = parseThumbnailMarkup(parts[1]||'');
-  const botSegs = parseThumbnailMarkup(parts[2]||'');
+  const n = vThumbBandCount();
+  const ratios = (n===2 ? VTHUMB.ratios2 : VTHUMB.ratios3);
+  const bodyH = contentH - VTHUMB.headH - VTHUMB.footH;
+  const heights = ratios.map(r=>Math.round(bodyH*r));
+  heights[heights.length-1] = bodyH - heights.slice(0,-1).reduce((a,b)=>a+b,0);
+  const texts = vThumbTexts();
   const usable = W-VTHUMB.paddingX*2;
-  const topFs = vThumbFit(topSegs, VTHUMB.fontTopBot, usable, hTop, THUMB.fontWeightTop);
-  const midFs = vThumbFit(midSegs, VTHUMB.fontMid,    usable, hMid, THUMB.fontWeightMid);
-  const botFs = vThumbFit(botSegs, VTHUMB.fontTopBot, usable, hBot, THUMB.fontWeightBot);
+  const bands = texts.map((t,i)=>{
+    const st = VTHUMB_BAND_STYLE[i];
+    const weight = VTHUMB_WEIGHT[st.weight]();
+    const lines = vThumbLines(t);
+    const base = st.bg==='#fff' ? VTHUMB.fontMid : VTHUMB.fontTopBot;
+    const fs = vThumbFit(lines, base, usable, heights[i], weight);
+    return vThumbBand(lines, fs, weight, heights[i], st.bg, st.color);
+  }).join('');
   return `<div class="slide" id="s-vthumb" style="width:${W}px;height:${H}px;background:#000;">
   <div style="display:flex;flex-direction:column;height:${H}px;">
     <div style="background:#000;height:${padV}px;"></div>
-    ${vThumbBand(topSegs, topFs, THUMB.fontWeightTop, hTop, '#000', '#ffffff')}
-    ${vThumbBand(midSegs, midFs, THUMB.fontWeightMid, hMid, '#fff', '#004aad')}
-    ${vThumbBand(botSegs, botFs, THUMB.fontWeightBot, hBot, '#000', '#ffffff')}
+    ${vThumbHeader()}
+    ${bands}
+    ${vThumbFooter()}
     <div style="background:#000;flex:1;"></div>
   </div>
 </div>`;
 }
 
+// 段数の切替：3段目の入力枠を出し入れしてプレビュー更新
+function vThumbBandsChanged(){
+  const box=document.getElementById('vThumbL3Box');
+  if(box) box.style.display = vThumbBandCount()===3 ? '' : 'none';
+  renderVThumbPreview();
+}
+
+// 「出力」を開いたとき等に、スライドのサムネ文言をコピーして1〜3段目へ分割して流し込む
+// force=false のときは、前回取り込んだ文言から変わっていなければ手編集を残す
+function vThumbSyncFromThumb(force){
+  const src=((document.getElementById('thumbInput')||{}).value||'').trim();
+  if(!src) return;
+  const filled=[1,2,3].some(i=>{ const el=document.getElementById('vThumbL'+i); return el && el.value.trim(); });
+  if(!force && filled && window.__vThumbSrc===src) return;
+  window.__vThumbSrc=src;
+  const parts=vThumbSplitSource(src, vThumbBandCount());
+  [1,2,3].forEach(i=>{
+    const el=document.getElementById('vThumbL'+i);
+    if(!el) return;
+    apSetValue(el.id, parts[i-1]||'');
+  });
+  renderVThumbPreview();
+}
+
 function renderVThumbPreview(){
   const wrap=document.getElementById('vThumbPreviewWrap'), area=document.getElementById('vThumbPreview');
   if(!area) return;
-  const text=((document.getElementById('thumbInput')||{}).value||'').trim();
-  if(!text){ area.innerHTML=''; if(wrap) wrap.style.display='none'; return; }
+  const has=vThumbTexts().some(t=>t&&t.trim());
+  if(!has){ area.innerHTML=''; if(wrap) wrap.style.display='none'; return; }
   const key=((document.getElementById('vThumbRatio')||{}).value)||'45';
   const sz=VTHUMB_SIZES[key];
   const w=160, scale=w/sz.w, h=Math.round(sz.h*scale);
   if(wrap) wrap.style.display='block';
   area.style.cssText=`position:relative;overflow:hidden;border:1px solid var(--border);border-radius:6px;width:${w}px;height:${h}px;cursor:pointer;`;
-  area.innerHTML=`<div style="position:absolute;top:0;left:0;width:${sz.w}px;height:${sz.h}px;transform:scale(${scale});transform-origin:top left;pointer-events:none;">${slideVThumb(text,key)}</div>`;
+  area.innerHTML=`<div style="position:absolute;top:0;left:0;width:${sz.w}px;height:${sz.h}px;transform:scale(${scale});transform-origin:top left;pointer-events:none;">${slideVThumb(key)}</div>`;
 }
 
 async function downloadVThumb(btn){
   const st=document.getElementById('vThumbStatus') || document.getElementById('status');
-  const text=((document.getElementById('thumbInput')||{}).value||'').trim();
-  if(!text){ if(st) st.textContent='サムネ文言が空です'; return; }
+  if(!vThumbTexts().some(t=>t&&t.trim())){ if(st) st.textContent='サムネ文言が空です'; return; }
   const key=((document.getElementById('vThumbRatio')||{}).value)||'45';
   const sz=VTHUMB_SIZES[key];
   const container=document.getElementById('renderTarget');
-  container.innerHTML=slideVThumb(text,key);
+  container.innerHTML=slideVThumb(key);
   if(btn) btn.disabled=true;
   if(st) st.textContent='レンダリング中…';
   await new Promise(r=>setTimeout(r,200));
@@ -1603,6 +1735,8 @@ function autoStep(k){
   document.querySelectorAll('#tabAuto .astep').forEach(function(c){ c.classList.toggle('current', c.dataset.astep===k); });
   document.querySelectorAll('#autoPills .astep-pill').forEach(function(p){ p.classList.toggle('active', p.dataset.k===k); });
   window.scrollTo(0, 0);
+  // ⑤出力を開いたら、スライドのサムネ文言をコピーして縦型サムネの1〜3段目へ分割して流し込む
+  if(k==='7'){ try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); }catch(e){} }
   // 工程切替でプレビュー領域が可視になった直後に、実幅で再描画する
   // （非表示中は clientWidth=0 で幅を過大評価し、初回1列4枚縦積み→2列にズレるのを防ぐ）
   if(typeof renderPreview==='function'){
@@ -2563,6 +2697,8 @@ function autoSyncThumb(){
 }
 
 apInit();
+// Webフォント読込前は文字幅の実測がずれるため、読込完了後に縦型サムネを描き直す
+try{ if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ try{ renderVThumbPreview(); }catch(e){} }); }catch(e){}
 autoLoadCustomDict();
 autoInitDict();
 switchTab('auto');   // 初期表示を自動版にする
