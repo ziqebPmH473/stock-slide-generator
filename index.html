@@ -680,8 +680,8 @@ Appier G|4180|818|+96|+13.30%
       <button class="btn-sm" id="vThumbBtn" onclick="downloadVThumb(this)">⬇ 縦型サムネ（SNS用）</button>
       <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);">サイズ
         <select id="vThumbRatio" onchange="renderVThumbPreview()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
-          <option value="45" selected>4:5（1080×1350）Instagram投稿</option>
-          <option value="916">9:16（1080×1920）ストーリー/リール</option>
+          <option value="916" selected>9:16（1080×1920）ストーリー/リール</option>
+          <option value="45">4:5（1080×1350）Instagram投稿</option>
         </select>
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);">構成
@@ -1305,7 +1305,7 @@ function vThumbSplitSource(text, n){
 }
 
 function slideVThumb(key){
-  const sz = VTHUMB_SIZES[key] || VTHUMB_SIZES['45'];
+  const sz = VTHUMB_SIZES[key] || VTHUMB_SIZES['916'];
   const W = sz.w, H = sz.h;
   const contentH = Math.min(H, Math.round(W*1.25));   // 文字を置く中央エリア（4:5相当）
   const padV = Math.round((H-contentH)/2);
@@ -1364,7 +1364,7 @@ function renderVThumbPreview(){
   if(!area) return;
   const has=vThumbTexts().some(t=>t&&t.trim());
   if(!has){ area.innerHTML=''; if(wrap) wrap.style.display='none'; return; }
-  const key=((document.getElementById('vThumbRatio')||{}).value)||'45';
+  const key=((document.getElementById('vThumbRatio')||{}).value)||'916';
   const sz=VTHUMB_SIZES[key];
   const w=160, scale=w/sz.w, h=Math.round(sz.h*scale);
   if(wrap) wrap.style.display='block';
@@ -1375,7 +1375,7 @@ function renderVThumbPreview(){
 async function downloadVThumb(btn){
   const st=document.getElementById('vThumbStatus') || document.getElementById('status');
   if(!vThumbTexts().some(t=>t&&t.trim())){ if(st) st.textContent='サムネ文言が空です'; return; }
-  const key=((document.getElementById('vThumbRatio')||{}).value)||'45';
+  const key=((document.getElementById('vThumbRatio')||{}).value)||'916';
   const sz=VTHUMB_SIZES[key];
   const container=document.getElementById('renderTarget');
   container.innerHTML=slideVThumb(key);
