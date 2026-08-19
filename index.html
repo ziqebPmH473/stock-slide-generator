@@ -1308,14 +1308,11 @@ function vThumbSplitSource(text, n){
 function slideVThumb(key){
   const sz = VTHUMB_SIZES[key] || VTHUMB_SIZES['916'];
   const W = sz.w, H = sz.h;
-  const contentH = Math.min(H, Math.round(W*1.25));   // 文字を置く中央エリア（4:5相当）
   const n = vThumbBandCount();
   const ratios = (n===2 ? VTHUMB.ratios2 : VTHUMB.ratios3);
-  // 上部バー／下部バーは中央に寄せず、画像の上端・下端に配置する（2段・3段とも）
-  // 帯（本文）だけを中央エリア（4:5相当）の高さに収めて上下中央に置く
-  const bodyH = Math.min(contentH, H-VTHUMB.headH-VTHUMB.footH);
-  const padTop = Math.round((H-VTHUMB.headH-VTHUMB.footH-bodyH)/2);
-  const padBot = H-VTHUMB.headH-VTHUMB.footH-bodyH-padTop;
+  // 上部バーは画像の上端、下部バーは下端に配置し、その間は帯（本文）で全面を埋める。
+  // 黒はバーの範囲と黒帯だけに限定し、余った黒地（帯の上下の余白）は作らない。
+  const bodyH = H-VTHUMB.headH-VTHUMB.footH;
   const heights = ratios.map(r=>Math.round(bodyH*r));
   heights[heights.length-1] = bodyH - heights.slice(0,-1).reduce((a,b)=>a+b,0);
   const texts = vThumbTexts();
@@ -1329,9 +1326,7 @@ function slideVThumb(key){
     const fs = vThumbFit(lines, base, usable, heights[i], weight);
     return vThumbBand(lines, fs, weight, heights[i], st.bg, st.color);
   }).join('');
-  const gapTop = `<div style="background:#000;height:${padTop}px;"></div>`;
-  const gapBot = `<div style="background:#000;height:${padBot}px;"></div>`;
-  const inner = `${vThumbHeader()}${gapTop}${bands}${gapBot}${vThumbFooter()}`;
+  const inner = `${vThumbHeader()}${bands}${vThumbFooter()}`;
   return `<div class="slide" id="s-vthumb" style="width:${W}px;height:${H}px;background:#000;">
   <div style="display:flex;flex-direction:column;height:${H}px;">
     ${inner}
