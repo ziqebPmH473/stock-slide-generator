@@ -373,6 +373,7 @@ Appier G|4180|818|+96|+13.30%
 </div>
 
 <button class="btn" id="downloadBtn" onclick="downloadZip()">⬇ ダウンロード</button>
+<button class="btn-sm" onclick="downloadVThumb(this)">⬇ 縦型サムネ（SNS用）だけダウンロード</button>
 <div id="status"></div>
 
 <div class="card" id="previewCard" style="display:none">
@@ -675,6 +676,27 @@ Appier G|4180|818|+96|+13.30%
       <textarea id="autoSnsX"></textarea>
     </div>
     <button class="btn" style="margin-top:10px;" onclick="downloadZip()">⬇ スライド画像をZIPダウンロード</button>
+    <div class="auto-row" style="margin-top:8px;">
+      <button class="btn-sm" id="vThumbBtn" onclick="downloadVThumb(this)">⬇ 縦型サムネ（SNS用）</button>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);">サイズ
+        <select id="vThumbRatio" onchange="renderVThumbPreview()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
+          <option value="45" selected>4:5（1080×1350）Instagram投稿</option>
+          <option value="916">9:16（1080×1920）ストーリー/リール</option>
+        </select>
+      </label>
+      <span id="vThumbStatus" style="font-size:11px;color:var(--muted);"></span>
+    </div>
+    <div id="vThumbPreviewWrap" style="margin-top:6px;display:none;"><div class="preview-slide-wrap" id="vThumbPreview" title="クリックでダウンロード" onclick="downloadVThumb(document.getElementById('vThumbBtn'))"></div></div>
+
+    <div style="margin-top:12px;">
+      <div class="auto-row">
+        <strong style="font-size:11px;color:var(--text);">台本（音声生成時に音声①②をまとめたもの）</strong>
+        <button class="btn-mini" onclick="autoCopyEl('autoScriptFinal',this)">📋</button>
+        <button class="btn-mini" onclick="autoSyncScriptFinal(true)">🔁 最新に更新</button>
+      </div>
+      <textarea id="autoScriptFinal" readonly style="min-height:160px !important;"></textarea>
+    </div>
+
     <div style="margin-top:12px;">
       <strong style="font-size:11px;color:var(--text);">スライド画像</strong>
       <div id="autoPreviewCard2" style="display:none;margin-top:4px;"><div class="preview-wrap" id="autoPreviewArea2"></div></div>
@@ -854,7 +876,7 @@ async function apPasteTextbox(id){
 function apClearTextarea(id){ apSetValue(id, ''); }
 
 const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thumbInput',
-  'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoFullInfo','autoSnsThumb','autoSnsX','autoScriptOut','autoScriptOut2','autoThumbInput'];
+  'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoFullInfo','autoSnsThumb','autoSnsX','autoScriptOut','autoScriptOut2','autoThumbInput','autoScriptFinal'];
 // 設定系（テキスト一括リセットの対象外・常時保持）
 const AP_SETTING_IDS = ['autoFixedHashtags'];
 const THUMB_DEFAULT = '日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%';
@@ -1134,6 +1156,116 @@ function slideThumb(text){
 </div>`;
 }
 
+// ==================== 縦型サムネ（SNS用・Instagram等）====================
+// 横サムネ（1280×720）と同じ「黒／白／黒」3段構成を縦に組み直したもの。
+// 9:16 は上下に黒の余白を足し、文字は中央の 4:5 相当エリアに収める（UI被り対策）。
+const VTHUMB_SIZES = { '45':{w:1080,h:1350,label:'4x5'}, '916':{w:1080,h:1920,label:'9x16'} };
+const VTHUMB = {
+  rTop:      0.32,   // 上段の高さ比率（中央エリアに対して）
+  rMid:      0.36,   // 中段の高さ比率
+  fontMid:   210,    // 中段 基本フォントサイズ (px) ← 長い場合は自動縮小＆2行折返し
+  fontTopBot:150,    // 上下段 基本フォントサイズ (px)
+  paddingX:  56,     // 左右余白 (px)
+  lineHeight:1.18,   // 折返し時の行間
+  maxLines:  2,      // 1段あたりの最大行数
+};
+
+// 幅と段の高さに収まる最大フォントサイズを求める（実際に計測して最大2行まで折返し）
+let _vThumbMeasureEl=null;
+function vThumbFit(segs, base, usableW, bandH, weight){
+  if(!thumbCharWidth(segs)) return base;
+  if(!_vThumbMeasureEl){
+    _vThumbMeasureEl=document.createElement('div');
+    _vThumbMeasureEl.style.cssText="position:fixed;left:-5000px;top:0;visibility:hidden;text-align:center;font-family:'Noto Sans JP',sans-serif;";
+    document.body.appendChild(_vThumbMeasureEl);
+  }
+  const m=_vThumbMeasureEl;
+  m.style.width=usableW+'px';
+  m.style.fontWeight=weight;
+  m.style.lineHeight=VTHUMB.lineHeight;
+  m.innerHTML=segsToHtml(segs,'#ffffff');
+  for(let f=base; f>=32; f-=2){
+    m.style.fontSize=f+'px';
+    const h=m.offsetHeight;
+    const lines=Math.max(1, Math.round(h/(f*VTHUMB.lineHeight)));
+    if(lines<=VTHUMB.maxLines && h<=bandH*0.86) return f;
+  }
+  return 32;
+}
+
+function vThumbBand(segs, fs, weight, h, bg, defColor){
+  return `<div style="background:${bg};height:${h}px;display:flex;align-items:center;justify-content:center;padding:0 ${VTHUMB.paddingX}px;overflow:hidden;">
+      <div style="font-size:${fs}px;font-weight:${weight};line-height:${VTHUMB.lineHeight};text-align:center;font-family:'Noto Sans JP',sans-serif;">${segsToHtml(segs, defColor)}</div>
+    </div>`;
+}
+
+function slideVThumb(text, key){
+  const sz = VTHUMB_SIZES[key] || VTHUMB_SIZES['45'];
+  const W = sz.w, H = sz.h;
+  const contentH = Math.min(H, Math.round(W*1.25));   // 文字を置く中央エリア（4:5相当）
+  const padV = Math.round((H-contentH)/2);
+  const hTop = Math.round(contentH*VTHUMB.rTop);
+  const hMid = Math.round(contentH*VTHUMB.rMid);
+  const hBot = contentH-hTop-hMid;
+  const parts = text.split(/[：:]/);
+  const topSegs = parseThumbnailMarkup(parts[0]||'');
+  const midSegs = parseThumbnailMarkup(parts[1]||'');
+  const botSegs = parseThumbnailMarkup(parts[2]||'');
+  const usable = W-VTHUMB.paddingX*2;
+  const topFs = vThumbFit(topSegs, VTHUMB.fontTopBot, usable, hTop, THUMB.fontWeightTop);
+  const midFs = vThumbFit(midSegs, VTHUMB.fontMid,    usable, hMid, THUMB.fontWeightMid);
+  const botFs = vThumbFit(botSegs, VTHUMB.fontTopBot, usable, hBot, THUMB.fontWeightBot);
+  return `<div class="slide" id="s-vthumb" style="width:${W}px;height:${H}px;background:#000;">
+  <div style="display:flex;flex-direction:column;height:${H}px;">
+    <div style="background:#000;height:${padV}px;"></div>
+    ${vThumbBand(topSegs, topFs, THUMB.fontWeightTop, hTop, '#000', '#ffffff')}
+    ${vThumbBand(midSegs, midFs, THUMB.fontWeightMid, hMid, '#fff', '#004aad')}
+    ${vThumbBand(botSegs, botFs, THUMB.fontWeightBot, hBot, '#000', '#ffffff')}
+    <div style="background:#000;flex:1;"></div>
+  </div>
+</div>`;
+}
+
+function renderVThumbPreview(){
+  const wrap=document.getElementById('vThumbPreviewWrap'), area=document.getElementById('vThumbPreview');
+  if(!area) return;
+  const text=((document.getElementById('thumbInput')||{}).value||'').trim();
+  if(!text){ area.innerHTML=''; if(wrap) wrap.style.display='none'; return; }
+  const key=((document.getElementById('vThumbRatio')||{}).value)||'45';
+  const sz=VTHUMB_SIZES[key];
+  const w=160, scale=w/sz.w, h=Math.round(sz.h*scale);
+  if(wrap) wrap.style.display='block';
+  area.style.cssText=`position:relative;overflow:hidden;border:1px solid var(--border);border-radius:6px;width:${w}px;height:${h}px;cursor:pointer;`;
+  area.innerHTML=`<div style="position:absolute;top:0;left:0;width:${sz.w}px;height:${sz.h}px;transform:scale(${scale});transform-origin:top left;pointer-events:none;">${slideVThumb(text,key)}</div>`;
+}
+
+async function downloadVThumb(btn){
+  const st=document.getElementById('vThumbStatus') || document.getElementById('status');
+  const text=((document.getElementById('thumbInput')||{}).value||'').trim();
+  if(!text){ if(st) st.textContent='サムネ文言が空です'; return; }
+  const key=((document.getElementById('vThumbRatio')||{}).value)||'45';
+  const sz=VTHUMB_SIZES[key];
+  const container=document.getElementById('renderTarget');
+  container.innerHTML=slideVThumb(text,key);
+  if(btn) btn.disabled=true;
+  if(st) st.textContent='レンダリング中…';
+  await new Promise(r=>setTimeout(r,200));
+  try{
+    const el=container.querySelector('.slide');
+    const canvas=await html2canvas(el,{width:sz.w,height:sz.h,scale:1,useCORS:true,allowTaint:true,backgroundColor:'#000000',logging:false});
+    const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+    const url=URL.createObjectURL(blob);
+    const dateStr=getDateStr(parseInput(((document.getElementById('mainInput')||{}).value)||''));
+    const a=document.createElement('a');
+    a.href=url; a.download=`00_サムネイル縦${sz.label}_${dateStr}.png`; a.click();
+    URL.revokeObjectURL(url);
+    if(st) st.textContent='✓ ダウンロードしました';
+    setTimeout(()=>{ if(st) st.textContent=''; },3000);
+  }catch(e){ if(st) st.textContent='エラー: '+e.message; }
+  container.innerHTML='';
+  if(btn) btn.disabled=false;
+}
+
 function slideCover(data, imgUrl){
   const lines = data.sections['表紙'] || [];
   const title = lines[0] || '';
@@ -1304,6 +1436,7 @@ function renderPreview(){
   renderPreviewInto('previewArea','previewCard');
   renderPreviewInto('autoPreviewArea','autoPreviewCard', AUTO_PREVIEW_SLIDE);   // ④スライド：4枚（表紙→サムネ）
   renderPreviewInto('autoPreviewArea2','autoPreviewCard2');                     // ⑤出力：全スライド表示
+  try{ renderVThumbPreview(); }catch(e){}                                       // ⑤出力：縦型サムネのプレビュー
 }
 function renderPreviewInto(areaId, cardId, onlyKeys){
   const area=document.getElementById(areaId);
@@ -2004,6 +2137,14 @@ function updateSplitToggleLabel(){
   const has2=(((document.getElementById('autoScriptOut2')||{}).value||'').trim())!=='';
   btn.textContent = has2 ? '🔗 1つにまとめる' : '🔀 2つに分割';
 }
+// ⑤出力の台本枠：音声①②を1つにまとめて表示（コピー用）。音声生成のタイミングで更新。
+function autoSyncScriptFinal(manual){
+  const el=document.getElementById('autoScriptFinal'); if(!el) return;
+  el.value=autoScriptFull();
+  if(typeof apSaveField==='function') apSaveField('autoScriptFinal');
+  if(manual){ const st=document.getElementById('vThumbStatus'); if(st){ st.textContent='台本を最新にしました'; setTimeout(()=>{st.textContent='';},2000); } }
+}
+
 // 台本全文（前半＋後半）をコピー
 function autoCopyScript(btn){ autoClip(autoScriptFull(), btn); }
 // 生成文の無駄な空行を除去（改行が2回以上連続 → 1回に。空白のみの行も空行として除去）
@@ -2102,6 +2243,7 @@ async function autoGenerateTts(btn){
   const st=document.getElementById('autoTtsStatus');
   const text=autoScriptFull().trim();
   if(!text){ st.textContent='台本が空です（先に「台本をAI実行」または手入力）'; return; }
+  autoSyncScriptFinal();   // ⑤出力の台本枠へ、音声①②をまとめた全文を反映
   const voice=document.getElementById('autoTtsVoice').value;
   const model=document.getElementById('autoTtsModel').value;
   const st4=document.getElementById('autoTtsStatus4');
