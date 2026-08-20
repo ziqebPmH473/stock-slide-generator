@@ -254,6 +254,8 @@ JavaScriptの定数:
 見た目は index.html の const VTHUMB で調整します。
   headLabel  … 上部バーの見出し（初期値「マーケット速報」）
   headH      … 上部バーの高さ（px）／ headFs は文字サイズ
+               ※スマホ表示は幅390pt換算で約0.36倍になるため、46px≒17pt。
+                 これ以上小さくすると本文より読みにくくなります
   headAccent … 見出し左のアクセント色
   footLabel  … 下部バーの右に出す文言（初期値「タップで動画を再生」）
   footH/footFs/footColor … 下部バーの高さ・文字サイズ・文字色（背景は黒 footBg）

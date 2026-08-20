@@ -1190,16 +1190,16 @@ const VTHUMB = {
   ratios3:   [0.34,0.34,0.32],   // 3段構成のときの各段の高さ比率
   ratios2:   [0.50,0.50],        // 2段構成のときの各段の高さ比率
   // 上部バー
-  headH:     78,     // 上部バーの高さ (px)
+  headH:     100,    // 上部バーの高さ (px)
   headLabel: 'マーケット速報',
-  headFs:    34,     // 上部バーの文字サイズ (px)
+  headFs:    46,     // 上部バーの文字サイズ (px) ← スマホ表示(幅390pt換算)で約17pt
   headBg:    '#000', // 上部バーの背景色
   headColor: '#ffffff',
   headAccent:'#ff914d',  // 見出し左のアクセント色
   // 下部バー
-  footH:     104,    // 下部バーの高さ (px)
+  footH:     116,    // 下部バーの高さ (px)
   footLabel: 'タップで動画を再生',
-  footFs:    38,     // 下部バーの文字サイズ (px)
+  footFs:    52,     // 下部バーの文字サイズ (px) ← スマホ表示(幅390pt換算)で約19pt
   footBg:    '#000', // 下部バーの背景色（白ではなく黒）
   footColor: '#ff914d',
 };
@@ -1263,7 +1263,7 @@ function vThumbHeader(){
   const ff=`'Noto Sans JP',sans-serif`;
   return `<div style="background:${VTHUMB.headBg};height:${VTHUMB.headH}px;display:flex;align-items:center;justify-content:space-between;padding:0 ${VTHUMB.paddingX}px;font-family:${ff};overflow:hidden;">
       <div style="display:flex;align-items:center;gap:14px;">
-        <div style="width:10px;height:${Math.round(VTHUMB.headFs*1.1)}px;background:${VTHUMB.headAccent};"></div>
+        <div style="width:13px;height:${Math.round(VTHUMB.headFs*1.1)}px;background:${VTHUMB.headAccent};"></div>
         <div style="font-size:${VTHUMB.headFs}px;font-weight:700;color:${VTHUMB.headColor};line-height:1;">${esc(VTHUMB.headLabel)}</div>
       </div>
       <div style="font-size:${VTHUMB.headFs}px;font-weight:700;color:${VTHUMB.headColor};line-height:1;">${esc(vThumbDateLabel())}</div>
