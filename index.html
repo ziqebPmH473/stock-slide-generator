@@ -1186,6 +1186,7 @@ const VTHUMB = {
   maxChars:  5,      // 文字サイズの上限＝全角この文字数ぶんの幅（小さいほど上限が下がる）
   paddingX:  56,     // 帯の左右余白 (px)
   lineHeight:1.14,   // 行間（枠内で改行したときの行送り）
+  gap2:      0.14,   // 2段構成のとき、2枠の境目に空ける余白（帯の高さに対する比率）
   ratios3:   [0.34,0.34,0.32],   // 3段構成のときの各段の高さ比率
   ratios2:   [0.50,0.50],        // 2段構成のときの各段の高さ比率
   // 上部バー
@@ -1237,9 +1238,13 @@ function vThumbLineSizes(lines, usableW, bandH){
 }
 
 // align: 帯の中で文字を寄せる位置（center / flex-end=下寄せ / flex-start=上寄せ）
-function vThumbBand(lines, sizes, weight, h, bg, defColor, align){
+// padY : 寄せた側に空ける余白 (px)。中央に寄せすぎないための余白
+function vThumbBand(lines, sizes, weight, h, bg, defColor, align, padY){
   const html=lines.map((segs,i)=>`<div style="font-size:${sizes[i]}px;line-height:${VTHUMB.lineHeight};white-space:nowrap;">${segsToHtml(segs, defColor)}</div>`).join('');
-  return `<div style="background:${bg};height:${h}px;display:flex;align-items:${align||'center'};justify-content:center;padding:0 ${VTHUMB.paddingX}px;overflow:hidden;">
+  const pad = align==='flex-end'   ? `0 ${VTHUMB.paddingX}px ${padY||0}px`
+            : align==='flex-start' ? `${padY||0}px ${VTHUMB.paddingX}px 0`
+            : `0 ${VTHUMB.paddingX}px`;
+  return `<div style="box-sizing:border-box;background:${bg};height:${h}px;display:flex;align-items:${align||'center'};justify-content:center;padding:${pad};overflow:hidden;">
       <div style="font-weight:${weight};text-align:center;font-family:'Noto Sans JP',sans-serif;">${html}</div>
     </div>`;
 }
@@ -1316,8 +1321,10 @@ function slideVThumb(key){
     const st = VTHUMB_BAND_STYLE[i];
     const weight = VTHUMB_WEIGHT[st.weight]();
     const lines = vThumbLines(t);
-    const sizes = vThumbLineSizes(lines, usable, heights[i]);
-    return vThumbBand(lines, sizes, weight, heights[i], st.bg, st.color, aligns[i]);
+    // 2段構成は境目に余白を残したうえで中央寄りに置く（中央にくっつけない）
+    const padY = (n===2 ? Math.round(heights[i]*VTHUMB.gap2) : 0);
+    const sizes = vThumbLineSizes(lines, usable, heights[i]-padY);
+    return vThumbBand(lines, sizes, weight, heights[i], st.bg, st.color, aligns[i], padY);
   }).join('');
   const inner = `${vThumbHeader()}${bands}${vThumbFooter()}`;
   return `<div class="slide" id="s-vthumb" style="width:${W}px;height:${H}px;background:#000;">
