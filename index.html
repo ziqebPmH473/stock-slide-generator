@@ -1185,7 +1185,8 @@ const VTHUMB_SIZES = { '45':{w:1080,h:1350,label:'4x5'}, '916':{w:1080,h:1920,la
 const VTHUMB = {
   maxChars:  5,      // 文字サイズの上限＝全角この文字数ぶんの幅（小さいほど上限が下がる）
   paddingX:  56,     // 帯の左右余白 (px)
-  lineHeight:1.14,   // 行間（枠内で改行したときの行送り）
+  lineHeight:1.24,   // 行間（枠内で改行したときの行送り・3段構成）
+  lineHeight2:1.38,  // 行間（2段構成。帯が広いので3段より広めに）
   gap2:      0.14,   // 2段構成のとき、2枠の境目に空ける余白（帯の高さに対する比率）
   ratios3:   [0.34,0.34,0.32],   // 3段構成のときの各段の高さ比率
   ratios2:   [0.50,0.50],        // 2段構成のときの各段の高さ比率
@@ -1221,14 +1222,14 @@ function vThumbLines(text){
 // ・各行は帯の幅いっぱいに広がるサイズにする（行単位で調整。枠単位ではない）
 // ・上限は「全角 VTHUMB.maxChars 文字ぶんの幅」。これ以上は大きくしない
 // ・行を積んだ高さが帯に収まらない場合のみ、全行を同じ比率で縮める
-function vThumbLineSizes(lines, usableW, bandH){
+function vThumbLineSizes(lines, usableW, bandH, lh){
   const cap = Math.floor(usableW/VTHUMB.maxChars);
   let sizes = lines.map(segs=>{
     const w = thumbCharWidth(segs);          // 全角=2, 半角=1
     if(!w) return cap;
     return Math.max(20, Math.min(cap, Math.floor(2*usableW/w)));
   });
-  const total = a => a.reduce((x,f)=>x+f*VTHUMB.lineHeight, 0);
+  const total = a => a.reduce((x,f)=>x+f*lh, 0);
   const limit = bandH*0.94;
   if(total(sizes) > limit){
     const k = limit/total(sizes);
@@ -1239,8 +1240,8 @@ function vThumbLineSizes(lines, usableW, bandH){
 
 // align: 帯の中で文字を寄せる位置（center / flex-end=下寄せ / flex-start=上寄せ）
 // padY : 寄せた側に空ける余白 (px)。中央に寄せすぎないための余白
-function vThumbBand(lines, sizes, weight, h, bg, defColor, align, padY){
-  const html=lines.map((segs,i)=>`<div style="font-size:${sizes[i]}px;line-height:${VTHUMB.lineHeight};white-space:nowrap;">${segsToHtml(segs, defColor)}</div>`).join('');
+function vThumbBand(lines, sizes, weight, h, bg, defColor, align, padY, lh){
+  const html=lines.map((segs,i)=>`<div style="font-size:${sizes[i]}px;line-height:${lh};white-space:nowrap;">${segsToHtml(segs, defColor)}</div>`).join('');
   const pad = align==='flex-end'   ? `0 ${VTHUMB.paddingX}px ${padY||0}px`
             : align==='flex-start' ? `${padY||0}px ${VTHUMB.paddingX}px 0`
             : `0 ${VTHUMB.paddingX}px`;
@@ -1317,14 +1318,15 @@ function slideVThumb(key){
   const usable = W-VTHUMB.paddingX*2;
   // 2段構成は2枠の文字を画像全体の中央へ寄せる（1段目は下寄せ・2段目は上寄せ）
   const aligns = (n===2 ? ['flex-end','flex-start'] : ['center','center','center']);
+  const lh = (n===2 ? VTHUMB.lineHeight2 : VTHUMB.lineHeight);
   const bands = texts.map((t,i)=>{
     const st = VTHUMB_BAND_STYLE[i];
     const weight = VTHUMB_WEIGHT[st.weight]();
     const lines = vThumbLines(t);
     // 2段構成は境目に余白を残したうえで中央寄りに置く（中央にくっつけない）
     const padY = (n===2 ? Math.round(heights[i]*VTHUMB.gap2) : 0);
-    const sizes = vThumbLineSizes(lines, usable, heights[i]-padY);
-    return vThumbBand(lines, sizes, weight, heights[i], st.bg, st.color, aligns[i], padY);
+    const sizes = vThumbLineSizes(lines, usable, heights[i]-padY, lh);
+    return vThumbBand(lines, sizes, weight, heights[i], st.bg, st.color, aligns[i], padY, lh);
   }).join('');
   const inner = `${vThumbHeader()}${bands}${vThumbFooter()}`;
   return `<div class="slide" id="s-vthumb" style="width:${W}px;height:${H}px;background:#000;">
