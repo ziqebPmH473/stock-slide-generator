@@ -1184,6 +1184,7 @@ function slideThumb(text){
 const VTHUMB_SIZES = { '45':{w:1080,h:1350,label:'4x5'}, '916':{w:1080,h:1920,label:'9x16'} };
 const VTHUMB = {
   maxChars:  5,      // 文字サイズの上限＝全角この文字数ぶんの幅（小さいほど上限が下がる）
+  maxCharsMid3: 4,   // 3段構成の中央（白帯）だけの上限。少ない＝大きく表示できる
   paddingX:  56,     // 帯の左右余白 (px)
   lineHeight:1.24,   // 行間（枠内で改行したときの行送り・3段構成）
   lineHeight2:1.38,  // 行間（2段構成。帯が広いので3段より広めに）
@@ -1222,8 +1223,8 @@ function vThumbLines(text){
 // ・各行は帯の幅いっぱいに広がるサイズにする（行単位で調整。枠単位ではない）
 // ・上限は「全角 VTHUMB.maxChars 文字ぶんの幅」。これ以上は大きくしない
 // ・行を積んだ高さが帯に収まらない場合のみ、全行を同じ比率で縮める
-function vThumbLineSizes(lines, usableW, bandH, lh){
-  const cap = Math.floor(usableW/VTHUMB.maxChars);
+function vThumbLineSizes(lines, usableW, bandH, lh, maxChars){
+  const cap = Math.floor(usableW/(maxChars||VTHUMB.maxChars));
   let sizes = lines.map(segs=>{
     const w = thumbCharWidth(segs);          // 全角=2, 半角=1
     if(!w) return cap;
@@ -1325,7 +1326,9 @@ function slideVThumb(key){
     const lines = vThumbLines(t);
     // 2段構成は境目に余白を残したうえで中央寄りに置く（中央にくっつけない）
     const padY = (n===2 ? Math.round(heights[i]*VTHUMB.gap2) : 0);
-    const sizes = vThumbLineSizes(lines, usable, heights[i]-padY, lh);
+    // 3段構成の中央（白帯）だけ上限をゆるめて大きく見せる
+    const mc = (n===3 && i===1) ? VTHUMB.maxCharsMid3 : VTHUMB.maxChars;
+    const sizes = vThumbLineSizes(lines, usable, heights[i]-padY, lh, mc);
     return vThumbBand(lines, sizes, weight, heights[i], st.bg, st.color, aligns[i], padY, lh);
   }).join('');
   const inner = `${vThumbHeader()}${bands}${vThumbFooter()}`;
