@@ -1183,12 +1183,9 @@ function slideThumb(text){
 // 各段は別々の入力枠（1段目/2段目/3段目）で編集し、枠内の改行はそのまま改行位置になる。
 const VTHUMB_SIZES = { '45':{w:1080,h:1350,label:'4x5'}, '916':{w:1080,h:1920,label:'9x16'} };
 const VTHUMB = {
-  fontMid:   210,    // 白帯（強調段）の基本フォントサイズ (px) ← 長い場合は自動縮小
-  fontTopBot:150,    // 黒帯の基本フォントサイズ (px)
+  maxChars:  5,      // 文字サイズの上限＝全角この文字数ぶんの幅（小さいほど上限が下がる）
   paddingX:  56,     // 帯の左右余白 (px)
   lineHeight:1.14,   // 行間（枠内で改行したときの行送り）
-  maxLines:  3,      // 1段あたりの最大行数（改行を入れていない場合の自動折返し上限）
-  fontScale2:1.35,   // 2段構成のときの基本フォントサイズ倍率（帯が広いので大きめに）
   ratios3:   [0.34,0.34,0.32],   // 3段構成のときの各段の高さ比率
   ratios2:   [0.50,0.50],        // 2段構成のときの各段の高さ比率
   // 上部バー
@@ -1219,35 +1216,31 @@ function vThumbLines(text){
   return String(text||'').split('\n').map(s=>s.trim()).filter(Boolean).map(parseThumbnailMarkup);
 }
 
-// 幅と段の高さに収まる最大フォントサイズを求める（改行位置を保ったまま実測）
-let _vThumbMeasureEl=null;
-function vThumbFit(lines, base, usableW, bandH, weight){
-  if(!lines.length) return base;
-  if(!_vThumbMeasureEl){
-    _vThumbMeasureEl=document.createElement('div');
-    _vThumbMeasureEl.style.cssText="position:fixed;left:-5000px;top:0;visibility:hidden;text-align:center;font-family:'Noto Sans JP',sans-serif;";
-    document.body.appendChild(_vThumbMeasureEl);
+// 行ごとの文字サイズを決める。
+// ・各行は帯の幅いっぱいに広がるサイズにする（行単位で調整。枠単位ではない）
+// ・上限は「全角 VTHUMB.maxChars 文字ぶんの幅」。これ以上は大きくしない
+// ・行を積んだ高さが帯に収まらない場合のみ、全行を同じ比率で縮める
+function vThumbLineSizes(lines, usableW, bandH){
+  const cap = Math.floor(usableW/VTHUMB.maxChars);
+  let sizes = lines.map(segs=>{
+    const w = thumbCharWidth(segs);          // 全角=2, 半角=1
+    if(!w) return cap;
+    return Math.max(20, Math.min(cap, Math.floor(2*usableW/w)));
+  });
+  const total = a => a.reduce((x,f)=>x+f*VTHUMB.lineHeight, 0);
+  const limit = bandH*0.94;
+  if(total(sizes) > limit){
+    const k = limit/total(sizes);
+    sizes = sizes.map(f=>Math.max(20, Math.floor(f*k)));
   }
-  const m=_vThumbMeasureEl;
-  m.style.width=usableW+'px';
-  m.style.fontWeight=weight;
-  m.style.lineHeight=VTHUMB.lineHeight;
-  m.innerHTML=lines.map(segs=>segsToHtml(segs,'#ffffff')).join('<br>');
-  // 入力された改行数が上限。改行なしなら自動折返しを maxLines まで許容
-  const limit = lines.length>1 ? lines.length : VTHUMB.maxLines;
-  for(let f=base; f>=28; f-=2){
-    m.style.fontSize=f+'px';
-    const h=m.offsetHeight;
-    const n=Math.max(1, Math.round(h/(f*VTHUMB.lineHeight)));
-    if(n<=limit && h<=bandH*0.88) return f;
-  }
-  return 28;
+  return sizes;
 }
 
-function vThumbBand(lines, fs, weight, h, bg, defColor){
-  const html=lines.map(segs=>segsToHtml(segs, defColor)).join('<br>');
-  return `<div style="background:${bg};height:${h}px;display:flex;align-items:center;justify-content:center;padding:0 ${VTHUMB.paddingX}px;overflow:hidden;">
-      <div style="font-size:${fs}px;font-weight:${weight};line-height:${VTHUMB.lineHeight};text-align:center;font-family:'Noto Sans JP',sans-serif;">${html}</div>
+// align: 帯の中で文字を寄せる位置（center / flex-end=下寄せ / flex-start=上寄せ）
+function vThumbBand(lines, sizes, weight, h, bg, defColor, align){
+  const html=lines.map((segs,i)=>`<div style="font-size:${sizes[i]}px;line-height:${VTHUMB.lineHeight};white-space:nowrap;">${segsToHtml(segs, defColor)}</div>`).join('');
+  return `<div style="background:${bg};height:${h}px;display:flex;align-items:${align||'center'};justify-content:center;padding:0 ${VTHUMB.paddingX}px;overflow:hidden;">
+      <div style="font-weight:${weight};text-align:center;font-family:'Noto Sans JP',sans-serif;">${html}</div>
     </div>`;
 }
 
@@ -1317,14 +1310,14 @@ function slideVThumb(key){
   heights[heights.length-1] = bodyH - heights.slice(0,-1).reduce((a,b)=>a+b,0);
   const texts = vThumbTexts();
   const usable = W-VTHUMB.paddingX*2;
-  const scale = (n===2 ? VTHUMB.fontScale2 : 1);   // 2段構成は帯が広いぶん文字を大きく
+  // 2段構成は2枠の文字を画像全体の中央へ寄せる（1段目は下寄せ・2段目は上寄せ）
+  const aligns = (n===2 ? ['flex-end','flex-start'] : ['center','center','center']);
   const bands = texts.map((t,i)=>{
     const st = VTHUMB_BAND_STYLE[i];
     const weight = VTHUMB_WEIGHT[st.weight]();
     const lines = vThumbLines(t);
-    const base = Math.round((st.bg==='#fff' ? VTHUMB.fontMid : VTHUMB.fontTopBot)*scale);
-    const fs = vThumbFit(lines, base, usable, heights[i], weight);
-    return vThumbBand(lines, fs, weight, heights[i], st.bg, st.color);
+    const sizes = vThumbLineSizes(lines, usable, heights[i]);
+    return vThumbBand(lines, sizes, weight, heights[i], st.bg, st.color, aligns[i]);
   }).join('');
   const inner = `${vThumbHeader()}${bands}${vThumbFooter()}`;
   return `<div class="slide" id="s-vthumb" style="width:${W}px;height:${H}px;background:#000;">
