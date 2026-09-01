@@ -686,8 +686,8 @@ Appier G|4180|818|+96|+13.30%
       </label>
       <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);">構成
         <select id="vThumbBands" onchange="vThumbBandsChanged()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
-          <option value="3" selected>3段構成</option>
-          <option value="2">2段構成</option>
+          <option value="2" selected>2段構成</option>
+          <option value="3">3段構成</option>
         </select>
       </label>
       <span id="vThumbStatus" style="font-size:11px;color:var(--muted);"></span>
@@ -704,7 +704,7 @@ Appier G|4180|818|+96|+13.30%
         <div><span style="font-size:10px;color:var(--muted);">2段目（白帯）</span>
           <textarea id="vThumbL2" style="min-height:48px !important;" oninput="renderVThumbPreview()"></textarea></div>
       </div>
-      <div id="vThumbL3Box" style="margin-top:4px;"><span style="font-size:10px;color:var(--muted);">3段目（黒帯）</span>
+      <div id="vThumbL3Box" style="margin-top:4px;display:none;"><span style="font-size:10px;color:var(--muted);">3段目（黒帯）</span>
         <textarea id="vThumbL3" style="min-height:48px !important;" oninput="renderVThumbPreview()"></textarea></div>
     </div>
     <div id="vThumbPreviewWrap" style="margin-top:6px;display:none;"><div class="preview-slide-wrap" id="vThumbPreview" title="クリックでダウンロード" onclick="downloadVThumb(document.getElementById('vThumbBtn'))"></div></div>
@@ -1281,8 +1281,8 @@ function vThumbFooter(){
 
 // 現在の段構成（2 or 3）
 function vThumbBandCount(){
-  const v=parseInt(((document.getElementById('vThumbBands')||{}).value)||'3',10);
-  return v===2 ? 2 : 3;
+  const v=parseInt(((document.getElementById('vThumbBands')||{}).value)||'2',10);
+  return v===3 ? 3 : 2;
 }
 
 // 1〜3段目の入力枠の内容。空なら「サムネ文言」を「：」で分割したものにフォールバック
