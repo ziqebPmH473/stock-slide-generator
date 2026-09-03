@@ -1187,6 +1187,7 @@ const VTHUMB_SIZES = { '45':{w:1080,h:1350,label:'4x5'}, '916':{w:1080,h:1920,la
 const VTHUMB = {
   maxChars:  5,      // 文字サイズの上限＝全角この文字数ぶんの幅（小さいほど上限が下がる）
   maxCharsMid3: 4,   // 3段構成の中央（白帯）だけの上限。少ない＝大きく表示できる
+  maxChars2: 3.8,    // 2段構成の上限。帯が広いぶん3段構成より大きく見せる
   paddingX:  56,     // 帯の左右余白 (px)
   lineHeight:1.24,   // 行間（枠内で改行したときの行送り・3段構成）
   lineHeight2:1.38,  // 行間（2段構成。帯が広いので3段より広めに）
@@ -1302,9 +1303,8 @@ function vThumbSplitSource(text, n){
   const parts=String(text||'').split(/[：:]/).map(s=>s.trim()).filter(Boolean);
   if(!parts.length) return new Array(n).fill('');
   if(n===3) return [parts[0]||'', parts[1]||'', parts.slice(2).join('') || ''];
-  // 2段構成：3つ以上ある場合は 1段目にまとめず、末尾を2段目に寄せる
-  if(parts.length<=2) return [parts[0]||'', parts[1]||''];
-  return [parts.slice(0,parts.length-1).join('\n'), parts[parts.length-1]];
+  // 2段構成：サムネ文言の1つ目→1段目、2つ目→2段目（3つ目以降は反映先が無いので使わない）
+  return [parts[0]||'', parts[1]||''];
 }
 
 function slideVThumb(key){
@@ -1328,8 +1328,8 @@ function slideVThumb(key){
     const lines = vThumbLines(t);
     // 2段構成は境目に余白を残したうえで中央寄りに置く（中央にくっつけない）
     const padY = (n===2 ? Math.round(heights[i]*VTHUMB.gap2) : 0);
-    // 3段構成の中央（白帯）だけ上限をゆるめて大きく見せる
-    const mc = (n===3 && i===1) ? VTHUMB.maxCharsMid3 : VTHUMB.maxChars;
+    // 上限（＝1文字あたりの最大幅）。2段構成は全段、3段構成は中央（白帯）だけゆるめて大きく見せる
+    const mc = n===2 ? VTHUMB.maxChars2 : (i===1 ? VTHUMB.maxCharsMid3 : VTHUMB.maxChars);
     const sizes = vThumbLineSizes(lines, usable, heights[i]-padY, lh, mc);
     return vThumbBand(lines, sizes, weight, heights[i], st.bg, st.color, aligns[i], padY, lh);
   }).join('');
