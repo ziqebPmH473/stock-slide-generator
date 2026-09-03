@@ -5,7 +5,7 @@
 // ・無料枠では画像モデルの割当が0のため、課金(有料枠)有効化後に動く
 // ============================================================
 
-const MODEL = "gemini-2.5-flash-image";
+const MODEL = "gemini-3.1-flash-image";
 const ENDPOINT = (model, key) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 

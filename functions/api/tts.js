@@ -5,7 +5,7 @@
 // ・Gemini は生PCM(L16)を返すため、WAVコンテナに包んで返す
 // ============================================================
 
-const DEFAULT_MODEL = "gemini-2.5-flash-preview-tts";
+const DEFAULT_MODEL = "gemini-3.1-flash-tts-preview";
 const ENDPOINT = (model, key) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
