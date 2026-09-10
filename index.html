@@ -241,6 +241,7 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
   <div class="ap-row">
     <span class="ap-tag">③</span>
     <button class="btn-prompt" onclick="apFactCheck(this)">✅FactCK</button>
+    <button class="btn-prompt" onclick="apFactCheckVerify(this)">🔍FCCK</button>
     <button class="btn-prompt" onclick="apFactCheckFix(this)">🔧修正</button>
   </div>
   <div class="ap-row">
@@ -491,6 +492,7 @@ Appier G|4180|818|+96|+13.30%
     <textarea id="autoFcReport" placeholder="ChatGPTのレポートを貼付" style="min-height:140px;"></textarea>
     <div class="auto-row" style="margin-top:6px;">
       <button class="btn-copy" id="autoFcCkBtn" onclick="autoCopyFactCheck(this)">✅ CK</button>
+      <button class="btn-copy" onclick="autoCopyFactCheckVerify(this)">🔍 FCCK</button>
       <button class="btn-copy" onclick="autoCopyFactCheckFix(this)">🔧 修正</button>
     </div>
     <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
@@ -880,6 +882,10 @@ function apFactCheck(btn){
   const reportSection = report ? `\n\n--レポート--\n\n${report}` : `\n\n--レポート--\n\n`;
   const final = `以下のレポートは、以下の指示でAIが生成したものです。\nレポートのファクトチェックを行い、誤っている個所と指示に沿っていない箇所のみを指摘してください。\n指摘は件数が多くても構わないので、すべて指摘してください。\n指摘がある場合には、指摘箇所、指摘内容、修正後内容を記載してください。\nレイアウトや出力形式に関する指摘は不要です。\n\n--指示--\n${base}${reportSection}`;
   apCopyWithFeedback(final, btn);
+}
+
+function apFactCheckVerify(btn){
+  apCopyWithFeedback(`修正後内容が正しいか確認して`, btn);
 }
 
 function apFactCheckFix(btn){
@@ -2157,6 +2163,7 @@ function autoCopyFactCheck(btn){
   const final=`以下のレポートは、以下の指示でAIが生成したものです。\nレポートのファクトチェックを行い、誤っている個所と指示に沿っていない箇所のみを指摘してください。\n指摘は件数が多くても構わないので、すべて指摘してください。\n指摘がある場合には、指摘箇所、指摘内容、修正後内容を記載してください。\nレイアウトや出力形式に関する指摘は不要です。\n\n--指示--\n${base}\n\n--レポート--\n\n${report}`;
   autoClip(final, btn);
 }
+function autoCopyFactCheckVerify(btn){ autoClip(`修正後内容が正しいか確認して`, btn); }
 function autoCopyFactCheckFix(btn){ autoClip(`指摘箇所を指示の内容に沿って修正し、全文出力してください。\nただし、指摘していない箇所は一切変更しないでください。`, btn); }
 
 // ===== AIバックアップ（生ページをAIに読ませて分析RANK・名称RANKを再生成）=====
