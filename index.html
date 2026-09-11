@@ -786,6 +786,12 @@ const AP_COPY_TEXTS = {
   photoTop: `「東証マーケットを振り返る」をイメージして画像を生成してください。\n文字や企業ロゴは記載しないでください。`,
   photoNews: `以下の中に記載の【東京株式市場に影響を及ぼしたニュース】の中から1つのみ（複数を混ぜない）をピックアップし、そのニュースをイメージした画像を生成してください。\n文字や企業ロゴは記載しないでください。\n画像はリアルで、写真のような仕上がりにしてください。\n人物は極力描かないようにしてください。\n\n{{textbox}}`,
 };
+// 回答をツールへ貼り戻すプロンプト用：ChatGPT側のコピーボタンでそのまま貼れるようコードブロック出力を指示
+// ※テンプレート本体はAPI生成でも使うため、コピー時にだけ末尾へ付加する
+const AP_CODEBLOCK_NOTE = `\n\n【出力形式】\n・回答全体を1つのコードブロック（\`\`\`）で囲んで出力してください。\n・コードブロックの外には何も書かないでください。\n・太字（**）、見出し（#）などのマークダウン記法は使わないでください。`;
+const AP_CODEBLOCK_NOTE_SNS = `\n\n【出力形式】\n・サムネイルの文字とXへの投稿文は、それぞれ別のコードブロック（\`\`\`）で囲んで出力してください。\n・コードブロックの中では、太字（**）、見出し（#）などのマークダウン記法は使わないでください。`;
+const AP_CODEBLOCK_IDS = { rank: AP_CODEBLOCK_NOTE, top10ReasonNewsNG: AP_CODEBLOCK_NOTE, presen1: AP_CODEBLOCK_NOTE, reportKk: AP_CODEBLOCK_NOTE, xNotify: AP_CODEBLOCK_NOTE_SNS };
+const AP_FIX_PROMPT = `指摘箇所を指示の内容に沿って修正し、全文出力してください。\nただし、指摘していない箇所は一切変更しないでください。` + AP_CODEBLOCK_NOTE;
 
 const AP_INTRO = "今日の東京株式市場を振り返る";
 
@@ -872,7 +878,7 @@ function apFallbackCopy(text, done){
 
 function apCopy(copyId, btn){
   const tpl = AP_COPY_TEXTS[copyId] || '';
-  const final = apReplaceVariables(tpl, apBuildVars(copyId));
+  const final = apReplaceVariables(tpl, apBuildVars(copyId)) + (AP_CODEBLOCK_IDS[copyId] || '');
   apCopyWithFeedback(final, btn);
 }
 
@@ -889,7 +895,7 @@ function apFactCheckVerify(btn){
 }
 
 function apFactCheckFix(btn){
-  apCopyWithFeedback(`指摘箇所を指示の内容に沿って修正し、全文出力してください。\nただし、指摘していない箇所は一切変更しないでください。`, btn);
+  apCopyWithFeedback(AP_FIX_PROMPT, btn);
 }
 
 function apSetValue(id, val){
@@ -2155,7 +2161,7 @@ async function autoPasteFc(pasteBtn){
   autoCopyFactCheck(document.getElementById('autoFcCkBtn'));
 }
 function autoReasonVars(){ const v=autoVars(); v.textbox=(document.getElementById('autoRankOut')||{}).value||''; return v; }
-function autoCopyReasonNews(btn){ autoClip(apReplaceVariables(AP_COPY_TEXTS.top10ReasonNewsNG, autoReasonVars()), btn); }
+function autoCopyReasonNews(btn){ autoClip(apReplaceVariables(AP_COPY_TEXTS.top10ReasonNewsNG, autoReasonVars()) + AP_CODEBLOCK_NOTE, btn); }
 function autoCopyFactCheck(btn){
   // ファクトチェックの--指示--には@iterative-fact-check-and-revise（理由ニュース生成時のみ有効なマーカー）は含めない
   const base=apReplaceVariables(AP_COPY_TEXTS.top10ReasonNewsNG, autoReasonVars()).replace(/^@iterative-fact-check-and-revise\s*/, '');
@@ -2164,7 +2170,7 @@ function autoCopyFactCheck(btn){
   autoClip(final, btn);
 }
 function autoCopyFactCheckVerify(btn){ autoClip(`修正後内容が正しいか確認して`, btn); }
-function autoCopyFactCheckFix(btn){ autoClip(`指摘箇所を指示の内容に沿って修正し、全文出力してください。\nただし、指摘していない箇所は一切変更しないでください。`, btn); }
+function autoCopyFactCheckFix(btn){ autoClip(AP_FIX_PROMPT, btn); }
 
 // ===== AIバックアップ（生ページをAIに読ませて分析RANK・名称RANKを再生成）=====
 // AIバックアップ＝①が取得した「生ページ」をAIが読み直して分析RANK・名称RANKを再生成する。
@@ -2587,7 +2593,7 @@ function autoFullInfoOrHint(){
 
 // ⑤ ChatGPT(Gem)に投げる用プロンプト（全情報を埋め込み）
 function autoCopySnsXPrompt(btn){
-  const t=apReplaceVariables(AP_COPY_TEXTS.xNotify, { intro: AP_INTRO, textbox: autoFullInfoOrHint() });
+  const t=apReplaceVariables(AP_COPY_TEXTS.xNotify, { intro: AP_INTRO, textbox: autoFullInfoOrHint() }) + AP_CODEBLOCK_NOTE_SNS;
   autoClip(t, btn);
 }
 // ⑥ まとめ画像プロンプト（ユーザー指定フォーマット＋全情報）
