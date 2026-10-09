@@ -744,7 +744,8 @@ Appier G|4180|818|+96|+13.30%
           <option value="6">6か月</option>
         </select>
       </label>
-      <button class="btn" id="vidBuildBtn" onclick="vidBuild(this)" title="指数の値（6か月分）を株探から取り、画面に出す一言とまとめを AI で作ります（台本とスライド文章が前と同じなら AI は呼びません）">🎬 動画のデータを作る</button>
+      <button class="btn-sm" id="vidBuildBtn" onclick="vidBuild(this)" title="④のスライド文章・③の台本と、株探の指数の値（6か月分）から動画のデータを作ります。AI は呼びません">🎬 動画のデータを作る</button>
+      <button class="btn" id="vidAiBtn" onclick="vidScreenAi(this)" title="冒頭の一言とまとめ（特長・注目点・締めの1文）を AI で作ります。押すたびに AI を1回呼びます">🤖 一言・まとめを AI で作る</button>
       <span id="vidStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
     <!-- 左にプレビュー（小さめ・スクロールしても見える）、右に場面ごとの台本と操作。狭い画面では縦に並ぶ -->
@@ -1911,6 +1912,8 @@ async function autoRunAll(realBtn){
     if(autoIsFull()){
       autoStatus('動画のデータを作成中…'); realBtn.textContent='生成中…(動画)';
       await vidBuild(document.getElementById('vidBuildBtn'));
+      autoStatus('冒頭の一言とまとめを作成中…（AI）');
+      await vidScreenAi(document.getElementById('vidAiBtn'));
       autoStep('v');
     }
     autoStatusDone('✅ 一括生成が完了しました'); realBtn.textContent='✅ 完了';
@@ -2810,7 +2813,7 @@ function autoSyncThumb(){
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '167c6986ce';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = 'de84037456';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -2853,8 +2856,22 @@ async function vidChangeMonths(){
     vidStatus('✅ チャートの期間を変えました');
   }catch(e){ vidStatus('❌ '+e.message); }
 }
-// 一言・まとめの元（台本とスライド文章）。同じなら AI を呼び直さない
-function vidScreenKey(){ return autoScriptFull()+'\n----\n'+((document.getElementById('mainInput')||{}).value||''); }
+// 冒頭の一言とまとめを AI で作る（押すたびに AI を1回。データ作成とは別のボタン）
+async function vidScreenAi(btn){
+  const o=vidLoadSaved();
+  if(!o || !o.data){ vidStatus('先に「動画のデータを作る」を押してください'); return; }
+  const old=btn.textContent; btn.disabled=true;
+  try{
+    vidStatus('冒頭の一言とまとめを作成中…（AI）');
+    const sc=await vidScreenText();
+    if(sc.headline) o.data.headline=sc.headline;
+    o.data.summary=sc.summary;
+    vidSave(o);
+    await vidMount(true);
+    vidStatus('✅ 一言・まとめを作りました');
+  }catch(e){ vidStatus('❌ '+e.message); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
 function vidLoadLib(){
   if(window.KessanViz && window.KessanViz.tse) return Promise.resolve(window.KessanViz);
   return new Promise((res, rej)=>{
@@ -2954,16 +2971,8 @@ async function vidBuild(btn){
     const data=vidDataFromSlide(text, vidSliceHist(histFull, months, date));
     let narration=vidNarration();
     const prev=vidLoadSaved()||{};
-    const key=vidScreenKey();
-    let screenKey=null;
-    if(prev.screenKey===key && prev.data && prev.data.headline){
-      // 台本とスライド文章が前と同じ → 前に作った一言・まとめをそのまま使う（AI を呼ばない）
-      data.headline=prev.data.headline; data.summary=prev.data.summary; screenKey=key;
-    }else{
-      vidStatus('画面に出す一言とまとめを作成中…（AI）');
-      try{ const sc=await vidScreenText(); data.headline=sc.headline; data.summary=sc.summary; screenKey=key; }
-      catch(e){ console.warn(e); vidStatus('⚠ 一言・まとめは作れませんでした（'+e.message+'）'); }
-    }
+    // 一言・まとめは「一言・まとめを AI で作る」で作る。ここでは前に作ったもの（同じ日のもの）を残すだけ
+    if(prev.data && prev.data.date===date){ data.headline=prev.data.headline||''; data.summary=prev.data.summary||null; }
     if(!data.headline){ const op=(autoScriptSections(autoScriptFullRaw())['オープニング']||'').split(/[。\n]/)[0]; data.headline=op; }
     // 台本に区切りが無いときは、前に入れた場面ごとの台本を消さない
     const noScript=!Object.keys(narration).length;
@@ -2972,9 +2981,9 @@ async function vidBuild(btn){
     const prevNar=(prev.settings&&prev.settings.narration)||{};
     for(const [id,v] of Object.entries(narration)){ const p0=prevNar[id]; if(p0 && p0.seconds!=null && String(p0.text||'').trim()===String(v.text||'').trim()) narration[id]={ text:v.text, seconds:p0.seconds }; }
     const settings=Object.assign({}, prev.settings||{}, { narration });
-    vidSave({ months, data, settings, screenKey, hist:{ nikkei:histFull.nikkei, topix:histFull.topix }, builtAt:new Date().toISOString() });
+    vidSave({ months, data, settings, hist:{ nikkei:histFull.nikkei, topix:histFull.topix }, builtAt:new Date().toISOString() });
     await vidMount(true);
-    vidStatus('✅ 動画のデータを作りました'+(noScript?'（台本に区切りが無いため、場面ごとの台本は前のままです。全自動版の③で台本を作り直してください）':''));
+    vidStatus('✅ 動画のデータを作りました'+(data.summary?'':'（まとめはまだありません。「一言・まとめを AI で作る」で作れます）')+(noScript?'（台本に区切りが無いため、場面ごとの台本は前のままです。全自動版の③で台本を作り直してください）':''));
   }catch(e){ vidStatus('❌ '+e.message); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
