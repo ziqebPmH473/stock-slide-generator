@@ -144,6 +144,8 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 .tab-panel.active { display:block; }
 .tab-badge { font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px; margin-left:6px; }
 .tab-badge.beta { background:#7c2d12; color:#fdba74; }
+/* 全自動版だけに出すもの（⑥動画など）。全自動版と自動版は同じ画面を使い、body.mode-full で切り替える */
+body:not(.mode-full) .full-only { display:none !important; }
 
 /* ===== 自動版：現行に近いコンパクト表示（スクロール削減）===== */
 #tabAuto .card { padding:9px 11px; margin-bottom:9px; }
@@ -202,8 +204,9 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 <p class="sub">テキストを貼り付けると自動でプレビューを表示します。</p>
 
 <div class="tab-bar">
-  <button class="tab-btn active" id="tabBtnManual" onclick="switchTab('manual')">手動版（現行）</button>
+  <button class="tab-btn" id="tabBtnFull" onclick="switchTab('full')" title="自動版＋動画（MP4）。取得データ・台本などは自動版と共通">全自動版<span class="tab-badge beta">NEW</span></button>
   <button class="tab-btn" id="tabBtnAuto" onclick="switchTab('auto')">自動版<span class="tab-badge beta">BETA</span></button>
+  <button class="tab-btn active" id="tabBtnManual" onclick="switchTab('manual')">手動版</button>
 </div>
 
 <div id="tabManual" class="tab-panel active">
@@ -392,6 +395,7 @@ Appier G|4180|818|+96|+13.30%
       <button class="astep-pill" data-k="3" onclick="autoStep('3')"><b>③</b>音声生成</button>
       <button class="astep-pill" data-k="4" onclick="autoStep('4')"><b>④</b>スライド</button>
       <button class="astep-pill" data-k="7" onclick="autoStep('7')"><b>⑤</b>出力</button>
+      <button class="astep-pill full-only" data-k="v" onclick="autoStep('v')"><b>⑥</b>動画</button>
       <button class="astep-pill" data-k="s" onclick="autoStep('s')" style="margin-left:6px;"><b>⚙</b>設定</button>
     </div>
   </div>
@@ -726,6 +730,24 @@ Appier G|4180|818|+96|+13.30%
       <strong style="font-size:11px;color:var(--text);">スライド画像</strong>
       <div id="autoPreviewCard2" style="display:none;margin-top:4px;"><div class="preview-wrap" id="autoPreviewArea2"></div></div>
     </div>
+  </div>
+  <div class="card full-only">
+    <h2>⑥ 動画</h2>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 8px;">④のスライド文章・③の台本・サムネ・ニュース画像から、動くグラフの動画（MP4）を作ります。</p>
+    <div class="auto-row">
+      <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);" title="日経平均・TOPIX のチャートに出す期間">チャートの期間
+        <select id="vidMonths" onchange="vidSaveMonths()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
+          <option value="1">1か月</option>
+          <option value="3" selected>3か月</option>
+          <option value="6">6か月</option>
+          <option value="12">1年</option>
+        </select>
+      </label>
+      <button class="btn" id="vidBuildBtn" onclick="vidBuild(this)" title="指数の値を株探から取り、画面に出す一言とまとめを AI で作ります">🎬 動画のデータを作る</button>
+      <span id="vidStatus" style="font-size:11px;color:var(--muted);"></span>
+    </div>
+    <div id="vidPreview" style="margin-top:8px;"></div>
+    <div id="vidControls" style="margin-top:8px;background:#fff;color:#1f2937;border-radius:8px;padding:8px 10px;display:none;"></div>
   </div>
   <div id="autoStatusBar"><span class="spin"></span><span id="autoStatusMsg">処理中…</span></div>
 </div><!-- /#tabAuto -->
@@ -1715,15 +1737,19 @@ function clearThumb(){
   debouncedPreview();
 }
 
-// ==================== TAB SWITCH（手動版／自動版）====================
+// ==================== TAB SWITCH（全自動版／自動版／手動版）====================
 // 現行UIには一切干渉しない。表示切替のみ。
+// 全自動版と自動版は同じ画面（#tabAuto）。全自動版のときだけ ⑥動画・台本の区切り・一括生成のあとの動画データ作成が加わる
+function autoIsFull(){ return document.body.classList.contains('mode-full'); }
 function switchTab(name){
-  const isManual = name === 'manual';
+  const isManual = name === 'manual', full = name === 'full';
+  document.body.classList.toggle('mode-full', full);
   document.getElementById('tabManual').classList.toggle('active', isManual);
   document.getElementById('tabAuto').classList.toggle('active', !isManual);
   document.getElementById('tabBtnManual').classList.toggle('active', isManual);
-  document.getElementById('tabBtnAuto').classList.toggle('active', !isManual);
-  if(!isManual){ autoInitSteps(); autoStep(window.__autoStepK||'1'); }
+  document.getElementById('tabBtnAuto').classList.toggle('active', name === 'auto');
+  document.getElementById('tabBtnFull').classList.toggle('active', full);
+  if(!isManual){ autoInitSteps(); let k=window.__autoStepK||'1'; if(!full && k==='v') k='1'; autoStep(k); }
 }
 
 // ==================== 自動版：ステップウィザード（1画面1工程）====================
@@ -1733,13 +1759,14 @@ const AUTO_STEPS = [
   {k:'3', label:'③ 音声生成'},
   {k:'4', label:'④ スライド'},
   {k:'7', label:'⑤ 出力'},
+  {k:'v', label:'⑥ 動画'},
   {k:'s', label:'⚙ 設定'},
 ];
 let _autoStepsReady = false;
 function autoInitSteps(){
   if(_autoStepsReady) return;
   const cards = [...document.querySelectorAll('#tabAuto > .card')];
-  const map = [['s','設定'],['1','① データ取得'],['1','データ抽出'],['2','ファクトチェック'],['3','音声生成'],['4','スライド'],['7','出力']];
+  const map = [['s','設定'],['1','① データ取得'],['1','データ抽出'],['2','ファクトチェック'],['3','音声生成'],['4','スライド'],['7','出力'],['v','動画']];
   cards.forEach(function(c){
     const h = c.querySelector('h2');
     if(!h){ c.classList.add('astep-cfg'); return; }
@@ -1757,6 +1784,8 @@ function autoStep(k){
   window.scrollTo(0, 0);
   // ⑤出力を開いたら、スライドのサムネ文言をコピーして縦型サムネの1〜3段目へ分割して流し込む
   if(k==='7'){ try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); }catch(e){} }
+  // ⑥動画を開いたら、前に作った動画のデータがあれば読み込む
+  if(k==='v'){ try{ vidOpen(); }catch(e){ console.warn(e); } }
   // 工程切替でプレビュー領域が可視になった直後に、実幅で再描画する
   // （非表示中は clientWidth=0 で幅を過大評価し、初回1列4枚縦積み→2列にズレるのを防ぐ）
   if(typeof renderPreview==='function'){
@@ -1849,6 +1878,11 @@ async function autoRunAll(realBtn){
     autoStatus('サムネ案・X投稿文を生成中…（2/3）'); realBtn.textContent='生成中…(2/3)'; await autoGenerateSns({}, fullInfo);
     // 3. スライド文章
     autoStatus('スライド文章を生成中…（3/3）'); realBtn.textContent='生成中…(3/3)'; await autoGenerateSlideText();
+    if(autoIsFull()){
+      autoStatus('動画のデータを作成中…'); realBtn.textContent='生成中…(動画)';
+      await vidBuild(document.getElementById('vidBuildBtn'));
+      autoStep('v');
+    }
     autoStatusDone('✅ 一括生成が完了しました'); realBtn.textContent='✅ 完了';
   }catch(e){ autoStatusDone('❌ '+e.message); realBtn.textContent='❌ '+e.message; }
   finally{ realBtn.disabled=false; setTimeout(()=>{realBtn.textContent=o;},2500); autoPersistState(); }
@@ -2208,7 +2242,7 @@ async function autoRunExtractRaw(promptKey, outId){
 async function autoRunExtract(promptKey, outId, statusId, btn, full, modelCls){
   const st = statusId ? document.getElementById(statusId) : null;
   if(!AutoState.sources){ if(st) st.textContent='先に①データ取得を'; return; }
-  const prompt = apReplaceVariables(AP_COPY_TEXTS[promptKey], autoVars());
+  const prompt = promptKey==='script' ? autoScriptPrompt() : apReplaceVariables(AP_COPY_TEXTS[promptKey], autoVars());
   const resources = autoBuildResources({forExtract: !full});
   const old = btn ? btn.textContent : '';
   if(btn){ btn.disabled=true; btn.textContent='実行中…'; }
@@ -2230,7 +2264,7 @@ async function autoRunExtract(promptKey, outId, statusId, btn, full, modelCls){
 // 台本の文字数と読み上げ目安時間を表示（音声化前の目安。日本語ナレーション約7文字/秒で換算）
 const TTS_CHARS_PER_SEC = 7;
 function autoFmtScriptStat(raw){
-  const chars = (raw||'').replace(/\s/g,'').length; // 空白・改行を除いた文字数
+  const chars = autoStripScriptTags(raw||'').replace(/\s/g,'').length; // 空白・改行・区切りの行を除いた文字数
   const sec = Math.round(chars / TTS_CHARS_PER_SEC);
   const m = Math.floor(sec/60), s = sec%60;
   const timeStr = m>0 ? `${m}分${s}秒` : `${s}秒`;
@@ -2244,7 +2278,9 @@ function updateScriptStats(){
   updateSplitToggleLabel();
 }
 // 前半＋後半を結合した台本全文（一括生成・コピー・全文の材料用）
-function autoScriptFull(){
+function autoScriptFull(){ return autoStripScriptTags(autoScriptFullRaw()).trim(); }
+// 区切りの行を残した全文（動画の場面分け・2分割のし直しに使う）
+function autoScriptFullRaw(){
   const a=((document.getElementById('autoScriptOut')||{}).value||'').trim();
   const b=((document.getElementById('autoScriptOut2')||{}).value||'').trim();
   return b ? (a+'\n'+b) : a;
@@ -2253,7 +2289,7 @@ function autoScriptFull(){
 function autoScriptParts(){
   const a=((document.getElementById('autoScriptOut')||{}).value||'').trim();
   const b=((document.getElementById('autoScriptOut2')||{}).value||'').trim();
-  return [a,b].filter(Boolean);
+  return [a,b].map(t=>autoStripScriptTags(t).trim()).filter(Boolean);
 }
 // 文字列を中央付近の「改行位置」で2分割（区切りは必ず改行に揃える。改行が無ければ後半は空）
 function autoSplitAtMiddleNewline(text){
@@ -2267,7 +2303,7 @@ function autoSplitAtMiddleNewline(text){
 }
 // 音声①＋音声②を結合し直し、中央付近の改行で音声①・②へ分割し直す
 function autoResplitScript(btn){
-  const [a,b]=autoSplitAtMiddleNewline(autoScriptFull());
+  const [a,b]=autoSplitAtMiddleNewline(autoScriptFullRaw());
   const e1=document.getElementById('autoScriptOut'), e2=document.getElementById('autoScriptOut2');
   if(e1) e1.value=a; if(e2) e2.value=b;
   updateScriptStats();
@@ -2276,7 +2312,7 @@ function autoResplitScript(btn){
 // 音声①・②を音声①にまとめる（音声②は空に）＝1本の音声にする
 function autoMergeScript(btn){
   const e1=document.getElementById('autoScriptOut'), e2=document.getElementById('autoScriptOut2');
-  if(e1) e1.value=autoScriptFull(); if(e2) e2.value='';
+  if(e1) e1.value=autoScriptFullRaw(); if(e2) e2.value='';
   updateScriptStats();
   if(typeof apSaveField==='function'){ apSaveField('autoScriptOut'); apSaveField('autoScriptOut2'); }
 }
@@ -2425,7 +2461,7 @@ async function autoGenerateTts(btn){
       b64s.push(data.audioBase64); sec+=(data.seconds||0);
     }
     st.textContent='連結・加工中…'; if(st4) st4.textContent='連結・加工中…';
-    AutoState.ttsParts=b64s; AutoState.ttsSeconds=Math.round(sec); AutoState.ttsVoice=voice; AutoState.ttsRaw=null; // 生の分割音声を保持（間の調整で再連結）
+    AutoState.ttsParts=b64s; AutoState.ttsSeconds=Math.round(sec); AutoState.ttsVoice=voice; AutoState.ttsRaw=null; AutoState.ttsText=text; // 生の分割音声を保持（間の調整で再連結）
     await autoRenderTts();
     autoStatusDone('✅ 音声生成完了');
   }catch(e){ st.textContent='❌ '+e.message; if(st4) st4.textContent='❌ '+e.message; autoStatusDone('❌ 音声生成失敗'); }
@@ -2486,7 +2522,28 @@ function autoFmtPayload(prompt, resources){
   return resText ? `以下の資料のみを根拠として、指示に厳密に従って回答してください。資料に無い情報を創作しないでください。\n\n===== 資料 =====\n${resText}\n\n===== 指示 =====\n${prompt}` : prompt;
 }
 function autoSlidePrompt(){ return `本日の日付は ${autoTodayStr()} です。出力の「日付:」と[表紙]の日付は必ずこの日付にしてください。\n\n` + AP_COPY_TEXTS.presen1; }
-function autoScriptPrompt(){ return apReplaceVariables(AP_COPY_TEXTS.script, autoVars()); }
+// 全自動版の台本は、動画で場面ごとに使うため [区切り名] の行を付けさせる（自動版・手動版のコピーには付けない）
+const AUTO_SCRIPT_TAGS = ['オープニング','指数','寄与度','業種','値上がり率','値下がり率','売買代金','ニュース','まとめ'];
+const AUTO_SCRIPT_PARTS_NOTE = `\n【出力の形】\n・動画の場面に合わせるため、台本の各部分の前に、次のうち当てはまる区切りを1行で書いてください。この行は読み上げません。\n${AUTO_SCRIPT_TAGS.map(t=>'['+t+']').join(' ')}`;
+const AUTO_SCRIPT_FREE_ORDER = '・以下の【構成】の 2～6 は順番を問いません。\n';
+function autoScriptPrompt(){
+  const base=apReplaceVariables(AP_COPY_TEXTS.script, autoVars());
+  if(!autoIsFull()) return base;   // 自動版は今までどおり
+  return base.replace(AUTO_SCRIPT_FREE_ORDER, '・【構成】の順番どおりに話してください。\n') + AUTO_SCRIPT_PARTS_NOTE;
+}
+// 台本から [区切り名] の行を除く（読み上げ・コピー・文字数で使う）
+const AUTO_SCRIPT_TAG_RE = new RegExp('^\\s*[\\[［【]\\s*(' + AUTO_SCRIPT_TAGS.join('|') + ')\\s*[\\]］】]\\s*$');
+function autoStripScriptTags(text){ return String(text||'').split('\n').filter(l=>!AUTO_SCRIPT_TAG_RE.test(l)).join('\n'); }
+// 台本を区切りごとに分ける（{オープニング:'…', 指数:'…', …}）。区切りが無ければ {}
+function autoScriptSections(text){
+  const out={}; let cur=null;
+  for(const line of String(text||'').replace(/\r\n/g,'\n').split('\n')){
+    const m=line.match(AUTO_SCRIPT_TAG_RE);
+    if(m){ cur=m[1]; if(!(cur in out)) out[cur]=''; continue; }
+    if(cur && line.trim()) out[cur]+=(out[cur]?'\n':'')+line.trim();
+  }
+  return out;
+}
 function autoFullInfoPrompt(){ return apReplaceVariables(AP_COPY_TEXTS.reportKk, autoVars()); }
 const AUTO_SNS_PROMPT = `あなたはYouTube「東証マーケット振り返り」動画の担当です。本日のデータ（資料）を基に、サムネ案とX投稿文を作成してください。
 
@@ -2718,12 +2775,163 @@ function autoSyncThumb(){
   debouncedPreview();
 }
 
+// ==================== 自動版：⑥ 動画 ====================
+// 動画の部品は kessan-visualizer の埋め込みバンドル（assets/kessan-viz.js、window.KessanViz.tse）。
+// ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
+const VID_KEY = SSG_PREFIX + 'video';
+const VID_SCRIPT = 'assets/kessan-viz.js';
+let vidHandle = null;
+function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
+function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
+function vidSave(o){ try{ localStorage.setItem(VID_KEY, JSON.stringify(o)); }catch(e){ console.warn('動画の保存に失敗', e); } }
+function vidSaveMonths(){ const o=vidLoadSaved()||{}; o.months=document.getElementById('vidMonths').value; vidSave(o); }
+function vidLoadLib(){
+  if(window.KessanViz && window.KessanViz.tse) return Promise.resolve(window.KessanViz);
+  return new Promise((res, rej)=>{
+    const sc=document.createElement('script'); sc.src=VID_SCRIPT+'?v='+Date.now().toString(36).slice(0,-4);
+    sc.onload=()=> (window.KessanViz && window.KessanViz.tse) ? res(window.KessanViz) : rej(new Error('動画の部品が読めませんでした'));
+    sc.onerror=()=>rej(new Error('動画の部品（'+VID_SCRIPT+'）が読めませんでした'));
+    document.head.appendChild(sc);
+  });
+}
+
+// 「+1,234.5」「-0.24%」「5,946億円」→ 数
+function vidNum(v){ const n=parseFloat(String(v==null?'':v).replace(/[,，\s円%％倍]/g,'').replace(/[−▲]/g,'-').replace(/＋/g,'+')); return isFinite(n)?n:null; }
+function vidOku(v){ const t=String(v||'').replace(/[,，\s]/g,''); const m=t.match(/(?:([\d.]+)兆)?(?:([\d.]+)億)?/); if(!m||(!m[1]&&!m[2])) return vidNum(t); return (m[1]?parseFloat(m[1])*10000:0)+(m[2]?parseFloat(m[2]):0); }
+function vidSplitDash(lines){ const i=lines.findIndex(l=>/^-{3,}$/.test(l.trim())); return i<0 ? [lines, []] : [lines.slice(0,i), lines.slice(i+1)]; }
+function vidCells(l){ return l.split('|').map(x=>x.trim()); }
+function vidIsoDate(d){ const m=String(d||'').match(/(\d{4})\D(\d{1,2})\D(\d{1,2})/); if(m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`; const v=(document.getElementById('autoBaseDate')||{}).value; return v || new Date().toISOString().slice(0,10); }
+
+// スライド文章（④）→ 動画のデータ（指数の推移と画面の文は別に足す）
+function vidDataFromSlide(text, hist){
+  const p=parseInput(text||''); const S=p.sections||{};
+  const date=vidIsoDate(p.date);
+  const idx=(S['指数']||[]).map(vidCells).filter(c=>c.length>=4).map(c=>({ name:c[0], close:vidNum(c[1]), change:vidNum(c[2]), pct:vidNum(c[3]) })).filter(x=>x.close!=null);
+  const points=(arr, close)=>{
+    const pts=(arr||[]).filter(x=>x.date<=date).map(x=>({date:x.date, close:x.close}));
+    if(close!=null){ if(pts.length && pts[pts.length-1].date===date) pts[pts.length-1].close=close; else pts.push({date, close}); }
+    return pts;
+  };
+  const nk=idx.find(x=>/日経平均/.test(x.name)), tp=idx.find(x=>/TOPIX/i.test(x.name));
+  const charts=[];
+  if(nk) charts.push({ ...nk, change:nk.change||0, pct:nk.pct||0, points:points(hist&&hist.nikkei, nk.close) });
+  if(tp) charts.push({ ...tp, change:tp.change||0, pct:tp.pct||0, points:points(hist&&hist.topix, tp.close) });
+  const others=idx.filter(x=>x!==nk && x!==tp).map(x=>({ ...x, change:x.change||0, pct:x.pct||0 }));
+  const [cp, cm]=vidSplitDash(S['寄与度']||[]);
+  const contribRow=c=>({ name:c[0], code:c[1]||'', value:vidNum(c[2]) });
+  const contrib={ plus:cp.map(vidCells).filter(c=>c.length>=3).map(contribRow).filter(x=>x.value!=null), minus:cm.map(vidCells).filter(c=>c.length>=3).map(contribRow).filter(x=>x.value!=null) };
+  const [su, sd]=vidSplitDash(S['業種']||[]);
+  const secRow=c=>({ name:c[0], pct:vidNum(c[1]), per:c[2]||null });
+  const sectors={ up:su.map(vidCells).filter(c=>c.length>=2).map(secRow).filter(x=>x.pct!=null), down:sd.map(vidCells).filter(c=>c.length>=2).map(secRow).filter(x=>x.pct!=null) };
+  const stockRow=c=>({ name:c[0], code:c[1]||'', price:vidNum(c[2]), change:vidNum(c[3]), pct:vidNum(c[4]), amount:c[5]!=null?vidOku(c[5]):null });
+  const stocks=k=>(S[k]||[]).map(vidCells).filter(c=>c.length>=5).map(stockRow).filter(x=>x.price!=null && x.pct!=null).map(x=>({ ...x, change:x.change||0 }));
+  const news=(S['ニュース']||[]).map(vidCells).filter(c=>c[0]).map(c=>({ title:c[0], body:c.slice(1).join('｜') }));
+  return { date, headline:'', charts, others, contrib, sectors, rise:stocks('上昇率'), fall:stocks('下落率'), trading:stocks('売買代金'), news, news_image:null, summary:null, thumbnail:null };
+}
+
+// 台本（③、[区切り名] つき）→ 場面ごとの読み上げ
+function vidNarration(){
+  const sec=autoScriptSections(autoScriptFullRaw());
+  const j=(...ks)=>ks.map(k=>sec[k]||'').filter(Boolean).join('\n');
+  const map={ index:j('オープニング','指数'), contrib:j('寄与度'), sectors:j('業種'), rise:j('値上がり率'), fall:j('値下がり率'), trading:j('売買代金'), news:j('ニュース'), summary:j('まとめ') };
+  const out={}; for(const [k,v] of Object.entries(map)) if(v) out[k]={ text:v, seconds:null };
+  return out;
+}
+
+// 画面に出す文（冒頭の一言・まとめ）。まとめ画像のプロンプトと同じく「特長がわかる・全部は書かない・注目点だけ」
+const VID_SCREEN_PROMPT = `以下の資料と台本をもとに、この日の東証マーケットを振り返る動画の画面に出す文を作ってください。
+・headline：動画の最初に大きく出す、この日の市場をひと言で表す文。25文字以内。台本のオープニングと同じ内容にしてください。
+・feature：最後の「まとめ」に出す、この日のマーケットの特長がわかる1文。40文字以内。
+・points：まとめに出す注目点を3つ。title は15文字以内、body は40文字以内。全ての情報を書かず、注目点だけを選んでください。
+・数字と銘柄名は資料と台本のとおりに書いてください。
+・次の形の JSON だけを出力してください。
+{"headline":"","feature":"","points":[{"title":"","body":""}]}`;
+async function vidScreenText(){
+  const resources=autoBuildResources().concat([{label:'台本', text:autoScriptFull()}, {label:'スライド文章', text:(document.getElementById('mainInput')||{}).value||''}]);
+  const res=await fetch('/api/analyze',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ prompt:VID_SCREEN_PROMPT, resources, temperature:0.3, models:autoModelChain('low') }) });
+  const d=await res.json();
+  if(!d.ok) throw new Error(d.error||'画面の文を作れませんでした');
+  const m=String(d.text||'').match(/\{[\s\S]*\}/); if(!m) throw new Error('画面の文の形が読めませんでした');
+  const o=JSON.parse(m[0].replace(/,\s*([}\]])/g,'$1'));
+  return { headline:String(o.headline||'').trim(), summary:{ feature:String(o.feature||'').trim(), points:(Array.isArray(o.points)?o.points:[]).slice(0,3).map(x=>({ title:String(x.title||'').trim(), body:String(x.body||'').trim() })).filter(x=>x.title) } };
+}
+
+// サムネ（スライド0枚目）を 1920×1080 の画像に
+async function vidThumbImage(){
+  const t=((document.getElementById('thumbInput')||{}).value||'').trim(); if(!t) return null;
+  const box=document.getElementById('renderTarget'); box.innerHTML=slideThumb(t);
+  await new Promise(r=>setTimeout(r,200));
+  try{
+    const el=box.querySelector('.slide');
+    const c=await html2canvas(el,{width:SLIDE_W,height:SLIDE_H,scale:1920/SLIDE_W,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false});
+    return c.toDataURL('image/jpeg',0.9);
+  }catch(e){ console.warn('サムネの画像化に失敗', e); return null; }
+  finally{ box.innerHTML=''; }
+}
+
+async function vidBuild(btn){
+  const text=(document.getElementById('mainInput')||{}).value||'';
+  if(!/\[指数\]/.test(text)){ vidStatus('先に④スライドの文章を作ってください'); return; }
+  const months=document.getElementById('vidMonths').value||'3';
+  const old=btn.textContent; btn.disabled=true;
+  try{
+    const date=vidIsoDate(parseInput(text).date);
+    vidStatus('指数の推移を取得中…（株探）');
+    const hr=await fetch(`/api/index-history?months=${encodeURIComponent(months)}&until=${date}`);
+    const hist=await hr.json();
+    if(!hist.ok) throw new Error(hist.error||'指数の推移を取得できませんでした');
+    const data=vidDataFromSlide(text, hist);
+    const narration=vidNarration();
+    vidStatus('画面に出す一言とまとめを作成中…（AI）');
+    try{ const sc=await vidScreenText(); data.headline=sc.headline; data.summary=sc.summary; }
+    catch(e){ console.warn(e); vidStatus('⚠ 一言・まとめは作れませんでした（'+e.message+'）'); }
+    if(!data.headline){ const op=(autoScriptSections(autoScriptFullRaw())['オープニング']||'').split(/[。\n]/)[0]; data.headline=op; }
+    const saved=vidLoadSaved()||{};
+    const settings=Object.assign({}, saved.settings||{}, { narration });
+    vidSave({ months, data, settings, builtAt:new Date().toISOString() });
+    await vidMount(true);
+    const noScript=!Object.keys(narration).length;
+    vidStatus('✅ 動画のデータを作りました'+(noScript?'（台本に区切りが無いため、読み上げは入っていません。③で台本を作り直してください）':''));
+  }catch(e){ vidStatus('❌ '+e.message); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+
+// 保存してある動画のデータを読み込んで表示する（サムネとニュース画像は、いまのものを入れる）
+async function vidMount(force){
+  const saved=vidLoadSaved();
+  const sel=document.getElementById('vidMonths'); if(sel && saved && saved.months) sel.value=saved.months;
+  if(!saved || !saved.data) return;
+  if(vidHandle && !force) return;
+  const KV=await vidLoadLib();
+  const data=Object.assign({}, saved.data, { news_image:newsImgUrl||null, thumbnail:await vidThumbImage() });
+  const voice=()=>(document.getElementById('autoTtsVoice')||{}).value||'Erinome';
+  const model=()=>(document.getElementById('autoTtsModel')||{}).value||undefined;
+  const props={
+    data, settings:saved.settings||null, namespace:data.date,
+    controlsEl:document.getElementById('vidControls'),
+    tts:(t)=>KV.tse.fetchTts('/api/tts', voice(), model())(t),
+    // ③で作った読み上げ（台本が同じなら、TTS を呼ばずにこれを場面ごとに切り分ける）
+    importNarration: async ()=>{
+      if(!AutoState.ttsParts || !AutoState.ttsParts.length || !AutoState.ttsText) return null;
+      const gapMs=parseInt((document.getElementById('autoTtsGap')||{}).value||'0',10)||0;
+      const raw=await autoConcatWavs(AutoState.ttsParts, gapMs);
+      return { blob: await autoBufToWav(raw.samples, raw.sampleRate), text: AutoState.ttsText };
+    },
+    onChange:(st)=>{ const o=vidLoadSaved()||{}; o.settings=st; vidSave(o); },
+    fileName:`tsemarket_${data.date.replace(/-/g,'')}.mp4`,
+  };
+  document.getElementById('vidControls').style.display='';
+  if(vidHandle){ vidHandle.update(props); return; }
+  vidHandle=KV.tse.mount(document.getElementById('vidPreview'), props);
+}
+function vidOpen(){ vidMount(false).catch(e=>vidStatus('❌ '+e.message)); }
+
 apInit();
 // Webフォント読込前は文字幅の実測がずれるため、読込完了後に縦型サムネを描き直す
 try{ if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ try{ renderVThumbPreview(); }catch(e){} }); }catch(e){}
 autoLoadCustomDict();
 autoInitDict();
-switchTab('auto');   // 初期表示を自動版にする
+switchTab('full');   // 初期表示を全自動版にする
 </script>
 </body>
 </html>
