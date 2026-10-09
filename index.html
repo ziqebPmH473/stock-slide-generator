@@ -2883,10 +2883,12 @@ function vidNarration(){
 const VID_SCREEN_PROMPT = `以下の資料と台本をもとに、この日の東証マーケットを振り返る動画の画面に出す文を作ってください。
 ・headline：動画の最初に大きく出す、この日の市場をひと言で表す文。25文字以内。台本のオープニングと同じ内容にしてください。
 ・feature：最後の「まとめ」に出す、この日のマーケットの特長がわかる1文。40文字以内。
-・points：まとめに出す注目点を3つ。title は15文字以内、body は40文字以内。全ての情報を書かず、注目点だけを選んでください。
+・points：まとめに出す注目点を3つ。title は何が起きたかがわかる見出しで15文字以内、body は40文字以内。全ての情報を書かず、注目点だけを選んでください。
+・stocks：その注目点に関わる銘柄を、資料のランキング（寄与度・上昇率・下落率・売買代金）から0〜3件。code は証券コード、show は寄与度の数字を出すなら "contrib"、前日比を出すなら "pct"。
+・closing：まとめの図の最後に出す、この日の相場の流れをひと言で表す1文。30文字以内。
 ・数字と銘柄名は資料と台本のとおりに書いてください。
 ・次の形の JSON だけを出力してください。
-{"headline":"","feature":"","points":[{"title":"","body":""}]}`;
+{"headline":"","feature":"","points":[{"title":"","body":"","stocks":[{"code":"","show":"pct"}]}],"closing":""}`;
 async function vidScreenText(){
   const resources=autoBuildResources().concat([{label:'台本', text:autoScriptFull()}, {label:'スライド文章', text:(document.getElementById('mainInput')||{}).value||''}]);
   const res=await fetch('/api/analyze',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ prompt:VID_SCREEN_PROMPT, resources, temperature:0.3, models:autoModelChain('low') }) });
@@ -2894,7 +2896,8 @@ async function vidScreenText(){
   if(!d.ok) throw new Error(d.error||'画面の文を作れませんでした');
   const m=String(d.text||'').match(/\{[\s\S]*\}/); if(!m) throw new Error('画面の文の形が読めませんでした');
   const o=JSON.parse(m[0].replace(/,\s*([}\]])/g,'$1'));
-  return { headline:String(o.headline||'').trim(), summary:{ feature:String(o.feature||'').trim(), points:(Array.isArray(o.points)?o.points:[]).slice(0,3).map(x=>({ title:String(x.title||'').trim(), body:String(x.body||'').trim() })).filter(x=>x.title) } };
+  const stocks=a=>(Array.isArray(a)?a:[]).slice(0,3).map(x=>({ code:String(x&&x.code||'').trim(), show:(x&&x.show)==='contrib'?'contrib':'pct' })).filter(x=>x.code);
+  return { headline:String(o.headline||'').trim(), summary:{ feature:String(o.feature||'').trim(), closing:String(o.closing||'').trim()||null, points:(Array.isArray(o.points)?o.points:[]).slice(0,3).map(x=>({ title:String(x.title||'').trim(), body:String(x.body||'').trim(), stocks:stocks(x.stocks) })).filter(x=>x.title) } };
 }
 
 // サムネ（スライド0枚目）を 1920×1080 の画像に
