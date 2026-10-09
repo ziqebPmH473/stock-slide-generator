@@ -975,6 +975,13 @@ function apResetAll(){
 function apDoReset(){
   apClearStorage();
   try { localStorage.removeItem(SSG_PREFIX+'autostate'); } catch(e){}
+  // ⑥動画のデータと読み上げ（動画の部品が IndexedDB の kessan-viz-audio に「tse/日付/…」で保存）
+  try { localStorage.removeItem(SSG_PREFIX+'video'); } catch(e){}
+  try {
+    const rq=indexedDB.open('kessan-viz-audio',1);
+    rq.onupgradeneeded=()=>rq.result.createObjectStore('kv');
+    rq.onsuccess=()=>{ const db=rq.result; try{ const st=db.transaction('kv','readwrite').objectStore('kv'); const c=st.openCursor(); c.onsuccess=()=>{ const cur=c.result; if(!cur){ db.close(); return; } if(String(cur.key).startsWith('tse/')) cur.delete(); cur.continue(); }; }catch(e){ db.close(); } };
+  } catch(e){}
   if (typeof AutoState === 'object'){ AutoState.sources=null; AutoState.meigaraTable=''; AutoState.slideText=''; }
   for (const id of AP_STORAGE_IDS){
     if (!document.getElementById(id)) continue;
@@ -1081,10 +1088,12 @@ const SSG_IMG_DB='ssg-images';
 function ssgImgDb(){ return new Promise((res,rej)=>{ const r=indexedDB.open(SSG_IMG_DB,1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
 async function ssgImgPut(key, val){ try{ const db=await ssgImgDb(); await new Promise((res,rej)=>{ const t=db.transaction('kv','readwrite'); if(val==null) t.objectStore('kv').delete(key); else t.objectStore('kv').put(val,key); t.oncomplete=res; t.onerror=()=>rej(t.error); }); db.close(); }catch(e){ console.warn('画像の保存に失敗', e); } }
 async function ssgImgGet(key){ try{ const db=await ssgImgDb(); const v=await new Promise((res,rej)=>{ const q=db.transaction('kv','readonly').objectStore('kv').get(key); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); db.close(); return v||null; }catch(e){ return null; } }
-// 起動時：保存してある画像を戻す
+function ssgToday(){ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; }
+// 起動時：保存してある画像を戻す（今日保存したものだけ。前の日の画像は消す）
 async function ssgImgRestore(){
   for(const type of ['cover','news']){
     const v=await ssgImgGet(type); if(!v || !v.url) continue;
+    if(v.date!==ssgToday()){ ssgImgPut(type, null); continue; }
     if(type==='cover') coverImgUrl=v.url; else newsImgUrl=v.url;
     applyImgUI(type, v.url, v.name||'');
   }
@@ -1098,7 +1107,7 @@ function setImg(file, type){
     if(type==='cover') coverImgUrl = e.target.result; else newsImgUrl = e.target.result;
     applyImgUI(pfx, e.target.result, file.name);
     debouncedPreview();
-    ssgImgPut(pfx, { url:e.target.result, name:file.name });
+    ssgImgPut(pfx, { url:e.target.result, name:file.name, date:ssgToday() });
     if(pfx==='news' && typeof vidRefresh==='function') vidRefresh();   // ⑥動画にもすぐ反映（AI・読み上げは呼ばない）
   };
   r.readAsDataURL(file);
