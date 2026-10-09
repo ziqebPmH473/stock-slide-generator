@@ -2813,7 +2813,7 @@ function autoSyncThumb(){
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '01e2990cf1';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = 'd293c0718e';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -2920,7 +2920,7 @@ function vidDataFromSlide(text, hist){
 function vidNarration(){
   const sec=autoScriptSections(autoScriptFullRaw());
   const j=(...ks)=>ks.map(k=>sec[k]||'').filter(Boolean).join('\n');
-  const map={ index:j('オープニング','指数'), contrib:j('寄与度'), sectors:j('業種'), rise:j('値上がり率'), fall:j('値下がり率'), trading:j('売買代金'), news:j('ニュース'), summary:j('まとめ') };
+  const map={ cover:j('オープニング'), index:j('指数'), contrib:j('寄与度'), sectors:j('業種'), rise:j('値上がり率'), fall:j('値下がり率'), trading:j('売買代金'), news:j('ニュース'), summary:j('まとめ') };
   const out={}; for(const [k,v] of Object.entries(map)) if(v) out[k]={ text:v, seconds:null };
   return out;
 }
@@ -3008,6 +3008,13 @@ async function vidMount(force){
       const gapMs=parseInt((document.getElementById('autoTtsGap')||{}).value||'0',10)||0;
       const raw=await autoConcatWavs(AutoState.ttsParts, gapMs);
       return { blob: await autoBufToWav(raw.samples, raw.sampleRate), text: AutoState.ttsText };
+    },
+    // 文字起こし（kessan-tool の分析動画と同じ /api/transcribe。Groq Whisper）。1本の読み上げを台本と照らして場面ごとに切る
+    transcribe: async (blob)=>{
+      const res=await fetch('/api/transcribe?lang=ja',{method:'POST',headers:{'Content-Type':blob.type||'audio/wav'},body:blob});
+      let d={}; try{ d=await res.json(); }catch(e){}
+      if(!res.ok||!d.ok) throw new Error(d.error||('文字起こしに失敗しました（HTTP '+res.status+'）'));
+      return { words:d.words||[] };
     },
     onChange:(st)=>{ const o=vidLoadSaved()||{}; o.settings=st; vidSave(o); },
     fileName:`tsemarket_${data.date.replace(/-/g,'')}.mp4`,
