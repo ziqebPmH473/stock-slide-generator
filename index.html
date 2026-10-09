@@ -146,6 +146,8 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 .tab-badge.beta { background:#7c2d12; color:#fdba74; }
 /* 全自動版だけに出すもの（⑥動画など）。全自動版と自動版は同じ画面を使い、body.mode-full で切り替える */
 body:not(.mode-full) .full-only { display:none !important; }
+/* ⑥動画のプレビュー：横に並ぶ広さのときだけ、スクロールしても見えるようにする（縦に並ぶと台本に重なるため） */
+@media (min-width:1000px){ .vid-preview { position:sticky; top:96px; } }
 
 /* ===== 自動版：現行に近いコンパクト表示（スクロール削減）===== */
 #tabAuto .card { padding:9px 11px; margin-bottom:9px; }
@@ -747,7 +749,7 @@ Appier G|4180|818|+96|+13.30%
     </div>
     <!-- 左にプレビュー（小さめ・スクロールしても見える）、右に場面ごとの台本と操作。狭い画面では縦に並ぶ -->
     <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-top:8px;">
-      <div id="vidPreview" style="flex:1 1 380px;max-width:560px;position:sticky;top:96px;"></div>
+      <div id="vidPreview" class="vid-preview" style="flex:1 1 380px;max-width:560px;"></div>
       <div id="vidControls" style="flex:1 1 380px;min-width:0;background:#fff;color:#1f2937;border-radius:8px;padding:8px 10px;display:none;"></div>
     </div>
   </div>
@@ -1075,6 +1077,19 @@ function applyImgUI(pfx, url, fileName){
   if(_m(ap+'Meta')) _m(ap+'Meta').textContent=fileName;
   if(_m(ap+'Clear')) _m(ap+'Clear').style.display='';
 }
+const SSG_IMG_DB='ssg-images';
+function ssgImgDb(){ return new Promise((res,rej)=>{ const r=indexedDB.open(SSG_IMG_DB,1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function ssgImgPut(key, val){ try{ const db=await ssgImgDb(); await new Promise((res,rej)=>{ const t=db.transaction('kv','readwrite'); if(val==null) t.objectStore('kv').delete(key); else t.objectStore('kv').put(val,key); t.oncomplete=res; t.onerror=()=>rej(t.error); }); db.close(); }catch(e){ console.warn('画像の保存に失敗', e); } }
+async function ssgImgGet(key){ try{ const db=await ssgImgDb(); const v=await new Promise((res,rej)=>{ const q=db.transaction('kv','readonly').objectStore('kv').get(key); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); db.close(); return v||null; }catch(e){ return null; } }
+// 起動時：保存してある画像を戻す
+async function ssgImgRestore(){
+  for(const type of ['cover','news']){
+    const v=await ssgImgGet(type); if(!v || !v.url) continue;
+    if(type==='cover') coverImgUrl=v.url; else newsImgUrl=v.url;
+    applyImgUI(type, v.url, v.name||'');
+  }
+  debouncedPreview();
+}
 function setImg(file, type){
   if(!file || !file.type.startsWith('image/')) return;
   const pfx = type==='cover' ? 'cover' : 'news';
@@ -1083,6 +1098,8 @@ function setImg(file, type){
     if(type==='cover') coverImgUrl = e.target.result; else newsImgUrl = e.target.result;
     applyImgUI(pfx, e.target.result, file.name);
     debouncedPreview();
+    ssgImgPut(pfx, { url:e.target.result, name:file.name });
+    if(pfx==='news' && typeof vidRefresh==='function') vidRefresh();   // ⑥動画にもすぐ反映（AI・読み上げは呼ばない）
   };
   r.readAsDataURL(file);
 }
@@ -1098,6 +1115,8 @@ function clearImg(type){
   [pfx+'ImgMeta', ap+'Meta'].forEach(id=>{ if(_m(id)) _m(id).textContent=''; });
   [pfx+'ImgClearBtn', ap+'Clear'].forEach(id=>{ if(_m(id)) _m(id).style.display='none'; });
   debouncedPreview();
+  ssgImgPut(pfx, null);
+  if(pfx==='news' && typeof vidRefresh==='function') vidRefresh();
 }
 function initDropZone(id, type){
   const z = document.getElementById(id);
@@ -2975,9 +2994,12 @@ async function vidMount(force){
   if(vidHandle){ vidHandle.update(props); return; }
   vidHandle=KV.tse.mount(document.getElementById('vidPreview'), props);
 }
-function vidOpen(){ vidMount(false).catch(e=>vidStatus('❌ '+e.message)); }
+// ⑥を開くたびに、いまのサムネ・ニュース画像を入れて描き直す（保存してある動画のデータ・音声はそのまま。AI・読み上げは呼ばない）
+function vidOpen(){ vidMount(!!vidHandle).catch(e=>vidStatus('❌ '+e.message)); }
+function vidRefresh(){ if(vidHandle) vidMount(true).catch(e=>vidStatus('❌ '+e.message)); }
 
 apInit();
+ssgImgRestore();
 // Webフォント読込前は文字幅の実測がずれるため、読込完了後に縦型サムネを描き直す
 try{ if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ try{ renderVThumbPreview(); }catch(e){} }); }catch(e){}
 autoLoadCustomDict();
