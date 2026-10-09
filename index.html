@@ -2557,7 +2557,7 @@ function autoFmtPayload(prompt, resources){
 function autoSlidePrompt(){ return `本日の日付は ${autoTodayStr()} です。出力の「日付:」と[表紙]の日付は必ずこの日付にしてください。\n\n` + AP_COPY_TEXTS.presen1; }
 // 全自動版の台本は、動画で場面ごとに使うため [区切り名] の行を付けさせる（自動版・手動版のコピーには付けない）
 const AUTO_SCRIPT_TAGS = ['オープニング','指数','寄与度','業種','値上がり率','値下がり率','売買代金','ニュース','まとめ'];
-const AUTO_SCRIPT_PARTS_NOTE = `\n【出力の形】\n・動画の場面に合わせるため、台本の各部分の前に、次のうち当てはまる区切りを1行で書いてください。この行は読み上げません。\n${AUTO_SCRIPT_TAGS.map(t=>'['+t+']').join(' ')}`;
+const AUTO_SCRIPT_PARTS_NOTE = `\n【動画の読み上げとして】\n・ランキングや数字は動画の画面に出ます。ランキング名や業種別などの見出しにあたる前置きは言わず、銘柄名や業種名から話し始めてください。\n・数字は全部を読まず、要点になるものだけにしてください。\n【出力の形】\n・動画の場面に合わせるため、台本の各部分の前に、次のうち当てはまる区切りを1行で書いてください。この行は読み上げません。\n${AUTO_SCRIPT_TAGS.map(t=>'['+t+']').join(' ')}`;
 const AUTO_SCRIPT_FREE_ORDER = '・以下の【構成】の 2～6 は順番を問いません。\n';
 function autoScriptPrompt(){
   const base=apReplaceVariables(AP_COPY_TEXTS.script, autoVars());
@@ -2813,7 +2813,7 @@ function autoSyncThumb(){
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = 'd293c0718e';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = 'f87ba4433f';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
