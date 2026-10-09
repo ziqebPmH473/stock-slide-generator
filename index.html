@@ -2810,6 +2810,7 @@ function autoSyncThumb(){
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
+const VID_SCRIPT_VER = '167c6986ce';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -2857,7 +2858,7 @@ function vidScreenKey(){ return autoScriptFull()+'\n----\n'+((document.getElemen
 function vidLoadLib(){
   if(window.KessanViz && window.KessanViz.tse) return Promise.resolve(window.KessanViz);
   return new Promise((res, rej)=>{
-    const sc=document.createElement('script'); sc.src=VID_SCRIPT+'?v='+Date.now().toString(36).slice(0,-4);
+    const sc=document.createElement('script'); sc.src=VID_SCRIPT+'?v='+VID_SCRIPT_VER;
     sc.onload=()=> (window.KessanViz && window.KessanViz.tse) ? res(window.KessanViz) : rej(new Error('動画の部品が読めませんでした'));
     sc.onerror=()=>rej(new Error('動画の部品（'+VID_SCRIPT+'）が読めませんでした'));
     document.head.appendChild(sc);
@@ -2967,6 +2968,9 @@ async function vidBuild(btn){
     // 台本に区切りが無いときは、前に入れた場面ごとの台本を消さない
     const noScript=!Object.keys(narration).length;
     if(noScript && prev.settings && prev.settings.narration) narration=prev.settings.narration;
+    // 台本が前と同じ場面は、読み上げの長さを引き継ぐ（消すと場面が元の秒数に戻り、読み上げが途中で切れる）
+    const prevNar=(prev.settings&&prev.settings.narration)||{};
+    for(const [id,v] of Object.entries(narration)){ const p0=prevNar[id]; if(p0 && p0.seconds!=null && String(p0.text||'').trim()===String(v.text||'').trim()) narration[id]={ text:v.text, seconds:p0.seconds }; }
     const settings=Object.assign({}, prev.settings||{}, { narration });
     vidSave({ months, data, settings, screenKey, hist:{ nikkei:histFull.nikkei, topix:histFull.topix }, builtAt:new Date().toISOString() });
     await vidMount(true);
