@@ -746,8 +746,11 @@ Appier G|4180|818|+96|+13.30%
       <button class="btn" id="vidBuildBtn" onclick="vidBuild(this)" title="指数の値を株探から取り、画面に出す一言とまとめを AI で作ります">🎬 動画のデータを作る</button>
       <span id="vidStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
-    <div id="vidPreview" style="margin-top:8px;"></div>
-    <div id="vidControls" style="margin-top:8px;background:#fff;color:#1f2937;border-radius:8px;padding:8px 10px;display:none;"></div>
+    <!-- 左にプレビュー（小さめ・スクロールしても見える）、右に場面ごとの台本と操作。狭い画面では縦に並ぶ -->
+    <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-top:8px;">
+      <div id="vidPreview" style="flex:1 1 380px;max-width:560px;position:sticky;top:96px;"></div>
+      <div id="vidControls" style="flex:1 1 380px;min-width:0;background:#fff;color:#1f2937;border-radius:8px;padding:8px 10px;display:none;"></div>
+    </div>
   </div>
   <div id="autoStatusBar"><span class="spin"></span><span id="autoStatusMsg">処理中…</span></div>
 </div><!-- /#tabAuto -->
