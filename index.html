@@ -736,14 +736,13 @@ Appier G|4180|818|+96|+13.30%
     <p style="font-size:11px;color:var(--muted);margin:0 0 8px;">④のスライド文章・③の台本・サムネ・ニュース画像から、動くグラフの動画（MP4）を作ります。</p>
     <div class="auto-row">
       <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);" title="日経平均・TOPIX のチャートに出す期間">チャートの期間
-        <select id="vidMonths" onchange="vidSaveMonths()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
+        <select id="vidMonths" onchange="vidChangeMonths()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
           <option value="1">1か月</option>
           <option value="3" selected>3か月</option>
           <option value="6">6か月</option>
-          <option value="12">1年</option>
         </select>
       </label>
-      <button class="btn" id="vidBuildBtn" onclick="vidBuild(this)" title="指数の値を株探から取り、画面に出す一言とまとめを AI で作ります">🎬 動画のデータを作る</button>
+      <button class="btn" id="vidBuildBtn" onclick="vidBuild(this)" title="指数の値（6か月分）を株探から取り、画面に出す一言とまとめを AI で作ります（台本とスライド文章が前と同じなら AI は呼びません）">🎬 動画のデータを作る</button>
       <span id="vidStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
     <!-- 左にプレビュー（小さめ・スクロールしても見える）、右に場面ごとの台本と操作。狭い画面では縦に並ぶ -->
@@ -2788,6 +2787,45 @@ function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) e
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
 function vidSave(o){ try{ localStorage.setItem(VID_KEY, JSON.stringify(o)); }catch(e){ console.warn('動画の保存に失敗', e); } }
 function vidSaveMonths(){ const o=vidLoadSaved()||{}; o.months=document.getElementById('vidMonths').value; vidSave(o); }
+// 指数の推移（株探）を取る
+async function vidFetchHist(months, date){
+  const hr=await fetch(`/api/index-history?months=${encodeURIComponent(months)}&until=${date}`);
+  const hist=await hr.json();
+  if(!hist.ok) throw new Error(hist.error||'指数の推移を取得できませんでした');
+  return hist;
+}
+const VID_HIST_MONTHS = 6;   // 株探から取るのはこの長さ（期間の選択の最長）。期間を変えるときは取り直さず切り出す
+// 取っておいた推移から、対象日までの months か月分を切り出す
+function vidSliceHist(hist, months, date){
+  const d=new Date(date+'T00:00:00Z'); d.setUTCMonth(d.getUTCMonth()-Number(months||3));
+  const since=d.toISOString().slice(0,10);
+  const cut=a=>(a||[]).filter(x=>x.date>=since && x.date<=date);
+  return { nikkei:cut(hist&&hist.nikkei), topix:cut(hist&&hist.topix) };
+}
+// 期間を変えたら、取っておいた推移から切り出し直すだけ（株探も AI も呼ばない。一言・まとめ・台本・読み上げはそのまま）
+async function vidChangeMonths(){
+  const months=document.getElementById('vidMonths').value||'3';
+  const o=vidLoadSaved();
+  if(!o || !o.data){ vidSaveMonths(); return; }
+  try{
+    if(!o.hist){ vidStatus('指数の推移を取得中…（株探）'); const h=await vidFetchHist(VID_HIST_MONTHS, o.data.date); o.hist={ nikkei:h.nikkei, topix:h.topix }; }   // 前の版で作ったデータには推移が無い
+    const hist=vidSliceHist(o.hist, months, o.data.date);
+    // 今の終値（スライド文章の値）はそのまま、推移だけ差し替える
+    const date=o.data.date;
+    o.data.charts=o.data.charts.map(c=>{
+      const arr=/日経平均/.test(c.name) ? hist.nikkei : /TOPIX/i.test(c.name) ? hist.topix : null;
+      if(!arr) return c;
+      const pts=arr.map(x=>({date:x.date, close:x.close}));
+      if(pts.length && pts[pts.length-1].date===date) pts[pts.length-1].close=c.close; else pts.push({date, close:c.close});
+      return Object.assign({}, c, { points: pts });
+    });
+    o.months=months; vidSave(o);
+    await vidMount(true);
+    vidStatus('✅ チャートの期間を変えました');
+  }catch(e){ vidStatus('❌ '+e.message); }
+}
+// 一言・まとめの元（台本とスライド文章）。同じなら AI を呼び直さない
+function vidScreenKey(){ return autoScriptFull()+'\n----\n'+((document.getElementById('mainInput')||{}).value||''); }
 function vidLoadLib(){
   if(window.KessanViz && window.KessanViz.tse) return Promise.resolve(window.KessanViz);
   return new Promise((res, rej)=>{
@@ -2880,21 +2918,28 @@ async function vidBuild(btn){
   try{
     const date=vidIsoDate(parseInput(text).date);
     vidStatus('指数の推移を取得中…（株探）');
-    const hr=await fetch(`/api/index-history?months=${encodeURIComponent(months)}&until=${date}`);
-    const hist=await hr.json();
-    if(!hist.ok) throw new Error(hist.error||'指数の推移を取得できませんでした');
-    const data=vidDataFromSlide(text, hist);
-    const narration=vidNarration();
-    vidStatus('画面に出す一言とまとめを作成中…（AI）');
-    try{ const sc=await vidScreenText(); data.headline=sc.headline; data.summary=sc.summary; }
-    catch(e){ console.warn(e); vidStatus('⚠ 一言・まとめは作れませんでした（'+e.message+'）'); }
+    const histFull=await vidFetchHist(VID_HIST_MONTHS, date);
+    const data=vidDataFromSlide(text, vidSliceHist(histFull, months, date));
+    let narration=vidNarration();
+    const prev=vidLoadSaved()||{};
+    const key=vidScreenKey();
+    let screenKey=null;
+    if(prev.screenKey===key && prev.data && prev.data.headline){
+      // 台本とスライド文章が前と同じ → 前に作った一言・まとめをそのまま使う（AI を呼ばない）
+      data.headline=prev.data.headline; data.summary=prev.data.summary; screenKey=key;
+    }else{
+      vidStatus('画面に出す一言とまとめを作成中…（AI）');
+      try{ const sc=await vidScreenText(); data.headline=sc.headline; data.summary=sc.summary; screenKey=key; }
+      catch(e){ console.warn(e); vidStatus('⚠ 一言・まとめは作れませんでした（'+e.message+'）'); }
+    }
     if(!data.headline){ const op=(autoScriptSections(autoScriptFullRaw())['オープニング']||'').split(/[。\n]/)[0]; data.headline=op; }
-    const saved=vidLoadSaved()||{};
-    const settings=Object.assign({}, saved.settings||{}, { narration });
-    vidSave({ months, data, settings, builtAt:new Date().toISOString() });
-    await vidMount(true);
+    // 台本に区切りが無いときは、前に入れた場面ごとの台本を消さない
     const noScript=!Object.keys(narration).length;
-    vidStatus('✅ 動画のデータを作りました'+(noScript?'（台本に区切りが無いため、読み上げは入っていません。③で台本を作り直してください）':''));
+    if(noScript && prev.settings && prev.settings.narration) narration=prev.settings.narration;
+    const settings=Object.assign({}, prev.settings||{}, { narration });
+    vidSave({ months, data, settings, screenKey, hist:{ nikkei:histFull.nikkei, topix:histFull.topix }, builtAt:new Date().toISOString() });
+    await vidMount(true);
+    vidStatus('✅ 動画のデータを作りました'+(noScript?'（台本に区切りが無いため、場面ごとの台本は前のままです。全自動版の③で台本を作り直してください）':''));
   }catch(e){ vidStatus('❌ '+e.message); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
