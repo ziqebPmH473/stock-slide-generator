@@ -2894,7 +2894,7 @@ function autoSyncThumb(){
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '41b0f7d457';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '99e8dc2243';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -3019,7 +3019,8 @@ function vidNarration(){
   const j=(...ks)=>ks.map(k=>sec[k]||'').filter(Boolean).join('\n');
   const map={ cover:j('オープニング'), index:j('指数'), contrib:j('寄与度'), sectors:j('業種'), rise:j('値上がり率'), fall:j('値下がり率'), trading:j('売買代金'), news:j('ニュース'), summary:j('まとめ') };
   // 読み上げでは「ホールディングス」を言わない（「キオクシア」で通じる。画面の銘柄名は「キオクシアHD」のまま）
-  const out={}; for(const [k,v] of Object.entries(map)) if(v) out[k]={ text:v.replace(/ホールディングス/g,''), seconds:null };
+  // src は元の台本の区切りの文。「動画のデータを作る」を押し直したとき、src が同じなら前の文と音声を引き継ぐ
+  const out={}; for(const [k,v] of Object.entries(map)) if(v) out[k]={ text:v.replace(/ホールディングス/g,''), seconds:null, src:v };
   return out;
 }
 
@@ -3080,7 +3081,12 @@ async function vidBuild(btn){
     if(noScript && prev.settings && prev.settings.narration) narration=prev.settings.narration;
     // 台本が前と同じ場面は、読み上げの長さを引き継ぐ（消すと場面が元の秒数に戻り、読み上げが途中で切れる）
     const prevNar=(prev.settings&&prev.settings.narration)||{};
-    for(const [id,v] of Object.entries(narration)){ const p0=prevNar[id]; if(p0 && p0.seconds!=null && String(p0.text||'').trim()===String(v.text||'').trim()) narration[id]={ text:v.text, seconds:p0.seconds }; }
+    // 台本のその区切りが前と同じなら、前の文（手で直した文も）と音声の長さをそのまま使う（音声が外れないように）
+    for(const [id,v] of Object.entries(narration)){
+      const p0=prevNar[id]; if(!p0) continue;
+      const same = p0.src!=null ? String(p0.src).trim()===String(v.src).trim() : [v.src, v.text].some(t=>String(p0.text||'').trim()===String(t||'').trim());
+      if(same) narration[id]={ text:p0.text, seconds:p0.seconds??null, src:v.src };
+    }
     const settings=Object.assign({}, prev.settings||{}, { narration });
     vidSave({ months, data, settings, hist:{ nikkei:histFull.nikkei, topix:histFull.topix }, builtAt:new Date().toISOString() });
     await vidMount(true);
