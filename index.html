@@ -2894,7 +2894,7 @@ function autoSyncThumb(){
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '9d38c61f9b';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '1df3208c3d';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -2997,6 +2997,22 @@ function vidDataFromSlide(text, hist, tradeDate){
   return { date, headline:'', charts, others, contrib, sectors, rise:stocks('上昇率'), fall:stocks('下落率'), trading:stocks('売買代金'), news, news_image:null, summary:null, thumbnail:null };
 }
 
+// ニュースのカードを、台本のニュースの部分で話す順に並べる（話していないものは後ろ。元の順を保つ）
+// 見出しの最初の語（「エヌビディア」「楽天G」など）が台本のどこに出てくるかで決める
+function vidOrderNews(news, text){
+  const t=String(text||'');
+  if(!t || !news || news.length<2) return news;
+  const pos=n=>{
+    const words=String(n.title||'').split(/[\s　、・,，:：「」『』（）()]+/).filter(w=>w.length>=2);
+    let best=Infinity;
+    for(const w of words.slice(0,2)){
+      for(const k of [w, w.replace(/(ＨＤ|HD|Ｇ|G|ＦＧ|FG)$/,'')]){ if(k.length<2) continue; const i=t.indexOf(k); if(i>=0 && i<best) best=i; }
+    }
+    return best;
+  };
+  return news.map((n,i)=>({n,i,p:pos(n)})).sort((a,b)=>a.p-b.p || a.i-b.i).map(x=>x.n);
+}
+
 // 台本（③、[区切り名] つき）→ 場面ごとの読み上げ
 function vidNarration(){
   const sec=autoScriptSections(autoScriptFullRaw());
@@ -3054,6 +3070,7 @@ async function vidBuild(btn){
     const lastTrade=(histFull.nikkei||[]).map(x=>x.date).filter(d=>d<=date).pop() || date;
     const data=vidDataFromSlide(text, vidSliceHist(histFull, months, lastTrade), lastTrade);
     let narration=vidNarration();
+    if(narration.news) data.news=vidOrderNews(data.news, narration.news.text);
     const prev=vidLoadSaved()||{};
     // 一言・まとめは「一言・まとめを AI で作る」で作る。ここでは前に作ったもの（同じ日のもの）を残すだけ
     if(prev.data && (prev.data.date===data.date || prev.data.date===date)){ data.headline=prev.data.headline||''; data.summary=prev.data.summary||null; }
