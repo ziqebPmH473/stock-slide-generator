@@ -150,6 +150,14 @@ body:not(.mode-full) .full-only { display:none !important; }
 body.mode-full .auto-only { display:none !important; }
 /* ⑥動画の場面ごとの台本は2行で足りる */
 #tabAuto #vidControls textarea { min-height:0 !important; }
+/* サムネ案（ボタンあり）とサムネ文言（ボタンなし）の見出しの高さをそろえて、下の入力欄の段を合わせる */
+#blkThumbText .auto-row { height:34px; align-items:center; margin-bottom:0; }
+/* 全自動版の SNS：縦型サムネは左にプレビュー、右に設定と1段目・2段目（縦に並べる）。ダウンロードは上の行にまとめる */
+body.mode-full #blkVThumb { display:grid; grid-template-columns:auto 1fr; column-gap:16px; align-items:start; }
+body.mode-full #blkVThumb > #vThumbPreviewWrap { grid-column:1; grid-row:1 / span 2; margin-top:8px !important; }
+body.mode-full #blkVThumb > :not(#vThumbPreviewWrap) { grid-column:2; }
+body.mode-full #blkVThumb .a2 { grid-template-columns:1fr !important; }
+body.mode-full #vThumbBtn { display:none; }
 /* ⑥動画のプレビュー：横に並ぶ広さのときだけ、スクロールしても見えるようにする（縦に並ぶと台本に重なるため） */
 @media (min-width:1000px){ .vid-preview { position:sticky; top:96px; } }
 
@@ -526,9 +534,9 @@ Appier G|4180|818|+96|+13.30%
     <strong style="font-size:12px;color:var(--text);">ChatGPT用プロンプト</strong>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0;">
       <button class="btn-copy" onclick="autoCopyImagePrompt(this)">📋 ニュース画像</button>
-      <button class="btn-copy" onclick="autoCopySummaryImagePrompt(this)">📋 まとめ画像</button>
-      <button class="btn-copy" onclick="autoCopySnsXPrompt(this)">📋 サムネ/X</button>
-      <button class="btn-sm" id="autoImgBtn" onclick="autoGenerateImage(this)">🖼 画像をAI生成</button>
+      <button class="btn-copy auto-only" onclick="autoCopySummaryImagePrompt(this)">📋 まとめ画像</button>
+      <button class="btn-copy auto-only" onclick="autoCopySnsXPrompt(this)">📋 サムネ/X</button>
+      <button class="btn-sm auto-only" id="autoImgBtn" onclick="autoGenerateImage(this)">🖼 画像をAI生成</button>
     </div>
     <div id="autoImgStatus" style="font-size:12px;color:var(--muted);min-height:16px;"></div>
     <pre id="autoImgPromptView" style="display:none;"></pre>
@@ -745,7 +753,11 @@ Appier G|4180|818|+96|+13.30%
   <div class="card full-only">
     <h2>③ 動画</h2>
     <!-- 全自動版のときだけ、④スライドからプロンプト・サムネ・ニュース画像をここへ移す（autoPlaceBlocks） -->
-    <div id="slotVideoTop"></div>
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div id="slotVidPrompts" style="flex:1 1 360px;min-width:0;"></div>
+      <div id="slotVidImage" style="flex:0 1 300px;"></div>
+    </div>
+    <div id="slotVidThumb"></div>
     <p style="font-size:11px;color:var(--muted);margin:12px 0 8px;border-top:1px solid var(--border);padding-top:10px;">一括生成で作った台本・スライド文章と、サムネ・ニュース画像から、動くグラフの動画（MP4）を作ります。</p>
     <div class="auto-row">
       <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);" title="日経平均・TOPIX のチャートに出す期間">チャートの期間
@@ -772,9 +784,20 @@ Appier G|4180|818|+96|+13.30%
     <div class="auto-row">
       <span id="vidExportSlot"></span>
       <button class="btn-sm" onclick="vidDownloadThumb(this)" title="動画の先頭に入れているサムネ（横 1920×1080）を画像で保存">⬇ サムネ（横）</button>
+      <button class="btn-sm" onclick="downloadVThumb(this)" title="縦型サムネ（SNS用）を画像で保存">⬇ サムネ（縦）</button>
     </div>
     <!-- 全自動版のときだけ、⑤出力から縦型サムネと X投稿文をここへ移す（autoPlaceBlocks） -->
-    <div id="slotSns"></div>
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-top:10px;">
+      <div>
+        <strong style="font-size:11px;color:var(--text);display:block;margin-bottom:4px;">サムネ（横）</strong>
+        <div id="snsHThumb" class="preview-slide-wrap" title="クリックでダウンロード" onclick="vidDownloadThumb(this)"></div>
+      </div>
+      <div style="flex:1 1 420px;min-width:0;">
+        <strong style="font-size:11px;color:var(--text);display:block;margin-bottom:4px;">サムネ（縦）</strong>
+        <div id="slotSns"></div>
+      </div>
+    </div>
+    <div id="slotSnsX"></div>
   </div>
   <div id="autoStatusBar"><span class="spin"></span><span id="autoStatusMsg">処理中…</span></div>
 </div><!-- /#tabAuto -->
@@ -1795,7 +1818,7 @@ function clearThumb(){
 // 全自動版と自動版は同じ画面（#tabAuto）。全自動版のときだけ ⑥動画・台本の区切り・一括生成のあとの動画データ作成が加わる
 function autoIsFull(){ return document.body.classList.contains('mode-full'); }
 // 全自動版では、④スライド・⑤出力にある部品を ③動画・④SNS へ移す（同じ部品を動かすので、入力中の内容もそのまま）。自動版に戻すと元の場所へ
-const AUTO_BLOCKS = [['blkPrompts','slotVideoTop'],['blkThumbText','slotVideoTop'],['blkImages','slotVideoTop'],['blkVThumb','slotSns'],['blkSnsX','slotSns']];
+const AUTO_BLOCKS = [['blkPrompts','slotVidPrompts'],['blkImages','slotVidImage'],['blkThumbText','slotVidThumb'],['blkVThumb','slotSns'],['blkSnsX','slotSnsX']];
 function autoPlaceBlocks(full){
   for(const [id, slot] of AUTO_BLOCKS){
     const el=document.getElementById(id); if(!el) continue;
@@ -1852,7 +1875,7 @@ function autoStep(k){
   // ⑥動画を開いたら、前に作った動画のデータがあれば読み込む
   if(k==='v'){ try{ vidOpen(); }catch(e){ console.warn(e); } }
   // ④SNS を開いたら、⑤出力と同じくサムネ文言を縦型サムネへ流し込む
-  if(k==='n'){ try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); }catch(e){} }
+  if(k==='n'){ try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); renderHThumbPreview(); }catch(e){} }
   // 工程切替でプレビュー領域が可視になった直後に、実幅で再描画する
   // （非表示中は clientWidth=0 で幅を過大評価し、初回1列4枚縦積み→2列にズレるのを防ぐ）
   if(typeof renderPreview==='function'){
@@ -2844,6 +2867,7 @@ function autoSyncThumb(){
   const t=document.getElementById('autoThumbInput').value;
   apSetValue('thumbInput', t);
   debouncedPreview();
+  if(typeof renderHThumbPreview==='function') renderHThumbPreview();
 }
 
 // ==================== 自動版：⑥ 動画 ====================
@@ -3063,6 +3087,15 @@ async function vidMount(force){
   vidHandle=KV.tse.mount(document.getElementById('vidPreview'), props);
 }
 // ⑥を開くたびに、いまのサムネ・ニュース画像を入れて描き直す（保存してある動画のデータ・音声はそのまま。AI・読み上げは呼ばない）
+// SNS タブの横サムネのプレビュー（クリックで保存）
+function renderHThumbPreview(){
+  const area=document.getElementById('snsHThumb'); if(!area) return;
+  const t=((document.getElementById('thumbInput')||{}).value||'').trim();
+  if(!t){ area.innerHTML=''; area.style.display='none'; return; }
+  const w=320, scale=w/SLIDE_W, h=Math.round(SLIDE_H*scale);
+  area.style.cssText=`display:block;width:${w}px;height:${h}px;`;
+  area.innerHTML=`<div style="position:absolute;top:0;left:0;width:${SLIDE_W}px;height:${SLIDE_H}px;transform:scale(${scale});transform-origin:top left;pointer-events:none;">${slideThumb(t)}</div>`;
+}
 // 横のサムネ（スライド0枚目）を PNG で保存
 async function vidDownloadThumb(btn){
   const t=((document.getElementById('thumbInput')||{}).value||'').trim();
