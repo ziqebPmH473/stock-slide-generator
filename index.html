@@ -2624,7 +2624,7 @@ function autoSlidePrompt(){ return `本日の日付は ${autoTodayStr()} です�
 // 全自動版の台本は、動画で場面ごとに使うため [区切り名] の行を付けさせる（自動版・手動版のコピーには付けない）
 const AUTO_SCRIPT_TAGS = ['オープニング','指数','寄与度','業種','値上がり率','値下がり率','売買代金','ニュース','まとめ'];
 // 【動画の読み上げとして】は【構成】のすぐ後ろに入れる（末尾だと長いルールの後ろで守られにくかった）
-const AUTO_SCRIPT_VIDEO_RULES = `【動画の読み上げとして】\n・ランキングや数字は動画の画面に出ます。各区切りの最初の文を「〜では」「〜には」のような、何の話かを示す言い方で始めず、銘柄名や業種名から始めてください。\n・数字は全部を読まず、要点になるものだけにしてください。\n・ひとつの区切りの中で、同じ内容を、言い換えても同じ言葉でも、くり返し言わないでください。\n・オープニングとまとめで「本日」と言うところは、月日で言ってください。\n・オープニングでは、個別の指数の値動きは言わないでください。\n`;
+const AUTO_SCRIPT_VIDEO_RULES = `【動画の読み上げとして】\n・ランキングや数字は動画の画面に出ます。各区切りの最初の文を「〜では」「〜には」のような、何の話かを示す言い方で始めず、銘柄名や業種名から始めてください。\n・数字は全部を読まず、要点になるものだけにしてください。\n・ひとつの区切りの中で、同じ内容を、言い換えても同じ言葉でも、くり返し言わないでください。\n・オープニングとまとめで「本日」と言うところは、月日で言ってください。\n・オープニングでは、個別の指数の値動きは言わないでください。\n・「東証相場」や「東証」と書く必要はありません。\n`;
 const AUTO_SCRIPT_PARTS_NOTE = `\n【出力の形】\n・動画の場面に合わせるため、台本の各部分の前に、次のうち当てはまる区切りを1行で書いてください。この行は読み上げません。\n${AUTO_SCRIPT_TAGS.map(t=>'['+t+']').join(' ')}`;
 const AUTO_SCRIPT_FREE_ORDER = '・以下の【構成】の 2～6 は順番を問いません。\n';
 function autoScriptPrompt(){
@@ -2685,7 +2685,11 @@ function autoClosePayload(){ document.getElementById('autoPayloadModal').style.d
 function autoPreviewSlide(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload('④ スライド文章 → AIに送る全文', autoFmtPayload(autoSlidePrompt(), autoBuildResources())); }
 function autoPreviewFullInfo(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload("④' 全情報 → AIに送る全文", autoFmtPayload(autoFullInfoPrompt(), autoBuildResources())); }
 function autoPreviewScript(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload('⑦ 台本 → AIに送る全文', autoFmtPayload(autoScriptPrompt(), autoBuildResources({noVolume: autoIsFull()}))); }
-function autoPreviewSns(){ const m=autoSnsMaterial(); if(!m){alert("先に④スライドか④'全情報を生成してください");return;} autoShowPayload('⑤ サムネ・X(直接生成) → AIに送る全文', autoFmtPayload(AUTO_SNS_PROMPT, [{label:'本日の東証マーケットのデータ・サマリ', text:m}])); }
+// 全自動版の X投稿文だけに足す1行（自動版のプロンプトは変えない）
+const AUTO_SNS_FULL_NOTE = '\n・「東証相場」や「東証」と書く必要はありません。';
+// 【X投稿文】の決まりの中（出力の形より前）に入れる
+function autoSnsPrompt(){ return autoIsFull() ? AUTO_SNS_PROMPT.replace('煽り・断定は避ける。', '煽り・断定は避ける。' + AUTO_SNS_FULL_NOTE) : AUTO_SNS_PROMPT; }
+function autoPreviewSns(){ const m=autoSnsMaterial(); if(!m){alert("先に④スライドか④'全情報を生成してください");return;} autoShowPayload('⑤ サムネ・X(直接生成) → AIに送る全文', autoFmtPayload(autoSnsPrompt(), [{label:'本日の東証マーケットのデータ・サマリ', text:m}])); }
 
 async function autoGenerateSlideText(){
   const btn=document.getElementById('autoSlideBtn');
@@ -2785,7 +2789,7 @@ async function autoGenerateSns(btn, materialOverride){
   const st=document.getElementById('autoSnsStatus');
   const material=(materialOverride && materialOverride.trim()) ? materialOverride.trim() : autoSnsMaterial();
   if(!material){ st.textContent='先に④スライド文章か④\'全情報を生成してください'; return; }
-  const prompt = AUTO_SNS_PROMPT;
+  const prompt = autoSnsPrompt();
   const resources=[{label:'本日の東証マーケットのデータ・サマリ', text: material}];
   const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…'; st.textContent='Geminiが生成中…';
   try{
