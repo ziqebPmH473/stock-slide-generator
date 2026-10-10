@@ -150,6 +150,10 @@ body:not(.mode-full) .full-only { display:none !important; }
 body.mode-full .auto-only { display:none !important; }
 /* ⑥動画の場面ごとの台本は2行で足りる */
 #tabAuto #vidControls textarea { min-height:0 !important; }
+/* ⑥動画の操作部（白地）に差し込んだツールの欄（声・音声モデル・チャートの期間）を白地に合わせる */
+#vidControls #blkTtsVoice { margin-top:0 !important; width:440px; max-width:100%; }
+#vidControls #blkTtsVoice label, #vidControls #vidMonthsBox { color:#64748b !important; }
+#vidControls #blkTtsVoice select, #vidControls #vidMonthsBox select { background:#fff !important; color:#1f2937 !important; border-color:#cbd5e1 !important; padding:4px 6px !important; font-size:12px !important; }
 /* サムネ案（ボタンあり）とサムネ文言（ボタンなし）の見出しの高さをそろえて、下の入力欄の段を合わせる */
 #blkThumbText .auto-row { height:34px; align-items:center; margin-bottom:0; }
 /* 全自動版の SNS：縦型サムネは左にプレビュー、右に設定と1段目・2段目（縦に並べる）。ダウンロードは上の行にまとめる */
@@ -760,7 +764,7 @@ Appier G|4180|818|+96|+13.30%
     <div id="slotVidThumb"></div>
     <p style="font-size:11px;color:var(--muted);margin:12px 0 8px;border-top:1px solid var(--border);padding-top:10px;">一括生成で作った台本・スライド文章と、サムネ・ニュース画像から、動くグラフの動画（MP4）を作ります。</p>
     <div class="auto-row">
-      <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);" title="日経平均・TOPIX のチャートに出す期間">チャートの期間
+      <label id="vidMonthsBox" style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);" title="日経平均・TOPIX のチャートに出す期間">チャートの期間
         <select id="vidMonths" onchange="vidChangeMonths()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
           <option value="1">1か月</option>
           <option value="3" selected>3か月</option>
@@ -1833,6 +1837,7 @@ function autoPlaceBlocks(full){
     if(full) document.getElementById(slot).appendChild(el);
     else el.__home.parentNode.insertBefore(el, el.__home);
   }
+  if(full && typeof vidHandle!=='undefined' && vidHandle) vidPlaceInPanel();
 }
 function switchTab(name){
   const isManual = name === 'manual', full = name === 'full';
@@ -2889,7 +2894,7 @@ function autoSyncThumb(){
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = 'a086005030';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '9d38c61f9b';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -3100,8 +3105,9 @@ async function vidMount(force){
     fileName:`tsemarket_${data.date.replace(/-/g,'')}.mp4`,
   };
   document.getElementById('vidControls').style.display='';
-  if(vidHandle){ vidHandle.update(props); return; }
+  if(vidHandle){ vidHandle.update(props); vidPlaceInPanel(); return; }
   vidHandle=KV.tse.mount(document.getElementById('vidPreview'), props);
+  vidPlaceInPanel();
 }
 // ⑥を開くたびに、いまのサムネ・ニュース画像を入れて描き直す（保存してある動画のデータ・音声はそのまま。AI・読み上げは呼ばない）
 // SNS タブの横サムネの文言：③動画のサムネ文言と同じものを直す
@@ -3123,6 +3129,13 @@ async function vidDownloadThumb(btn){
   const t=((document.getElementById('thumbInput')||{}).value||'').trim();
   if(!t){ alert('サムネ文言がありません'); return; }
   await downloadSlide({ html:slideThumb(t), name:'00_サムネイル' });
+}
+// ⑥動画の操作部（部品が描く）に、ツールの欄を差し込む。音声を作る前に決めるもの（声・音声モデル）は音声生成の前、あとから変えられるもの（チャートの期間）は台本の表の中
+function vidPlaceInPanel(tries){
+  const voiceSlot=document.getElementById('tsePanelVoiceSlot'), tableSlot=document.getElementById('tsePanelTableSlot');
+  if(!voiceSlot || !tableSlot){ if((tries||0)<40) requestAnimationFrame(()=>vidPlaceInPanel((tries||0)+1)); return; }
+  const v=document.getElementById('blkTtsVoice'); if(v && autoIsFull() && v.parentNode!==voiceSlot) voiceSlot.appendChild(v);
+  const m=document.getElementById('vidMonthsBox'); if(m && m.parentNode!==tableSlot) tableSlot.appendChild(m);
 }
 function vidOpen(){ vidMount(!!vidHandle).catch(e=>vidStatus('❌ '+e.message)); }
 function vidRefresh(){ if(vidHandle) vidMount(true).catch(e=>vidStatus('❌ '+e.message)); }
