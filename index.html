@@ -1894,6 +1894,8 @@ function autoStep(k){
   // ⑤出力を開いたら、スライドのサムネ文言をコピーして縦型サムネの1〜3段目へ分割して流し込む
   if(k==='7'){ try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); }catch(e){} }
   // ⑥動画を開いたら、前に作った動画のデータがあれば読み込む
+  // ④SNS の書き出しボタンも動画の部品が置くので、④を先に開いたときも読み込む（AI・読み上げは呼ばない）
+  if(k==='n' && typeof vidHandle!=='undefined' && !vidHandle){ try{ vidOpen(); }catch(e){ console.warn(e); } }
   if(k==='v'){ try{ vidOpen(); }catch(e){ console.warn(e); } try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); renderHThumbPreview(); }catch(e){} }
   // ④SNS を開いたら、⑤出力と同じくサムネ文言を縦型サムネへ流し込む
   // 工程切替でプレビュー領域が可視になった直後に、実幅で再描画する
