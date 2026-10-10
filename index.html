@@ -623,7 +623,7 @@ Appier G|4180|818|+96|+13.30%
     </div>
     <textarea id="autoScriptOut2" style="min-height:150px !important;" oninput="updateScriptStats()"></textarea>
 
-    <div class="a2" style="margin-top:8px;align-items:end;">
+    <div class="a2" id="blkTtsVoice" style="margin-top:8px;align-items:end;">
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">声</label>
         <select id="autoTtsVoice" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 8px;border-radius:5px;font-size:13px;">
@@ -772,6 +772,8 @@ Appier G|4180|818|+96|+13.30%
       <span id="vidStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
     <!-- 左にプレビュー（小さめ・スクロールしても見える）、右に場面ごとの台本と操作。狭い画面では縦に並ぶ -->
+    <!-- 音声の声・モデル（③音声生成から移す。音声生成のボタンで使う） -->
+    <div id="slotVidVoice" style="max-width:640px;margin-top:8px;"></div>
     <!-- 左6：右4。左に場面ごとの台本と操作、右にプレビュー（広い画面ではスクロールしても見える） -->
     <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-top:8px;">
       <div id="vidControls" style="flex:6 1 420px;min-width:0;background:#fff;color:#1f2937;border-radius:8px;padding:8px 10px;display:none;"></div>
@@ -991,7 +993,7 @@ function apClearTextarea(id){ apSetValue(id, ''); }
 const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thumbInput',
   'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoFullInfo','autoSnsThumb','autoSnsX','autoScriptOut','autoScriptOut2','autoThumbInput','autoScriptFinal','vThumbL1','vThumbL2','vThumbL3'];
 // 設定系（テキスト一括リセットの対象外・常時保持）
-const AP_SETTING_IDS = ['autoFixedHashtags'];
+const AP_SETTING_IDS = ['autoFixedHashtags','autoModelOverride','autoTtsVoice','autoTtsModel'];
 const THUMB_DEFAULT = '日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%';
 const SSG_PREFIX = 'ssg_';
 
@@ -1013,6 +1015,7 @@ function apBindAutosave(){
     const el = document.getElementById(id);
     if (!el) continue;
     el.addEventListener('input', () => apSaveField(id));
+    el.addEventListener('change', () => apSaveField(id));   // 選択欄（モデル・声）は change で保存
   }
 }
 function apClearStorage(){
@@ -1822,7 +1825,7 @@ function clearThumb(){
 // 全自動版と自動版は同じ画面（#tabAuto）。全自動版のときだけ ⑥動画・台本の区切り・一括生成のあとの動画データ作成が加わる
 function autoIsFull(){ return document.body.classList.contains('mode-full'); }
 // 全自動版では、④スライド・⑤出力にある部品を ③動画・④SNS へ移す（同じ部品を動かすので、入力中の内容もそのまま）。自動版に戻すと元の場所へ
-const AUTO_BLOCKS = [['blkPrompts','slotVidPrompts'],['blkImages','slotVidImage'],['blkThumbText','slotVidThumb'],['blkVThumb','slotSns'],['blkSnsX','slotSnsX']];
+const AUTO_BLOCKS = [['blkPrompts','slotVidPrompts'],['blkImages','slotVidImage'],['blkThumbText','slotVidThumb'],['blkTtsVoice','slotVidVoice'],['blkVThumb','slotSns'],['blkSnsX','slotSnsX']];
 function autoPlaceBlocks(full){
   for(const [id, slot] of AUTO_BLOCKS){
     const el=document.getElementById(id); if(!el) continue;
