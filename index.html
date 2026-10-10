@@ -2894,7 +2894,7 @@ function autoSyncThumb(){
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = 'b918acbf4e';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '73c3698fe5';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -3096,13 +3096,26 @@ async function vidBuild(btn){
 }
 
 // 保存してある動画のデータを読み込んで表示する（サムネとニュース画像は、いまのものを入れる）
+// 縦型サムネ（9:16）を 1080×1920 の画像に（縦の動画の最初のコマ）
+async function vidThumbImageV(){
+  if(!vThumbTexts().some(t=>t&&t.trim())) return null;
+  const box=document.getElementById('renderTarget'); box.innerHTML=slideVThumb('916');
+  await new Promise(r=>setTimeout(r,200));
+  try{
+    const el=box.querySelector('.slide');
+    const c=await html2canvas(el,{width:1080,height:1920,scale:1,useCORS:true,allowTaint:true,backgroundColor:'#000000',logging:false});
+    return c.toDataURL('image/jpeg',0.9);
+  }catch(e){ console.warn('縦のサムネの画像化に失敗', e); return null; }
+  finally{ box.innerHTML=''; }
+}
+
 async function vidMount(force){
   const saved=vidLoadSaved();
   const sel=document.getElementById('vidMonths'); if(sel && saved && saved.months) sel.value=saved.months;
   if(!saved || !saved.data) return;
   if(vidHandle && !force) return;
   const KV=await vidLoadLib();
-  const data=Object.assign({}, saved.data, { news_image:newsImgUrl||null, thumbnail:await vidThumbImage() });
+  const data=Object.assign({}, saved.data, { news_image:newsImgUrl||null, thumbnail:await vidThumbImage(), thumbnail_portrait:await vidThumbImageV() });
   const voice=()=>(document.getElementById('autoTtsVoice')||{}).value||'Erinome';
   const model=()=>(document.getElementById('autoTtsModel')||{}).value||undefined;
   const props={
