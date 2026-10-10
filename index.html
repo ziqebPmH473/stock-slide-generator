@@ -44,6 +44,9 @@ textarea { background:var(--bg); border:1px solid var(--border); color:var(--tex
 .preview-slide-wrap::after { content:'⬇ ダウンロード'; position:absolute; bottom:0; left:0; right:0; background:rgba(59,130,246,.85); color:#fff; font-size:10px; text-align:center; padding:3px 0; opacity:0; transition:opacity .15s; pointer-events:none; }
 .preview-slide-wrap:hover { border-color:var(--accent); }
 .preview-slide-wrap:hover::after { opacity:1; }
+/* 全自動版の③動画のサムネは見るだけ（動画の冒頭に入るので保存しない） */
+.preview-slide-wrap.no-dl, body.mode-full #vThumbPreview { cursor:default; }
+.preview-slide-wrap.no-dl::after, body.mode-full #vThumbPreview::after { display:none; }
 details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bottom:4px; }
 .fmt { background:#0a1628; border:1px solid var(--border); border-radius:6px; padding:12px; font-size:11px; color:var(--muted); font-family:monospace; white-space:pre; overflow-x:auto; max-height:260px; overflow-y:auto; margin-top:4px; }
 
@@ -707,7 +710,7 @@ Appier G|4180|818|+96|+13.30%
     <button class="btn" style="margin-top:10px;" onclick="downloadZip()">⬇ スライド画像をZIPダウンロード</button>
     <div id="blkVThumb">
     <div class="auto-row" style="margin-top:8px;">
-      <button class="btn-sm" id="vThumbBtn" onclick="downloadVThumb(this)">⬇ 縦型サムネ（SNS用）</button>
+      <button class="btn-sm auto-only" id="vThumbBtn" onclick="downloadVThumb(this)">⬇ 縦型サムネ（SNS用）</button>
       <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);">サイズ
         <select id="vThumbRatio" onchange="renderVThumbPreview()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
           <option value="916" selected>9:16（1080×1920）ストーリー/リール</option>
@@ -737,7 +740,7 @@ Appier G|4180|818|+96|+13.30%
       <div id="vThumbL3Box" style="margin-top:4px;display:none;"><span style="font-size:10px;color:var(--muted);">3段目（黒帯）</span>
         <textarea id="vThumbL3" style="min-height:48px !important;" oninput="renderVThumbPreview()"></textarea></div>
     </div>
-    <div id="vThumbPreviewWrap" style="margin-top:6px;display:none;"><div class="preview-slide-wrap" id="vThumbPreview" title="クリックでダウンロード" onclick="downloadVThumb(document.getElementById('vThumbBtn'))"></div></div>
+    <div id="vThumbPreviewWrap" style="margin-top:6px;display:none;"><div class="preview-slide-wrap" id="vThumbPreview" title="クリックでダウンロード" onclick="if(!document.body.classList.contains('mode-full')) downloadVThumb(document.getElementById('vThumbBtn'))"></div></div>
     </div>
 
     <div style="margin-top:12px;">
@@ -762,6 +765,17 @@ Appier G|4180|818|+96|+13.30%
       <div id="slotVidImage" style="flex:0 1 300px;"></div>
     </div>
     <div id="slotVidThumb"></div>
+    <!-- 動画の先頭に入るサムネ。横は上のサムネ文言、縦は右の欄で直す（全自動版のときだけ、縦型サムネの欄をここへ移す） -->
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-top:10px;">
+      <div>
+        <strong style="font-size:11px;color:var(--text);display:block;margin-bottom:4px;">サムネ（横）</strong>
+        <div id="snsHThumb" class="preview-slide-wrap no-dl"></div>
+      </div>
+      <div style="flex:1 1 420px;min-width:0;">
+        <strong style="font-size:11px;color:var(--text);display:block;margin-bottom:4px;">サムネ（縦）</strong>
+        <div id="slotVidVThumb"></div>
+      </div>
+    </div>
     <p style="font-size:11px;color:var(--muted);margin:12px 0 8px;border-top:1px solid var(--border);padding-top:10px;">一括生成で作った台本・スライド文章と、サムネ・ニュース画像から、動くグラフの動画（MP4）を作ります。</p>
     <div class="auto-row">
       <label id="vidMonthsBox" style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);" title="日経平均・TOPIX のチャートに出す期間">チャートの期間
@@ -788,26 +802,9 @@ Appier G|4180|818|+96|+13.30%
   <div class="card full-only">
     <h2>④ SNS</h2>
     <div class="auto-row">
-      <!-- 横動画・横サムネ・縦動画・縦サムネの順。動画のボタンは部品が vidExportSlot / vidExportSlotV に置く -->
+      <!-- 動画のボタンは部品が vidExportSlot（横）/ vidExportSlotV（縦）に置く -->
       <span id="vidExportSlot"></span>
-      <button class="btn-sm" onclick="vidDownloadThumb(this)" title="動画の先頭に入れているサムネ（横 1920×1080）を画像で保存">⬇ 横サムネ</button>
       <span id="vidExportSlotV"></span>
-      <button class="btn-sm" onclick="downloadVThumb(this)" title="縦型サムネ（SNS用）を画像で保存">⬇ 縦サムネ</button>
-    </div>
-    <!-- 全自動版のときだけ、⑤出力から縦型サムネと X投稿文をここへ移す（autoPlaceBlocks） -->
-    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-top:10px;">
-      <div>
-        <strong style="font-size:11px;color:var(--text);display:block;margin-bottom:4px;">サムネ（横）</strong>
-        <div id="snsHThumb" class="preview-slide-wrap" title="クリックでダウンロード" onclick="vidDownloadThumb(this)"></div>
-        <div class="auto-row" style="margin-top:6px;"><strong style="font-size:11px;color:var(--text);">サムネ文言（横）</strong>
-          <span style="font-size:10px;color:var(--muted);">：で上中下段/<span style="color:#ff914d">*橙*</span><span style="color:#5ce1e6">#水#</span><span style="color:#ffde59">%黄%</span></span></div>
-        <!-- ③動画のサムネ文言と同じもの（どちらで直しても両方に入る） -->
-        <textarea id="snsThumbText" style="width:320px;min-height:60px !important;" oninput="snsThumbTextInput(this)"></textarea>
-      </div>
-      <div style="flex:1 1 420px;min-width:0;">
-        <strong style="font-size:11px;color:var(--text);display:block;margin-bottom:4px;">サムネ（縦）</strong>
-        <div id="slotSns"></div>
-      </div>
     </div>
     <div id="slotSnsX"></div>
   </div>
@@ -1831,7 +1828,7 @@ function clearThumb(){
 // 全自動版と自動版は同じ画面（#tabAuto）。全自動版のときだけ ⑥動画・台本の区切り・一括生成のあとの動画データ作成が加わる
 function autoIsFull(){ return document.body.classList.contains('mode-full'); }
 // 全自動版では、④スライド・⑤出力にある部品を ③動画・④SNS へ移す（同じ部品を動かすので、入力中の内容もそのまま）。自動版に戻すと元の場所へ
-const AUTO_BLOCKS = [['blkPrompts','slotVidPrompts'],['blkImages','slotVidImage'],['blkThumbText','slotVidThumb'],['blkTtsVoice','slotVidVoice'],['blkVThumb','slotSns'],['blkSnsX','slotSnsX']];
+const AUTO_BLOCKS = [['blkPrompts','slotVidPrompts'],['blkImages','slotVidImage'],['blkThumbText','slotVidThumb'],['blkTtsVoice','slotVidVoice'],['blkVThumb','slotVidVThumb'],['blkSnsX','slotSnsX']];
 function autoPlaceBlocks(full){
   for(const [id, slot] of AUTO_BLOCKS){
     const el=document.getElementById(id); if(!el) continue;
@@ -1887,9 +1884,8 @@ function autoStep(k){
   // ⑤出力を開いたら、スライドのサムネ文言をコピーして縦型サムネの1〜3段目へ分割して流し込む
   if(k==='7'){ try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); }catch(e){} }
   // ⑥動画を開いたら、前に作った動画のデータがあれば読み込む
-  if(k==='v'){ try{ vidOpen(); }catch(e){ console.warn(e); } }
+  if(k==='v'){ try{ vidOpen(); }catch(e){ console.warn(e); } try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); renderHThumbPreview(); }catch(e){} }
   // ④SNS を開いたら、⑤出力と同じくサムネ文言を縦型サムネへ流し込む
-  if(k==='n'){ try{ const st=document.getElementById('snsThumbText'), a=document.getElementById('autoThumbInput'); if(st&&a) st.value=a.value; vThumbSyncFromThumb(false); vThumbBandsChanged(); renderHThumbPreview(); }catch(e){} }
   // 工程切替でプレビュー領域が可視になった直後に、実幅で再描画する
   // （非表示中は clientWidth=0 で幅を過大評価し、初回1列4枚縦積み→2列にズレるのを防ぐ）
   if(typeof renderPreview==='function'){
@@ -3141,7 +3137,7 @@ async function vidMount(force){
     onChange:(st)=>{ const o=vidLoadSaved()||{}; o.settings=st; vidSave(o); },
     exportEl:document.getElementById('vidExportSlot'),   // MP4 の書き出しボタンは ④SNS に置く（横・縦に分けて、サムネのボタンと同じ見た目）
     exportElPortrait:document.getElementById('vidExportSlotV'),
-    exportButton:{ className:'btn-sm', labels:['⬇ 横動画','⬇ 縦動画'] },
+    exportButton:{ className:'btn-sm', labels:['🎬 横動画','🎬 縦動画'] },
     fileName:`tsemarket_${data.date.replace(/-/g,'')}.mp4`,
   };
   document.getElementById('vidControls').style.display='';
@@ -3150,12 +3146,7 @@ async function vidMount(force){
   vidPlaceInPanel();
 }
 // ⑥を開くたびに、いまのサムネ・ニュース画像を入れて描き直す（保存してある動画のデータ・音声はそのまま。AI・読み上げは呼ばない）
-// SNS タブの横サムネの文言：③動画のサムネ文言と同じものを直す
-function snsThumbTextInput(el){
-  const a=document.getElementById('autoThumbInput'); if(a){ a.value=el.value; if(typeof apSaveField==='function') apSaveField('autoThumbInput'); }
-  autoSyncThumb();
-}
-// SNS タブの横サムネのプレビュー（クリックで保存）
+// ③動画の横サムネのプレビュー
 function renderHThumbPreview(){
   const area=document.getElementById('snsHThumb'); if(!area) return;
   const t=((document.getElementById('thumbInput')||{}).value||'').trim();
@@ -3163,12 +3154,6 @@ function renderHThumbPreview(){
   const w=320, scale=w/SLIDE_W, h=Math.round(SLIDE_H*scale);
   area.style.cssText=`display:block;width:${w}px;height:${h}px;`;
   area.innerHTML=`<div style="position:absolute;top:0;left:0;width:${SLIDE_W}px;height:${SLIDE_H}px;transform:scale(${scale});transform-origin:top left;pointer-events:none;">${slideThumb(t)}</div>`;
-}
-// 横のサムネ（スライド0枚目）を PNG で保存
-async function vidDownloadThumb(btn){
-  const t=((document.getElementById('thumbInput')||{}).value||'').trim();
-  if(!t){ alert('サムネ文言がありません'); return; }
-  await downloadSlide({ html:slideThumb(t), name:'00_サムネイル' });
 }
 // ⑥動画の操作部（部品が描く）に、ツールの欄を差し込む。音声を作る前に決めるもの（声・音声モデル）は音声生成の前、あとから変えられるもの（チャートの期間）は台本の表の中
 function vidPlaceInPanel(tries){
