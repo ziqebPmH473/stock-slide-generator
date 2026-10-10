@@ -2215,7 +2215,7 @@ function autoBuildResources(opts){
   const add=(label,text)=>{ if(text && String(text).trim()) res.push({label, text:String(text)}); };
   const get=(k, fn)=>{ const s=byKey[k]; if(!s) return ''; return opts.raw ? (s.text||'') : (s.rows&&s.rows.length ? fn(s.rows) : (s.text||'')); };
   add('指数（野村）', get('nomura_index', autoIndexToText));
-  if(!opts.raw){ const nv=byKey.nomura_index&&byKey.nomura_index.volumes; if(nv&&nv.length) add('各市場の出来高・時価総額（野村）', nv.map(v=>`${v.market}｜出来高${v.volume}｜時価総額${v.mcap}`).join('\n')); }
+  if(!opts.raw && !opts.noVolume){ const nv=byKey.nomura_index&&byKey.nomura_index.volumes; if(nv&&nv.length) add('各市場の出来高・時価総額（野村）', nv.map(v=>`${v.market}｜出来高${v.volume}｜時価総額${v.mcap}`).join('\n')); }
   add('日経平均寄与度 上位（株探）', get('kabutan_contrib_desc', autoContribToText));
   add('日経平均寄与度 下位（株探）', get('kabutan_contrib_asc', autoContribToText));
   add('業種別騰落 上位（株探）', get('kabutan_sector_desc', autoSectorToText));
@@ -2341,7 +2341,8 @@ async function autoRunExtract(promptKey, outId, statusId, btn, full, modelCls){
   const st = statusId ? document.getElementById(statusId) : null;
   if(!AutoState.sources){ if(st) st.textContent='先に①データ取得を'; return; }
   const prompt = promptKey==='script' ? autoScriptPrompt() : apReplaceVariables(AP_COPY_TEXTS[promptKey], autoVars());
-  const resources = autoBuildResources({forExtract: !full});
+  // 全自動版の台本には、出来高・時価総額の資料を渡さない（動画に出来高の場面がないため）
+  const resources = autoBuildResources({forExtract: !full, noVolume: promptKey==='script' && autoIsFull()});
   const old = btn ? btn.textContent : '';
   if(btn){ btn.disabled=true; btn.textContent='実行中…'; }
   if(st) st.textContent='AI実行中…';
@@ -2681,7 +2682,7 @@ function autoShowPayload(title, text){
 function autoClosePayload(){ document.getElementById('autoPayloadModal').style.display='none'; }
 function autoPreviewSlide(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload('④ スライド文章 → AIに送る全文', autoFmtPayload(autoSlidePrompt(), autoBuildResources())); }
 function autoPreviewFullInfo(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload("④' 全情報 → AIに送る全文", autoFmtPayload(autoFullInfoPrompt(), autoBuildResources())); }
-function autoPreviewScript(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload('⑦ 台本 → AIに送る全文', autoFmtPayload(autoScriptPrompt(), autoBuildResources())); }
+function autoPreviewScript(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload('⑦ 台本 → AIに送る全文', autoFmtPayload(autoScriptPrompt(), autoBuildResources({noVolume: autoIsFull()}))); }
 function autoPreviewSns(){ const m=autoSnsMaterial(); if(!m){alert("先に④スライドか④'全情報を生成してください");return;} autoShowPayload('⑤ サムネ・X(直接生成) → AIに送る全文', autoFmtPayload(AUTO_SNS_PROMPT, [{label:'本日の東証マーケットのデータ・サマリ', text:m}])); }
 
 async function autoGenerateSlideText(){
@@ -2987,7 +2988,8 @@ function vidNarration(){
   const sec=autoScriptSections(autoScriptFullRaw());
   const j=(...ks)=>ks.map(k=>sec[k]||'').filter(Boolean).join('\n');
   const map={ cover:j('オープニング'), index:j('指数'), contrib:j('寄与度'), sectors:j('業種'), rise:j('値上がり率'), fall:j('値下がり率'), trading:j('売買代金'), news:j('ニュース'), summary:j('まとめ') };
-  const out={}; for(const [k,v] of Object.entries(map)) if(v) out[k]={ text:v, seconds:null };
+  // 読み上げでは「ホールディングス」を言わない（「キオクシア」で通じる。画面の銘柄名は「キオクシアHD」のまま）
+  const out={}; for(const [k,v] of Object.entries(map)) if(v) out[k]={ text:v.replace(/ホールディングス/g,''), seconds:null };
   return out;
 }
 
