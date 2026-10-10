@@ -791,6 +791,10 @@ Appier G|4180|818|+96|+13.30%
       <div>
         <strong style="font-size:11px;color:var(--text);display:block;margin-bottom:4px;">サムネ（横）</strong>
         <div id="snsHThumb" class="preview-slide-wrap" title="クリックでダウンロード" onclick="vidDownloadThumb(this)"></div>
+        <div class="auto-row" style="margin-top:6px;"><strong style="font-size:11px;color:var(--text);">サムネ文言（横）</strong>
+          <span style="font-size:10px;color:var(--muted);">：で上中下段/<span style="color:#ff914d">*橙*</span><span style="color:#5ce1e6">#水#</span><span style="color:#ffde59">%黄%</span></span></div>
+        <!-- ③動画のサムネ文言と同じもの（どちらで直しても両方に入る） -->
+        <textarea id="snsThumbText" style="width:320px;min-height:60px !important;" oninput="snsThumbTextInput(this)"></textarea>
       </div>
       <div style="flex:1 1 420px;min-width:0;">
         <strong style="font-size:11px;color:var(--text);display:block;margin-bottom:4px;">サムネ（縦）</strong>
@@ -1875,7 +1879,7 @@ function autoStep(k){
   // ⑥動画を開いたら、前に作った動画のデータがあれば読み込む
   if(k==='v'){ try{ vidOpen(); }catch(e){ console.warn(e); } }
   // ④SNS を開いたら、⑤出力と同じくサムネ文言を縦型サムネへ流し込む
-  if(k==='n'){ try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); renderHThumbPreview(); }catch(e){} }
+  if(k==='n'){ try{ const st=document.getElementById('snsThumbText'), a=document.getElementById('autoThumbInput'); if(st&&a) st.value=a.value; vThumbSyncFromThumb(false); vThumbBandsChanged(); renderHThumbPreview(); }catch(e){} }
   // 工程切替でプレビュー領域が可視になった直後に、実幅で再描画する
   // （非表示中は clientWidth=0 で幅を過大評価し、初回1列4枚縦積み→2列にズレるのを防ぐ）
   if(typeof renderPreview==='function'){
@@ -2875,7 +2879,7 @@ function autoSyncThumb(){
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '5b36c469c3';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '6386469ede';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -3087,6 +3091,11 @@ async function vidMount(force){
   vidHandle=KV.tse.mount(document.getElementById('vidPreview'), props);
 }
 // ⑥を開くたびに、いまのサムネ・ニュース画像を入れて描き直す（保存してある動画のデータ・音声はそのまま。AI・読み上げは呼ばない）
+// SNS タブの横サムネの文言：③動画のサムネ文言と同じものを直す
+function snsThumbTextInput(el){
+  const a=document.getElementById('autoThumbInput'); if(a){ a.value=el.value; if(typeof apSaveField==='function') apSaveField('autoThumbInput'); }
+  autoSyncThumb();
+}
 // SNS タブの横サムネのプレビュー（クリックで保存）
 function renderHThumbPreview(){
   const area=document.getElementById('snsHThumb'); if(!area) return;
