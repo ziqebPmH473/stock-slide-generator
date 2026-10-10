@@ -51,6 +51,8 @@ export async function onRequestPost(context) {
       temperature: typeof payload.temperature === "number" ? payload.temperature : 0.4,
     },
   };
+  // json: true なら、Gemini に JSON の形で返させる（答えの書き方が崩れて読み取れないのを防ぐ。kessan-tool と同じ）
+  if (payload.json === true) body.generationConfig.responseMimeType = "application/json";
 
   // モデルは配列(models)で優先順に受け取り、上限(429)なら次の下位モデルへフォールバックする。
   const models = (Array.isArray(payload.models) && payload.models.length)

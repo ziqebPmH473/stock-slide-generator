@@ -3005,7 +3005,7 @@ const VID_SCREEN_PROMPT = `以下の資料と台本をもとに、この日の�
 {"headline":"","feature":"","points":[{"title":"","body":"","stocks":[{"code":"","show":"pct"}]}],"closing":""}`;
 async function vidScreenText(){
   const resources=autoBuildResources().concat([{label:'台本', text:autoScriptFull()}, {label:'スライド文章', text:(document.getElementById('mainInput')||{}).value||''}]);
-  const res=await fetch('/api/analyze',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ prompt:VID_SCREEN_PROMPT, resources, temperature:0.3, models:autoModelChain('low') }) });
+  const res=await fetch('/api/analyze',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ prompt:VID_SCREEN_PROMPT, resources, temperature:0.3, models:autoModelChain('low'), json:true }) });
   const d=await res.json();
   if(!d.ok) throw new Error(d.error||'画面の文を作れませんでした');
   const m=String(d.text||'').match(/\{[\s\S]*\}/); if(!m) throw new Error('画面の文の形が読めませんでした');
