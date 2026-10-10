@@ -2998,18 +2998,18 @@ function vidDataFromSlide(text, hist, tradeDate){
 }
 
 // ニュースのカードを、台本のニュースの部分で話す順に並べる（話していないものは後ろ。元の順を保つ）
-// 見出しの最初の語（「エヌビディア」「楽天G」など）が台本のどこに出てくるかで決める
+// 見出し（無ければ説明）を4文字ずつずらして台本の中を探し、いちばん早く出てくる位置で決める
+// （見出しは「米オープンＡＩの年換算売上高を巡る報道」のように空白が無いことが多く、区切った最初の語では見つからなかった）
 function vidOrderNews(news, text){
-  const t=String(text||'');
+  const norm=x=>String(x||'').normalize('NFKC').replace(/[\s、。・,，.:：「」『』（）()]/g,'');
+  const t=norm(text);
   if(!t || !news || news.length<2) return news;
-  const pos=n=>{
-    const words=String(n.title||'').split(/[\s　、・,，:：「」『』（）()]+/).filter(w=>w.length>=2);
-    let best=Infinity;
-    for(const w of words.slice(0,2)){
-      for(const k of [w, w.replace(/(ＨＤ|HD|Ｇ|G|ＦＧ|FG)$/,'')]){ if(k.length<2) continue; const i=t.indexOf(k); if(i>=0 && i<best) best=i; }
-    }
+  const firstHit=src=>{
+    const w=norm(src); let best=Infinity;
+    for(let i=0;i+4<=w.length;i++){ const k=t.indexOf(w.slice(i,i+4)); if(k>=0 && k<best) best=k; }
     return best;
   };
+  const pos=n=>{ const a=firstHit(n.title); return a<Infinity ? a : firstHit(n.body); };
   return news.map((n,i)=>({n,i,p:pos(n)})).sort((a,b)=>a.p-b.p || a.i-b.i).map(x=>x.n);
 }
 
