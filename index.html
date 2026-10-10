@@ -2880,7 +2880,7 @@ function autoSyncThumb(){
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '6386469ede';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '357626b313';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -2957,9 +2957,9 @@ function vidCells(l){ return l.split('|').map(x=>x.trim()); }
 function vidIsoDate(d){ const m=String(d||'').match(/(\d{4})\D(\d{1,2})\D(\d{1,2})/); if(m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`; const v=(document.getElementById('autoBaseDate')||{}).value; return v || new Date().toISOString().slice(0,10); }
 
 // スライド文章（④）→ 動画のデータ（指数の推移と画面の文は別に足す）
-function vidDataFromSlide(text, hist){
+function vidDataFromSlide(text, hist, tradeDate){
   const p=parseInput(text||''); const S=p.sections||{};
-  const date=vidIsoDate(p.date);
+  const date=tradeDate || vidIsoDate(p.date);
   const idx=(S['指数']||[]).map(vidCells).filter(c=>c.length>=4).map(c=>({ name:c[0], close:vidNum(c[1]), change:vidNum(c[2]), pct:vidNum(c[3]) })).filter(x=>x.close!=null);
   const points=(arr, close)=>{
     const pts=(arr||[]).filter(x=>x.date<=date).map(x=>({date:x.date, close:x.close}));
@@ -3036,11 +3036,13 @@ async function vidBuild(btn){
     const date=vidIsoDate(parseInput(text).date);
     vidStatus('指数の推移を取得中…（株探）');
     const histFull=await vidFetchHist(VID_HIST_MONTHS, date);
-    const data=vidDataFromSlide(text, vidSliceHist(histFull, months, date));
+    // 動画の日付は「取引のあった日」。スライド文章の日付は作った日（土日なら取引のない日）になるので、株探の日足でその日以前の最後の取引日にする
+    const lastTrade=(histFull.nikkei||[]).map(x=>x.date).filter(d=>d<=date).pop() || date;
+    const data=vidDataFromSlide(text, vidSliceHist(histFull, months, lastTrade), lastTrade);
     let narration=vidNarration();
     const prev=vidLoadSaved()||{};
     // 一言・まとめは「一言・まとめを AI で作る」で作る。ここでは前に作ったもの（同じ日のもの）を残すだけ
-    if(prev.data && prev.data.date===date){ data.headline=prev.data.headline||''; data.summary=prev.data.summary||null; }
+    if(prev.data && (prev.data.date===data.date || prev.data.date===date)){ data.headline=prev.data.headline||''; data.summary=prev.data.summary||null; }
     if(!data.headline){ const op=(autoScriptSections(autoScriptFullRaw())['オープニング']||'').split(/[。\n]/)[0]; data.headline=op; }
     // 台本に区切りが無いときは、前に入れた場面ごとの台本を消さない
     const noScript=!Object.keys(narration).length;
