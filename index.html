@@ -711,7 +711,7 @@ Appier G|4180|818|+96|+13.30%
     <div id="blkVThumb">
     <div class="auto-row" style="margin-top:8px;">
       <button class="btn-sm auto-only" id="vThumbBtn" onclick="downloadVThumb(this)">⬇ 縦型サムネ（SNS用）</button>
-      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);">サイズ
+      <label class="auto-only" style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);">サイズ
         <select id="vThumbRatio" onchange="renderVThumbPreview()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
           <option value="916" selected>9:16（1080×1920）ストーリー/リール</option>
           <option value="45">4:5（1080×1350）Instagram投稿</option>
@@ -805,6 +805,13 @@ Appier G|4180|818|+96|+13.30%
       <!-- 動画のボタンは部品が vidExportSlot（横）/ vidExportSlotV（縦）に置く -->
       <span id="vidExportSlot"></span>
       <span id="vidExportSlotV"></span>
+      <!-- 縦型サムネは SNS の投稿に使う（文言は③動画で直す）。4:5 は Instagram の投稿向け -->
+      <button class="btn-sm" onclick="downloadVThumb(this,'snsVThumbRatio','snsVThumbStatus')" title="③動画の縦型サムネを、選んだサイズの画像で保存">🖼 縦サムネ</button>
+      <select id="snsVThumbRatio" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
+        <option value="45" selected>4:5（1080×1350）Instagram投稿</option>
+        <option value="916">9:16（1080×1920）ストーリー/リール</option>
+      </select>
+      <span id="snsVThumbStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
     <div id="slotSnsX"></div>
   </div>
@@ -1492,7 +1499,8 @@ function renderVThumbPreview(){
   if(!area) return;
   const has=vThumbTexts().some(t=>t&&t.trim());
   if(!has){ area.innerHTML=''; if(wrap) wrap.style.display='none'; return; }
-  const key=((document.getElementById('vThumbRatio')||{}).value)||'916';
+  // 全自動版は動画の冒頭に入る 9:16 で見せる（保存するサイズは ④SNS で選ぶ）
+  const key=document.body.classList.contains('mode-full') ? '916' : (((document.getElementById('vThumbRatio')||{}).value)||'916');
   const sz=VTHUMB_SIZES[key];
   const w=160, scale=w/sz.w, h=Math.round(sz.h*scale);
   if(wrap) wrap.style.display='block';
@@ -1500,10 +1508,11 @@ function renderVThumbPreview(){
   area.innerHTML=`<div style="position:absolute;top:0;left:0;width:${sz.w}px;height:${sz.h}px;transform:scale(${scale});transform-origin:top left;pointer-events:none;">${slideVThumb(key)}</div>`;
 }
 
-async function downloadVThumb(btn){
-  const st=document.getElementById('vThumbStatus') || document.getElementById('status');
+// ratioId：サイズを選ぶ欄（全自動版の ④SNS は snsVThumbRatio）。statusId：結果を出す場所
+async function downloadVThumb(btn, ratioId, statusId){
+  const st=document.getElementById(statusId||'vThumbStatus') || document.getElementById('status');
   if(!vThumbTexts().some(t=>t&&t.trim())){ if(st) st.textContent='サムネ文言が空です'; return; }
-  const key=((document.getElementById('vThumbRatio')||{}).value)||'916';
+  const key=((document.getElementById(ratioId||'vThumbRatio')||{}).value)||'916';
   const sz=VTHUMB_SIZES[key];
   const container=document.getElementById('renderTarget');
   container.innerHTML=slideVThumb(key);
@@ -1842,6 +1851,7 @@ function switchTab(name){
   const isManual = name === 'manual', full = name === 'full';
   document.body.classList.toggle('mode-full', full);
   autoPlaceBlocks(full);
+  try{ renderVThumbPreview(); }catch(e){}   // 縦サムネのプレビューは、全自動版は 9:16・自動版は選んだサイズ
   document.getElementById('tabManual').classList.toggle('active', isManual);
   document.getElementById('tabAuto').classList.toggle('active', !isManual);
   document.getElementById('tabBtnManual').classList.toggle('active', isManual);
