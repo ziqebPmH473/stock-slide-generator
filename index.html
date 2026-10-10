@@ -146,6 +146,10 @@ details summary { cursor:pointer; color:var(--accent); font-size:13px; margin-bo
 .tab-badge.beta { background:#7c2d12; color:#fdba74; }
 /* 全自動版だけに出すもの（⑥動画など）。全自動版と自動版は同じ画面を使い、body.mode-full で切り替える */
 body:not(.mode-full) .full-only { display:none !important; }
+/* 全自動版では使わないもの（自動版だけで出す） */
+body.mode-full .auto-only { display:none !important; }
+/* ⑥動画の場面ごとの台本は2行で足りる */
+#tabAuto #vidControls textarea { min-height:0 !important; }
 /* ⑥動画のプレビュー：横に並ぶ広さのときだけ、スクロールしても見えるようにする（縦に並ぶと台本に重なるため） */
 @media (min-width:1000px){ .vid-preview { position:sticky; top:96px; } }
 
@@ -394,10 +398,11 @@ Appier G|4180|818|+96|+13.30%
     <div class="astep-pills" id="autoPills">
       <button class="astep-pill active" data-k="1" onclick="autoStep('1')"><b>①</b>取得・抽出</button>
       <button class="astep-pill" data-k="2" onclick="autoStep('2')"><b>②</b>ファクトCK</button>
-      <button class="astep-pill" data-k="3" onclick="autoStep('3')"><b>③</b>音声生成</button>
-      <button class="astep-pill" data-k="4" onclick="autoStep('4')"><b>④</b>スライド</button>
-      <button class="astep-pill" data-k="7" onclick="autoStep('7')"><b>⑤</b>出力</button>
-      <button class="astep-pill full-only" data-k="v" onclick="autoStep('v')"><b>⑥</b>動画</button>
+      <button class="astep-pill auto-only" data-k="3" onclick="autoStep('3')"><b>③</b>音声生成</button>
+      <button class="astep-pill auto-only" data-k="4" onclick="autoStep('4')"><b>④</b>スライド</button>
+      <button class="astep-pill auto-only" data-k="7" onclick="autoStep('7')"><b>⑤</b>出力</button>
+      <button class="astep-pill full-only" data-k="v" onclick="autoStep('v')"><b>③</b>動画</button>
+      <button class="astep-pill full-only" data-k="n" onclick="autoStep('n')"><b>④</b>SNS</button>
       <button class="astep-pill" data-k="s" onclick="autoStep('s')" style="margin-left:6px;"><b>⚙</b>設定</button>
     </div>
   </div>
@@ -517,6 +522,7 @@ Appier G|4180|818|+96|+13.30%
       <a id="autoTtsDlBtn4" class="btn-sm" style="display:none;text-decoration:none;margin-top:6px;" download="narration.mp3">⬇ ダウンロード</a>
     </div>
 
+    <div id="blkPrompts">
     <strong style="font-size:12px;color:var(--text);">ChatGPT用プロンプト</strong>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0;">
       <button class="btn-copy" onclick="autoCopyImagePrompt(this)">📋 ニュース画像</button>
@@ -527,8 +533,9 @@ Appier G|4180|818|+96|+13.30%
     <div id="autoImgStatus" style="font-size:12px;color:var(--muted);min-height:16px;"></div>
     <pre id="autoImgPromptView" style="display:none;"></pre>
     <div id="autoImgOut" style="margin-top:4px;"></div>
+    </div>
 
-    <div class="a2" style="margin-top:8px;">
+    <div class="a2" id="blkThumbText" style="margin-top:8px;">
       <div>
         <div class="auto-row"><strong style="font-size:11px;color:var(--text);">サムネ案</strong>
           <button class="btn-sm" onclick="autoGenerateSns(this)">🔁 再生成</button>
@@ -543,7 +550,7 @@ Appier G|4180|818|+96|+13.30%
       </div>
     </div>
 
-    <div class="img-cards" style="margin-top:8px;">
+    <div class="img-cards" id="blkImages" style="margin-top:8px;">
       <div class="img-card">
         <h3>ニュース画像</h3>
         <div id="autoNewsDropZone" class="drop-zone">
@@ -555,7 +562,7 @@ Appier G|4180|818|+96|+13.30%
           <button id="autoNewsClear" class="btn-sm danger" style="display:none;margin-top:6px" onclick="clearImg('news')">✕ 削除</button>
         </div>
       </div>
-      <div class="img-card">
+      <div class="img-card auto-only">
         <h3>表紙画像</h3>
         <div id="autoCoverDropZone" class="drop-zone">
           <img id="autoCoverThumb" class="img-thumb" src="" alt="" style="display:none">
@@ -678,7 +685,7 @@ Appier G|4180|818|+96|+13.30%
       <a id="autoTtsDlBtn" class="btn-sm" style="display:none;text-decoration:none;" download="narration.mp3">⬇ ダウンロード</a>
     </div>
 
-    <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
+    <div id="blkSnsX" style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
       <div class="auto-row">
         <strong style="font-size:11px;color:var(--text);">X投稿文</strong>
         <button class="btn-mini" onclick="autoCopyEl('autoSnsX',this)">📋</button>
@@ -686,6 +693,7 @@ Appier G|4180|818|+96|+13.30%
       <textarea id="autoSnsX"></textarea>
     </div>
     <button class="btn" style="margin-top:10px;" onclick="downloadZip()">⬇ スライド画像をZIPダウンロード</button>
+    <div id="blkVThumb">
     <div class="auto-row" style="margin-top:8px;">
       <button class="btn-sm" id="vThumbBtn" onclick="downloadVThumb(this)">⬇ 縦型サムネ（SNS用）</button>
       <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);">サイズ
@@ -718,6 +726,7 @@ Appier G|4180|818|+96|+13.30%
         <textarea id="vThumbL3" style="min-height:48px !important;" oninput="renderVThumbPreview()"></textarea></div>
     </div>
     <div id="vThumbPreviewWrap" style="margin-top:6px;display:none;"><div class="preview-slide-wrap" id="vThumbPreview" title="クリックでダウンロード" onclick="downloadVThumb(document.getElementById('vThumbBtn'))"></div></div>
+    </div>
 
     <div style="margin-top:12px;">
       <div class="auto-row">
@@ -734,8 +743,10 @@ Appier G|4180|818|+96|+13.30%
     </div>
   </div>
   <div class="card full-only">
-    <h2>⑥ 動画</h2>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 8px;">④のスライド文章・③の台本・サムネ・ニュース画像から、動くグラフの動画（MP4）を作ります。</p>
+    <h2>③ 動画</h2>
+    <!-- 全自動版のときだけ、④スライドからプロンプト・サムネ・ニュース画像をここへ移す（autoPlaceBlocks） -->
+    <div id="slotVideoTop"></div>
+    <p style="font-size:11px;color:var(--muted);margin:12px 0 8px;border-top:1px solid var(--border);padding-top:10px;">一括生成で作った台本・スライド文章と、サムネ・ニュース画像から、動くグラフの動画（MP4）を作ります。</p>
     <div class="auto-row">
       <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);" title="日経平均・TOPIX のチャートに出す期間">チャートの期間
         <select id="vidMonths" onchange="vidChangeMonths()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
@@ -749,10 +760,21 @@ Appier G|4180|818|+96|+13.30%
       <span id="vidStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
     <!-- 左にプレビュー（小さめ・スクロールしても見える）、右に場面ごとの台本と操作。狭い画面では縦に並ぶ -->
+    <!-- 左6：右4。左に場面ごとの台本と操作、右にプレビュー（広い画面ではスクロールしても見える） -->
     <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-top:8px;">
-      <div id="vidPreview" class="vid-preview" style="flex:1 1 380px;max-width:560px;"></div>
-      <div id="vidControls" style="flex:1 1 380px;min-width:0;background:#fff;color:#1f2937;border-radius:8px;padding:8px 10px;display:none;"></div>
+      <div id="vidControls" style="flex:6 1 420px;min-width:0;background:#fff;color:#1f2937;border-radius:8px;padding:8px 10px;display:none;"></div>
+      <div id="vidPreview" class="vid-preview" style="flex:4 1 320px;min-width:0;"></div>
     </div>
+  </div>
+
+  <div class="card full-only">
+    <h2>④ SNS</h2>
+    <div class="auto-row">
+      <span id="vidExportSlot"></span>
+      <button class="btn-sm" onclick="vidDownloadThumb(this)" title="動画の先頭に入れているサムネ（横 1920×1080）を画像で保存">⬇ サムネ（横）</button>
+    </div>
+    <!-- 全自動版のときだけ、⑤出力から縦型サムネと X投稿文をここへ移す（autoPlaceBlocks） -->
+    <div id="slotSns"></div>
   </div>
   <div id="autoStatusBar"><span class="spin"></span><span id="autoStatusMsg">処理中…</span></div>
 </div><!-- /#tabAuto -->
@@ -1772,9 +1794,20 @@ function clearThumb(){
 // 現行UIには一切干渉しない。表示切替のみ。
 // 全自動版と自動版は同じ画面（#tabAuto）。全自動版のときだけ ⑥動画・台本の区切り・一括生成のあとの動画データ作成が加わる
 function autoIsFull(){ return document.body.classList.contains('mode-full'); }
+// 全自動版では、④スライド・⑤出力にある部品を ③動画・④SNS へ移す（同じ部品を動かすので、入力中の内容もそのまま）。自動版に戻すと元の場所へ
+const AUTO_BLOCKS = [['blkPrompts','slotVideoTop'],['blkThumbText','slotVideoTop'],['blkImages','slotVideoTop'],['blkVThumb','slotSns'],['blkSnsX','slotSns']];
+function autoPlaceBlocks(full){
+  for(const [id, slot] of AUTO_BLOCKS){
+    const el=document.getElementById(id); if(!el) continue;
+    if(!el.__home){ el.__home=document.createElement('span'); el.__home.style.display='none'; el.parentNode.insertBefore(el.__home, el); }
+    if(full) document.getElementById(slot).appendChild(el);
+    else el.__home.parentNode.insertBefore(el, el.__home);
+  }
+}
 function switchTab(name){
   const isManual = name === 'manual', full = name === 'full';
   document.body.classList.toggle('mode-full', full);
+  autoPlaceBlocks(full);
   document.getElementById('tabManual').classList.toggle('active', isManual);
   document.getElementById('tabAuto').classList.toggle('active', !isManual);
   document.getElementById('tabBtnManual').classList.toggle('active', isManual);
@@ -1790,14 +1823,15 @@ const AUTO_STEPS = [
   {k:'3', label:'③ 音声生成'},
   {k:'4', label:'④ スライド'},
   {k:'7', label:'⑤ 出力'},
-  {k:'v', label:'⑥ 動画'},
+  {k:'v', label:'③ 動画'},
+  {k:'n', label:'④ SNS'},
   {k:'s', label:'⚙ 設定'},
 ];
 let _autoStepsReady = false;
 function autoInitSteps(){
   if(_autoStepsReady) return;
   const cards = [...document.querySelectorAll('#tabAuto > .card')];
-  const map = [['s','設定'],['1','① データ取得'],['1','データ抽出'],['2','ファクトチェック'],['3','音声生成'],['4','スライド'],['7','出力'],['v','動画']];
+  const map = [['s','設定'],['1','① データ取得'],['1','データ抽出'],['2','ファクトチェック'],['3','音声生成'],['4','スライド'],['7','出力'],['v','動画'],['n','SNS']];
   cards.forEach(function(c){
     const h = c.querySelector('h2');
     if(!h){ c.classList.add('astep-cfg'); return; }
@@ -1817,6 +1851,8 @@ function autoStep(k){
   if(k==='7'){ try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); }catch(e){} }
   // ⑥動画を開いたら、前に作った動画のデータがあれば読み込む
   if(k==='v'){ try{ vidOpen(); }catch(e){ console.warn(e); } }
+  // ④SNS を開いたら、⑤出力と同じくサムネ文言を縦型サムネへ流し込む
+  if(k==='n'){ try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); }catch(e){} }
   // 工程切替でプレビュー領域が可視になった直後に、実幅で再描画する
   // （非表示中は clientWidth=0 で幅を過大評価し、初回1列4枚縦積み→2列にズレるのを防ぐ）
   if(typeof renderPreview==='function'){
@@ -1825,9 +1861,11 @@ function autoStep(k){
   }
 }
 function autoStepMove(d){
-  const i = AUTO_STEPS.findIndex(function(s){ return s.k===(window.__autoStepK||'1'); });
-  const n = Math.min(AUTO_STEPS.length-1, Math.max(0, i+d));
-  autoStep(AUTO_STEPS[n].k);
+  // 全自動版は ① ② 動画 SNS、自動版は ① ② ③ ④ ⑤
+  const steps = AUTO_STEPS.filter(function(s){ return autoIsFull() ? ['1','2','v','n','s'].includes(s.k) : !['v','n'].includes(s.k); });
+  const i = steps.findIndex(function(s){ return s.k===(window.__autoStepK||'1'); });
+  const n = Math.min(steps.length-1, Math.max(0, i+d));
+  autoStep(steps[n].k);
 }
 // 下部ステータスバー
 function autoStatus(msg){
@@ -1898,7 +1936,7 @@ function autoRestoreState(){
 async function autoRunAll(realBtn){
   if(!AutoState.sources){ alert('先に①データ取得を実行してください'); return; }
   const o=realBtn.textContent; realBtn.disabled=true;
-  autoStep('3');   // 押した瞬間に③音声生成タブへ進む（生成はこのまま裏で継続し、台本欄が順次埋まる）
+  autoStep(autoIsFull() ? 'v' : '3');   // 押した瞬間に③音声生成タブ（全自動版は動画タブ）へ進む（生成はこのまま裏で継続し、台本欄が順次埋まる）
   try{
     // 1. 台本（取得データ＋ファクトチェックのみで生成可能・他工程に依存しない）
     autoStatus('台本を生成中…（1/3）'); realBtn.textContent='生成中…(1/3)'; await autoRunScript({});
@@ -2813,7 +2851,7 @@ function autoSyncThumb(){
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = 'f87ba4433f';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '5b36c469c3';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -3017,6 +3055,7 @@ async function vidMount(force){
       return { words:d.words||[] };
     },
     onChange:(st)=>{ const o=vidLoadSaved()||{}; o.settings=st; vidSave(o); },
+    exportEl:document.getElementById('vidExportSlot'),   // MP4 の書き出しボタンは ④SNS に置く
     fileName:`tsemarket_${data.date.replace(/-/g,'')}.mp4`,
   };
   document.getElementById('vidControls').style.display='';
@@ -3024,6 +3063,12 @@ async function vidMount(force){
   vidHandle=KV.tse.mount(document.getElementById('vidPreview'), props);
 }
 // ⑥を開くたびに、いまのサムネ・ニュース画像を入れて描き直す（保存してある動画のデータ・音声はそのまま。AI・読み上げは呼ばない）
+// 横のサムネ（スライド0枚目）を PNG で保存
+async function vidDownloadThumb(btn){
+  const t=((document.getElementById('thumbInput')||{}).value||'').trim();
+  if(!t){ alert('サムネ文言がありません'); return; }
+  await downloadSlide({ html:slideThumb(t), name:'00_サムネイル' });
+}
 function vidOpen(){ vidMount(!!vidHandle).catch(e=>vidStatus('❌ '+e.message)); }
 function vidRefresh(){ if(vidHandle) vidMount(true).catch(e=>vidStatus('❌ '+e.message)); }
 
