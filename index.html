@@ -788,9 +788,11 @@ Appier G|4180|818|+96|+13.30%
   <div class="card full-only">
     <h2>④ SNS</h2>
     <div class="auto-row">
+      <!-- 横動画・横サムネ・縦動画・縦サムネの順。動画のボタンは部品が vidExportSlot / vidExportSlotV に置く -->
       <span id="vidExportSlot"></span>
-      <button class="btn-sm" onclick="vidDownloadThumb(this)" title="動画の先頭に入れているサムネ（横 1920×1080）を画像で保存">⬇ サムネ（横）</button>
-      <button class="btn-sm" onclick="downloadVThumb(this)" title="縦型サムネ（SNS用）を画像で保存">⬇ サムネ（縦）</button>
+      <button class="btn-sm" onclick="vidDownloadThumb(this)" title="動画の先頭に入れているサムネ（横 1920×1080）を画像で保存">⬇ 横サムネ</button>
+      <span id="vidExportSlotV"></span>
+      <button class="btn-sm" onclick="downloadVThumb(this)" title="縦型サムネ（SNS用）を画像で保存">⬇ 縦サムネ</button>
     </div>
     <!-- 全自動版のときだけ、⑤出力から縦型サムネと X投稿文をここへ移す（autoPlaceBlocks） -->
     <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-top:10px;">
@@ -2894,7 +2896,7 @@ function autoSyncThumb(){
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = 'cf67c0fd1d';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '4f1dfa83b9';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -3137,7 +3139,9 @@ async function vidMount(force){
       return { words:d.words||[] };
     },
     onChange:(st)=>{ const o=vidLoadSaved()||{}; o.settings=st; vidSave(o); },
-    exportEl:document.getElementById('vidExportSlot'),   // MP4 の書き出しボタンは ④SNS に置く
+    exportEl:document.getElementById('vidExportSlot'),   // MP4 の書き出しボタンは ④SNS に置く（横・縦に分けて、サムネのボタンと同じ見た目）
+    exportElPortrait:document.getElementById('vidExportSlotV'),
+    exportButton:{ className:'btn-sm', labels:['⬇ 横動画','⬇ 縦動画'] },
     fileName:`tsemarket_${data.date.replace(/-/g,'')}.mp4`,
   };
   document.getElementById('vidControls').style.display='';
