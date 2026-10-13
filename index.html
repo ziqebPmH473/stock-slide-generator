@@ -445,6 +445,13 @@ Appier G|4180|818|+96|+13.30%
     </div>
     <p>X投稿文の末尾に、生成されたハッシュタグに続けて自動で付加します（スペース区切り／改行区切りどちらも可）。空欄なら付加しません。</p>
     <p>音声は③音声生成の台本欄の各ボックス（音声①／音声②…）ごとに1本ずつ生成し、連結します。空欄（空白のみ含む）のボックスは対象外。1本にしたい場合は1つのボックスにだけ入力してください。連結時の間は⑤出力の「間（無音）」で調整できます。</p>
+    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+      <div class="auto-row"><strong style="font-size:12px;color:var(--text);">BGM（動画）</strong>
+        <label class="btn-sm" style="cursor:pointer;">＋ 追加<input type="file" accept="audio/*" style="display:none" onchange="ssgBgmAdd(this.files[0]);this.value=''"></label>
+        <span id="ssgBgmStatus" style="font-size:11px;color:var(--muted);"></span></div>
+      <div id="ssgBgmList" style="margin-top:4px;"></div>
+      <p style="margin-bottom:0;">選んだ曲を ③動画の全体に小さく流します（音量の初期値は 3%、③動画の「BGM」で変えられます）。曲は何本でも登録でき、使うものを1つ選びます。曲を変えたら ③動画の「ツールの BGM を使う」を押してください。</p>
+    </div>
     <div class="auto-row" style="margin-top:8px;">
       <button class="btn-sm" id="autoTestBtn" onclick="autoTestGemini()">🔌 AI接続テスト</button>
       <span id="autoTestStatus" style="font-size:11px;color:var(--muted);"></span>
@@ -1913,6 +1920,7 @@ function autoStep(k){
   // ④SNS の書き出しボタンも動画の部品が置くので、④を先に開いたときも読み込む（AI・読み上げは呼ばない）
   if(k==='n' && typeof vidHandle!=='undefined' && !vidHandle){ try{ vidOpen(); }catch(e){ console.warn(e); } }
   if(k==='v'){ try{ vidOpen(); }catch(e){ console.warn(e); } try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); renderHThumbPreview(); }catch(e){} }
+  if(k==='s'){ try{ ssgBgmRender(); }catch(e){ console.warn(e); } }
   // ④SNS を開いたら、⑤出力と同じくサムネ文言を縦型サムネへ流し込む
   // 工程切替でプレビュー領域が可視になった直後に、実幅で再描画する
   // （非表示中は clientWidth=0 で幅を過大評価し、初回1列4枚縦積み→2列にズレるのを防ぐ）
@@ -3022,11 +3030,74 @@ function autoSyncThumb(){
 }
 
 // ==================== 自動版：⑥ 動画 ====================
+// ==================== BGM（⚙ 設定。kessan-tool の 設定 › BGM と同じ作り）====================
+// 曲は IndexedDB（ssg-bgm / kv）に 'bgm:<id>' → {name, blob, dur, size} で保存し、一覧は目録 'bgm:_index'。
+// 使う曲は localStorage の ssg_bgm-sel（キー。空＝なし）。動画の部品には importBgm で渡し、部品が自分の保存先（kessan-viz-audio の _common/bgm）に取り込む。
+const SSG_BGM_IDX='bgm:_index', SSG_BGM_SEL=SSG_PREFIX+'bgm-sel', SSG_BGM_MAX_MB=30;
+function ssgBgmDb(){
+  return new Promise((res,rej)=>{ const rq=indexedDB.open('ssg-bgm',1); rq.onupgradeneeded=()=>rq.result.createObjectStore('kv'); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); });
+}
+function ssgBgmTx(mode, fn){
+  return ssgBgmDb().then(db=>new Promise((res,rej)=>{ const t=db.transaction('kv',mode); const r=fn(t.objectStore('kv')); t.oncomplete=()=>{ db.close(); res(r?r.result:undefined); }; t.onerror=()=>{ db.close(); rej(t.error); }; }));
+}
+const ssgBgmGet=k=>ssgBgmTx('readonly', st=>st.get(k)).then(v=>v==null?null:v).catch(()=>null);
+const ssgBgmPut=(k,v)=>ssgBgmTx('readwrite', st=>{ st.put(v,k); });
+const ssgBgmDel=k=>ssgBgmTx('readwrite', st=>{ st.delete(k); });
+async function ssgBgmIndex(){ const x=await ssgBgmGet(SSG_BGM_IDX); return Array.isArray(x)?x:[]; }
+function ssgBgmSelKey(){ try{ return localStorage.getItem(SSG_BGM_SEL)||''; }catch(e){ return ''; } }
+function ssgBgmSetSel(key){ try{ if(key) localStorage.setItem(SSG_BGM_SEL,key); else localStorage.removeItem(SSG_BGM_SEL); }catch(e){} }
+function ssgBgmStatus(msg, cls){ const el=document.getElementById('ssgBgmStatus'); if(!el) return; el.textContent=msg||''; el.style.color=cls==='error'?'#f87171':cls==='ok'?'#4ade80':'var(--muted)'; }
+// 音声の長さ（秒）。読めなければ 0
+function ssgAudioDur(blob){
+  return new Promise(res=>{ const a=document.createElement('audio'), u=URL.createObjectURL(blob); let done=false;
+    const fin=d=>{ if(done) return; done=true; URL.revokeObjectURL(u); res(d); };
+    a.preload='metadata'; a.onloadedmetadata=()=>fin(isFinite(a.duration)?a.duration:0); a.onerror=()=>fin(0); setTimeout(()=>fin(0),15000); a.src=u; });
+}
+async function ssgBgmRender(){
+  const box=document.getElementById('ssgBgmList'); if(!box) return;
+  const idx=await ssgBgmIndex(), sel=ssgBgmSelKey();
+  const on=idx.some(x=>x.key===sel)?sel:'';
+  const row=(key,label,del)=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-width:0;margin-top:3px;color:var(--text);cursor:pointer;">`
+    +`<input type="radio" name="ssgBgmSel" value="${key}"${key===on?' checked':''} onchange="ssgBgmSetSel(this.value)" style="flex:none;">`
+    +`<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${autoEsc(label)}">${autoEsc(label)}</span>`
+    +(del?`<button class="btn-mini" onclick="event.preventDefault();ssgBgmRemove('${key}')" title="この曲を消す">✕</button>`:'')+`</label>`;
+  box.innerHTML=row('','なし（入れない）',false)+idx.map(x=>row(x.key, `${x.name}${x.dur?`（${Math.round(x.dur)}秒）`:''}`, true)).join('');
+}
+async function ssgBgmAdd(file){
+  if(!file) return;
+  if(file.size>SSG_BGM_MAX_MB*1048576){ ssgBgmStatus(`❌ ${file.name} は ${(file.size/1048576).toFixed(0)}MB あります。1本 ${SSG_BGM_MAX_MB}MB までにしてください（mp3 などにしてください）`,'error'); return; }
+  ssgBgmStatus(`${file.name} を読んでいます…`);
+  const dur=await ssgAudioDur(file);
+  if(!dur){ ssgBgmStatus(`❌ ${file.name} を音声として読めませんでした`,'error'); return; }
+  const key=`bgm:${Date.now().toString(36)}`;
+  await ssgBgmPut(key, {name:file.name, blob:file, dur, size:file.size});
+  const idx=await ssgBgmIndex(); idx.push({key, name:file.name, dur, size:file.size}); await ssgBgmPut(SSG_BGM_IDX, idx);
+  if(!idx.some(x=>x.key===ssgBgmSelKey())) ssgBgmSetSel(key);   // まだ何も選んでいなければ、入れた曲を使う
+  await ssgBgmRender();
+  ssgBgmStatus(`✅ ${file.name}（${Math.round(dur)}秒）を登録しました`,'ok');
+}
+async function ssgBgmRemove(key){
+  const idx=await ssgBgmIndex(), it=idx.find(x=>x.key===key);
+  if(!confirm(`「${(it&&it.name)||key}」を消しますか？`)) return;
+  await ssgBgmDel(key); await ssgBgmPut(SSG_BGM_IDX, idx.filter(x=>x.key!==key));
+  if(ssgBgmSelKey()===key) ssgBgmSetSel('');
+  await ssgBgmRender(); ssgBgmStatus('消しました','ok');
+}
+// 動画の部品の「ツールの BGM を使う」：⚙ 設定で選んでいる曲（「なし」なら null。未選択で登録があれば最初の曲）
+async function ssgBgmImport(){
+  const idx=await ssgBgmIndex(); if(!idx.length) return null;
+  const sel=ssgBgmSelKey();
+  const it=sel ? idx.find(x=>x.key===sel) : (localStorage.getItem(SSG_BGM_SEL)===null ? idx[0] : null);
+  if(!it) return null;
+  const rec=await ssgBgmGet(it.key); if(!rec||!rec.blob) return null;
+  return { blob:rec.blob, name:rec.name||it.name||'BGM' };
+}
+
 // 動画の部品は kessan-visualizer の埋め込みバンドル（assets/kessan-viz.js、window.KessanViz.tse）。
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '4f1dfa83b9';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = 'f1da7dfbb4';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -3269,6 +3340,8 @@ async function vidMount(force){
       return { words:d.words||[] };
     },
     onChange:(st)=>{ const o=vidLoadSaved()||{}; o.settings=st; vidSave(o); },
+    // ⚙ 設定の BGM で選んだ曲（部品は、BGM がまだ無ければ最初に自動で取り込み、動画の全体にループで流す）
+    importBgm: ssgBgmImport,
     exportEl:document.getElementById('vidExportSlot'),   // MP4 の書き出しボタンは ④SNS に置く（横・縦に分けて、サムネのボタンと同じ見た目）
     exportElPortrait:document.getElementById('vidExportSlotV'),
     exportButton:{ className:'btn-sm', labels:['🎬 横動画','🎬 縦動画'] },
