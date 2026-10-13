@@ -524,6 +524,22 @@ Appier G|4180|818|+96|+13.30%
     <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
       <button class="btn" id="autoRunAllBtn" onclick="autoRunAll(this)">ファクトチェック完了</button>
     </div>
+    <!-- ChatGPT手動ルート：APIが遅い/混んでいるとき、同じ4つの生成を ChatGPT に貼って回答を戻す -->
+    <details id="autoManualWrap" style="margin-top:8px;">
+      <summary style="font-size:11px;color:var(--muted);cursor:pointer;">▼ ChatGPTで手動（APIが遅いとき）</summary>
+      <p style="margin:6px 0 4px;">📋 でプロンプトをコピー → ChatGPT に貼る → 回答をコピー → 📥 で貼付。貼付すると次のプロンプトも自動でコピーします。順番：①台本 → ②全情報 → ③サムネ/X → ④スライド文章。</p>
+      <div class="auto-row">
+        <button class="btn-copy" onclick="autoManualCopy('script',this)">📋 ①台本</button><button class="btn-sm" onclick="autoManualPaste('script',this)">📥 貼付</button>
+        <span style="color:var(--muted)">→</span>
+        <button class="btn-copy" onclick="autoManualCopy('fullinfo',this)">📋 ②全情報</button><button class="btn-sm" onclick="autoManualPaste('fullinfo',this)">📥 貼付</button>
+        <span style="color:var(--muted)">→</span>
+        <button class="btn-copy" onclick="autoManualCopy('sns',this)">📋 ③サムネ/X</button><button class="btn-sm" onclick="autoManualPaste('sns',this)">📥 貼付</button>
+        <span style="color:var(--muted)">→</span>
+        <button class="btn-copy" onclick="autoManualCopy('slide',this)">📋 ④スライド文章</button><button class="btn-sm" onclick="autoManualPaste('slide',this)">📥 貼付</button>
+      </div>
+      <div id="autoManualStatus" style="font-size:11px;color:var(--muted);min-height:16px;margin:4px 0;"></div>
+      <button class="btn" id="autoManualFinishBtn" onclick="autoManualFinish(this)">ChatGPT完了（次へ）</button>
+    </details>
   </div>
 
   <div class="card">
@@ -2004,6 +2020,107 @@ async function autoRunAll(realBtn){
   finally{ realBtn.disabled=false; setTimeout(()=>{realBtn.textContent=o;},2500); autoPersistState(); }
 }
 
+// ===== ChatGPT手動ルート（APIが遅い/混んでいるとき）=====
+// 「ファクトチェック完了」と同じ4つの生成（台本→全情報→サムネ/X→スライド文章）を、
+// プロンプトをコピーして ChatGPT に貼り、回答を貼り付けて戻す形で行う。
+// ・送る文は API に送るのと同じ組み立て（autoFmtPayload）＋コードブロック指定
+// ・貼り付けた回答は API の結果と同じ後処理（空行除去・前後半分割・ＨＤ略称・プレビュー）を通す
+// ・貼付したら次のプロンプトを自動でコピーする（②ファクトチェックの「貼付→CK」と同じ流れ）
+const AUTO_MANUAL_STEPS=['script','fullinfo','sns','slide'];
+const AUTO_MANUAL_LABEL={script:'①台本', fullinfo:'②全情報', sns:'③サムネ/X', slide:'④スライド文章'};
+const AUTO_MANUAL_SNS_NOTE=`\n\n【出力形式】\n・回答全体を1つのコードブロック（\`\`\`）で囲んで出力してください。\n・コードブロックの外には何も書かないでください。\n・区切りの「===」と末尾の「#ハッシュタグ」はそのまま書き、太字（**）、見出し（#）などのマークダウン記法は使わないでください。`;
+function autoManualPayload(k){
+  if(!AutoState.sources) throw new Error('先に①データ取得を実行してください');
+  if(k==='script')   return autoFmtPayload(autoScriptPrompt(), autoBuildResources({noVolume: autoIsFull()})) + AP_CODEBLOCK_NOTE;
+  if(k==='fullinfo') return autoFmtPayload(autoFullInfoPrompt(), autoBuildResources()) + AP_CODEBLOCK_NOTE;
+  if(k==='sns'){
+    const m=((document.getElementById('autoFullInfo')||{}).value||'').trim() || autoSnsMaterial();
+    if(!m) throw new Error('先に②全情報を貼り付けてください（サムネ/Xの材料）');
+    return autoFmtPayload(autoSnsPrompt(), [{label:'本日の東証マーケットのデータ・サマリ', text:m}]) + AUTO_MANUAL_SNS_NOTE;
+  }
+  if(k==='slide')    return autoFmtPayload(autoSlidePrompt(), autoBuildResources()) + AP_CODEBLOCK_NOTE;
+  throw new Error('不明な工程: '+k);
+}
+function autoManualCopy(k, btn){
+  const st=document.getElementById('autoManualStatus');
+  try{ autoClip(autoManualPayload(k), btn); st.textContent=`📋 ${AUTO_MANUAL_LABEL[k]} のプロンプトをコピーしました → ChatGPT に貼り、回答をコピーして 📥 貼付`; }
+  catch(e){ st.textContent='❌ '+e.message; }
+}
+// ChatGPTの回答からコードブロック（\`\`\`）を外す。{text: 外した文, blocks: 各ブロックの中身}
+// ブロックが無ければそのまま（ChatGPTのコピーボタンで中身だけ写した場合もそのまま通る）
+function autoStripCodeFence(raw){
+  const t=String(raw||'').replace(/\r\n/g,'\n').trim();
+  const blocks=[]; const re=/\`\`\`[^\n]*\n([\s\S]*?)\n?\`\`\`/g; let m;
+  while((m=re.exec(t))) blocks.push(m[1].trim());
+  if(!blocks.length) return { text:t, blocks:[] };
+  // 「===」などブロックの外に書かれた区切りは残す（ブロックの囲いだけ外す）
+  const text=t.replace(re, (_,inner)=>inner.trim()).trim();
+  return { text, blocks };
+}
+function autoManualApply(k, text, blocks){
+  if(k==='script'){
+    const e1=document.getElementById('autoScriptOut'), e2=document.getElementById('autoScriptOut2');
+    if(e1) e1.value=autoStripBlankLines(text); if(e2) e2.value='';
+    autoResplitScript(); updateScriptStats();
+    const st=document.getElementById('autoScriptStatus'); if(st) st.textContent='✅ ChatGPTの回答を反映';
+  }else if(k==='fullinfo'){
+    document.getElementById('autoFullInfo').value=text;
+    const st=document.getElementById('autoFullInfoStatus'); if(st) st.textContent='✅ ChatGPTの回答を反映';
+  }else if(k==='sns'){
+    autoApplySnsText(text, blocks);
+    const st=document.getElementById('autoSnsStatus'); if(st) st.textContent='✅ ChatGPTの回答を反映';
+  }else if(k==='slide'){
+    const t=autoApplyRankAbbrev(text);   // ランキングの銘柄名をＨＤ/ＦＧ/Ｇへ確実に変換（APIと同じ）
+    AutoState.slideText=t;
+    document.getElementById('autoSlideText').value=t;
+    apSetValue('mainInput', t);
+    renderPreview();
+    const st=document.getElementById('autoSlideStatus'); if(st) st.textContent='✅ ChatGPTの回答を反映';
+  }
+}
+async function autoManualPaste(k, btn){
+  const st=document.getElementById('autoManualStatus');
+  let raw='';
+  try{ raw=await navigator.clipboard.readText(); }
+  catch(e){ st.textContent='❌ クリップボードを読み取れませんでした（ブラウザの許可を確認してください）'; return; }
+  const {text, blocks}=autoStripCodeFence(raw);
+  if(!text.trim()){ st.textContent='❌ クリップボードが空です。ChatGPT の回答をコピーしてから押してください'; return; }
+  try{
+    autoManualApply(k, text, blocks);
+    autoFlash(btn);
+    autoPersistState();
+    const next=AUTO_MANUAL_STEPS[AUTO_MANUAL_STEPS.indexOf(k)+1];
+    if(next){ autoClip(autoManualPayload(next), btn); st.textContent=`✅ ${AUTO_MANUAL_LABEL[k]} を反映。続けて ${AUTO_MANUAL_LABEL[next]} のプロンプトをコピーしました → ChatGPT に貼ってください`; }
+    else st.textContent='✅ ④スライド文章 を反映。「ChatGPT完了（次へ）」を押してください';
+  }catch(e){ st.textContent='❌ '+e.message; }
+}
+// 4つがそろったら「ファクトチェック完了」の残り（全自動版：動画のデータ作成＋冒頭/まとめのAI）を実行し、次の工程へ
+async function autoManualFinish(btn){
+  const st=document.getElementById('autoManualStatus');
+  const val=id=>((document.getElementById(id)||{}).value||'').trim();
+  const missing=[];
+  if(!autoScriptFull()) missing.push('①台本');
+  if(!val('autoFullInfo')) missing.push('②全情報');
+  if(!val('autoSnsThumb')) missing.push('③サムネ/X');
+  if(!val('autoSlideText')) missing.push('④スライド文章');
+  if(missing.length){ st.textContent='❌ まだ貼り付けていません：'+missing.join('・'); return; }
+  const o=btn.textContent; btn.disabled=true;
+  try{
+    if(autoIsFull()){
+      autoStep('v');   // 動画タブを開いてから（vidBuild は動画の部品が読み込まれている前提。autoRunAll と同じ）
+      autoStatus('動画のデータを作成中…'); btn.textContent='作成中…(動画)';
+      await vidBuild(document.getElementById('vidBuildBtn'));
+      autoStatus('冒頭の一言とまとめを作成中…（AI）');
+      await vidScreenAi(document.getElementById('vidAiBtn'));
+      autoStep('v');
+    }else{
+      autoStep('3');
+    }
+    autoStatusDone('✅ ChatGPTの回答を反映しました'); st.textContent='✅ 完了';
+  }catch(e){ autoStatusDone('❌ '+e.message); st.textContent='❌ '+e.message; }
+  finally{ btn.disabled=false; btn.textContent=o; autoPersistState(); }
+}
+
 async function autoFetchSources(){
   const btn = document.getElementById('autoFetchBtn');
   const statusEl = document.getElementById('autoFetchStatus');
@@ -2802,6 +2919,16 @@ function autoAppendFixedHashtags(text){
   if(!add.length) return text;
   return (text.replace(/\s+$/,'')+' '+add.join(' ')).trim();
 }
+// サムネ案・X投稿文の回答テキストを「===」でサムネ／Xに分割して各欄へ（API・ChatGPT手動の両方で使う）
+// blocks: ChatGPTがサムネとXを別々のコードブロックで返したときの中身（「===」が無ければ 1つ目=サムネ、2つ目=X）
+function autoApplySnsText(text, blocks){
+  let parts=text.split(/\n?===+\n?/);
+  if(parts.length<2 && blocks && blocks.length>=2) parts=[blocks[0], blocks[1]];
+  const thumb=(parts[0]||'').replace(/^🎨\s*サムネ案\s*/,'').trim();
+  const x=(parts[1]||'').replace(/^🕊️?\s*X投稿文\s*/,'').trim();
+  document.getElementById('autoSnsThumb').value = autoStripBlankLines(thumb || text);
+  document.getElementById('autoSnsX').value = autoAppendFixedHashtags(autoStripBlankLines(x));
+}
 // ⑤ Geminiで直接生成（サムネ／X投稿文を別々の欄へ）
 async function autoGenerateSns(btn, materialOverride){
   const st=document.getElementById('autoSnsStatus');
@@ -2817,12 +2944,7 @@ async function autoGenerateSns(btn, materialOverride){
     });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'不明なエラー');
-    // 「===」でサムネ／Xに分割
-    const parts=data.text.split(/\n?===+\n?/);
-    const thumb=(parts[0]||'').replace(/^🎨\s*サムネ案\s*/,'').trim();
-    const x=(parts[1]||'').replace(/^🕊️?\s*X投稿文\s*/,'').trim();
-    document.getElementById('autoSnsThumb').value = autoStripBlankLines(thumb || data.text);
-    document.getElementById('autoSnsX').value = autoAppendFixedHashtags(autoStripBlankLines(x));
+    autoApplySnsText(data.text);
     autoPersistState();
     st.textContent='✅ 生成完了'+autoModelNote(data);
   }catch(e){ st.textContent='❌ '+e.message; }
