@@ -1541,7 +1541,8 @@ function vThumbSyncFromThumb(force){
   const filled=[1,2,3].some(i=>{ const el=document.getElementById('vThumbL'+i); return el && el.value.trim(); });
   // 前回分割した元の文言は保存しておく（読み込み直し・取込のあとに、手で直した段を分割結果で上書きしないため）
   let last=null; try{ last=localStorage.getItem(SSG_PREFIX+'vThumbSrc'); }catch(e){}
-  if(!force && filled && last===src) return;
+  // 前の版で保存した状態（判定が無い）でも、段に文があるなら手で直したものとして残す
+  if(!force && filled && (last===src || last===null)){ if(last===null){ try{ localStorage.setItem(SSG_PREFIX+'vThumbSrc', src); }catch(e){} } return; }
   try{ localStorage.setItem(SSG_PREFIX+'vThumbSrc', src); }catch(e){}
   const parts=vThumbSplitSource(src, vThumbBandCount());
   [1,2,3].forEach(i=>{
@@ -3219,7 +3220,7 @@ async function ssgStateImport(file){
 
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = 'a476a2282c';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = 'd818a73631';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
