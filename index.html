@@ -452,6 +452,13 @@ Appier G|4180|818|+96|+13.30%
       <div id="ssgBgmList" style="margin-top:4px;"></div>
       <p style="margin-bottom:0;">選んだ曲を ③動画の全体に小さく流します（音量の初期値は 3%、③動画の「BGM」で変えられます）。曲は何本でも登録でき、使うものを1つ選びます。曲を変えたら ③動画の「ツールの BGM を使う」を押してください。</p>
     </div>
+    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+      <div class="auto-row"><strong style="font-size:12px;color:var(--text);">作業の保存・再開</strong>
+        <button class="btn-sm" onclick="ssgStateExport(this)">💾 出力</button>
+        <label class="btn-sm" style="cursor:pointer;">📥 取込<input type="file" accept=".json,application/json" style="display:none" onchange="ssgStateImport(this.files[0]);this.value=''"></label>
+        <span id="ssgStateStatus" style="font-size:11px;color:var(--muted);"></span></div>
+      <p style="margin-bottom:0;">いまの作業をまるごと1つのファイル（JSON）に出力し、取込で全く同じ状態から再開できます。入っているもの：各欄の文章、取得データ、画像、③の読み上げ、動画のデータ・場面ごとの音声・BGM、設定、基準日、開いている工程。取込はいまの内容を消して置き換え、ページを読み込み直します（翌日に開くと日付が変わって自動リセットされるので、その日のうちに取り込むか、取り込んでから続けてください）。</p>
+    </div>
     <div class="auto-row" style="margin-top:8px;">
       <button class="btn-sm" id="autoTestBtn" onclick="autoTestGemini()">🔌 AI接続テスト</button>
       <span id="autoTestStatus" style="font-size:11px;color:var(--muted);"></span>
@@ -1073,6 +1080,8 @@ function apDoReset(){
     if (!document.getElementById(id)) continue;
     apSetValue(id, (id==='thumbInput'||id==='autoThumbInput') ? THUMB_DEFAULT : '');
   }
+  try { ssgImgPut('tts', null); } catch(e){}
+  if (typeof AutoState === 'object'){ AutoState.ttsParts=null; AutoState.ttsText=''; }
   if (typeof clearImg === 'function'){
     try { clearImg('cover'); } catch(e){}
     try { clearImg('news'); } catch(e){}
@@ -1105,6 +1114,11 @@ function apInit(){
     autoDate.addEventListener('change', () => { apUpdateDates(autoDate.value); if(dateInput) dateInput.value=autoDate.value; });
   }
   apUpdateDates(iso);
+  // 「取込」の直後は、ファイルに入っていた基準日に戻す（1回だけ）
+  try{
+    const rd=localStorage.getItem(SSG_PREFIX+'restoreBaseDate');
+    if(rd){ localStorage.removeItem(SSG_PREFIX+'restoreBaseDate'); if(/^\d{4}-\d{2}-\d{2}$/.test(rd)){ if(dateInput) dateInput.value=rd; if(autoDate) autoDate.value=rd; apUpdateDates(rd); } }
+  }catch(e){}
   if (typeof autoRestoreState === 'function') autoRestoreState();
   if (typeof debouncedPreview === 'function') debouncedPreview();
 }
@@ -1183,7 +1197,23 @@ async function ssgImgRestore(){
     if(type==='cover') coverImgUrl=v.url; else newsImgUrl=v.url;
     applyImgUI(type, v.url, v.name||'');
   }
+  // ③の読み上げ（生成した分割音声）。今日のものだけ戻す
+  try{
+    const t=await ssgImgGet('tts');
+    if(t && Array.isArray(t.parts) && t.parts.length){
+      if(t.date!==ssgToday()) ssgImgPut('tts', null);
+      else if(typeof AutoState==='object' && !(AutoState.ttsParts&&AutoState.ttsParts.length)){
+        AutoState.ttsParts=t.parts; AutoState.ttsSeconds=t.seconds||0; AutoState.ttsVoice=t.voice||''; AutoState.ttsRaw=null; AutoState.ttsText=t.text||'';
+        if(typeof autoRenderTts==='function') await autoRenderTts();
+      }
+    }
+  }catch(e){ console.warn('読み上げの復元に失敗', e); }
   debouncedPreview();
+}
+// ③の読み上げを IndexedDB（ssg-images の tts）に保存する（画像と同じく、その日のうちだけ戻す）
+function ssgTtsPersist(){
+  if(typeof AutoState!=='object' || !AutoState.ttsParts || !AutoState.ttsParts.length) return;
+  return ssgImgPut('tts', { parts:AutoState.ttsParts, seconds:AutoState.ttsSeconds||0, voice:AutoState.ttsVoice||'', text:AutoState.ttsText||'', date:ssgToday() });
 }
 function setImg(file, type){
   if(!file || !file.type.startsWith('image/')) return;
@@ -2704,6 +2734,7 @@ async function autoGenerateTts(btn){
     }
     st.textContent='連結・加工中…'; if(st4) st4.textContent='連結・加工中…';
     AutoState.ttsParts=b64s; AutoState.ttsSeconds=Math.round(sec); AutoState.ttsVoice=voice; AutoState.ttsRaw=null; AutoState.ttsText=text; // 生の分割音声を保持（間の調整で再連結）
+    ssgTtsPersist();   // 読み込み直し・「出力」でも読み上げが残るように保存（ssg-images の tts）
     await autoRenderTts();
     autoStatusDone('✅ 音声生成完了');
   }catch(e){ st.textContent='❌ '+e.message; if(st4) st4.textContent='❌ '+e.message; autoStatusDone('❌ 音声生成失敗'); }
@@ -3095,9 +3126,95 @@ async function ssgBgmImport(){
 
 // 動画の部品は kessan-visualizer の埋め込みバンドル（assets/kessan-viz.js、window.KessanViz.tse）。
 // ここでは「スライド文章・台本・指数の推移・画面の文」を集めて渡すだけ。描画・読み上げの切り替え・MP4 書き出しは部品側。
+// ==================== 作業の保存・再開（⚙設定の「💾 出力」「📥 取込」）====================
+// 出力：localStorage の ssg_*（各欄の文章・取得データ・動画のデータ・設定・辞書・BGM の選択）、IndexedDB の
+//   ssg-images（画像・③の読み上げ）・kessan-viz-audio（場面ごとの音声・部品の BGM）・ssg-bgm（登録した曲）、
+//   基準日、開いている工程 を1つの JSON にまとめる。Blob は base64 にして入れる。
+// 取込：いまの内容を消してファイルの中身に置き換え、日付を今日にして（翌日扱いで消えないように）ページを読み込み直す。
+const SSG_STATE_DBS = ['ssg-images','kessan-viz-audio','ssg-bgm'];   // いずれも objectStore は 'kv'
+function ssgStateStatus(msg, cls){ const el=document.getElementById('ssgStateStatus'); if(!el) return; el.textContent=msg||''; el.style.color=cls==='error'?'#f87171':cls==='ok'?'#4ade80':'var(--muted)'; }
+function ssgKvDb(name){
+  return new Promise((res,rej)=>{ const rq=indexedDB.open(name,1); rq.onupgradeneeded=()=>rq.result.createObjectStore('kv'); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); });
+}
+// kv の中身を [{key,value}] で全部読む
+async function ssgKvDump(name){
+  const db=await ssgKvDb(name);
+  try{
+    return await new Promise((res,rej)=>{ const out=[]; const c=db.transaction('kv','readonly').objectStore('kv').openCursor();
+      c.onsuccess=()=>{ const cur=c.result; if(!cur){ res(out); return; } out.push({ key:cur.key, value:cur.value }); cur.continue(); };
+      c.onerror=()=>rej(c.error); });
+  } finally { db.close(); }
+}
+// kv を空にして [{key,value}] を入れる
+async function ssgKvReplace(name, rows){
+  const db=await ssgKvDb(name);
+  try{
+    await new Promise((res,rej)=>{ const t=db.transaction('kv','readwrite'); const st=t.objectStore('kv'); st.clear(); for(const r of rows) st.put(r.value, r.key); t.oncomplete=res; t.onerror=()=>rej(t.error); });
+  } finally { db.close(); }
+}
+function ssgBlobToB64(blob){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]||''); r.onerror=()=>rej(r.error); r.readAsDataURL(blob); }); }
+function ssgB64ToBlob(b64, type){ const bin=atob(b64||''); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return new Blob([u],{type:type||''}); }
+// Blob を {__blob:1,type,b64} に置き換えながら写す（配列・オブジェクトは中まで）
+async function ssgPack(v){
+  if(v instanceof Blob) return { __blob:1, type:v.type||'', b64:await ssgBlobToB64(v) };
+  if(Array.isArray(v)){ const a=[]; for(const x of v) a.push(await ssgPack(x)); return a; }
+  if(v && typeof v==='object' && Object.getPrototypeOf(v)===Object.prototype){ const o={}; for(const k of Object.keys(v)) o[k]=await ssgPack(v[k]); return o; }
+  return v;
+}
+function ssgUnpack(v){
+  if(Array.isArray(v)) return v.map(ssgUnpack);
+  if(v && typeof v==='object'){ if(v.__blob===1) return ssgB64ToBlob(v.b64, v.type); const o={}; for(const k of Object.keys(v)) o[k]=ssgUnpack(v[k]); return o; }
+  return v;
+}
+async function ssgStateExport(btn){
+  const old=btn?btn.textContent:''; if(btn){ btn.disabled=true; btn.textContent='出力中…'; }
+  try{
+    ssgStateStatus('まとめています…');
+    try{ if(typeof autoPersistState==='function') autoPersistState(); }catch(e){}
+    try{ await ssgTtsPersist(); }catch(e){}
+    const ls={}; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.startsWith(SSG_PREFIX) && k!==SSG_PREFIX+'restoreBaseDate' && k!==SSG_PREFIX+'restoreStep') ls[k]=localStorage.getItem(k); }
+    const idb={}; for(const name of SSG_STATE_DBS){ try{ idb[name]=await ssgPack(await ssgKvDump(name)); }catch(e){ console.warn('IndexedDB を読めませんでした', name, e); idb[name]=[]; } }
+    const baseDate=((document.getElementById('autoBaseDate')||{}).value)||((document.getElementById('apBaseDate')||{}).value)||'';
+    const out={ app:'stock-slide-generator', version:1, exportedAt:new Date().toISOString(), baseDate, step:window.__autoStepK||'1', localStorage:ls, idb };
+    const json=JSON.stringify(out);
+    const d=baseDate.replace(/-/g,'')||ssgToday().replace(/-/g,'');
+    const n=new Date(), hm=String(n.getHours()).padStart(2,'0')+String(n.getMinutes()).padStart(2,'0');
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([json],{type:'application/json'})); a.download=`ssg_state_${d}_${hm}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+    ssgStateStatus(`✅ 出力しました（${(json.length/1024/1024).toFixed(1)} MB）`,'ok');
+  }catch(e){ ssgStateStatus('❌ '+e.message,'error'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=old; } }
+}
+async function ssgStateImport(file){
+  if(!file) return;
+  try{
+    ssgStateStatus('読んでいます…');
+    const o=JSON.parse(await file.text());
+    if(!o || o.app!=='stock-slide-generator' || !o.localStorage || !o.idb) throw new Error('このツールの出力ファイルではありません');
+    const when=o.exportedAt?new Date(o.exportedAt):null;
+    if(!confirm(`いまの内容をすべて消して、ファイルの状態（${when&&!isNaN(when)?when.toLocaleString('ja-JP'):'日時不明'}・基準日 ${o.baseDate||'不明'}）に置き換えます。よろしいですか？\n（置き換えたあと、ページを読み込み直します）`)){ ssgStateStatus(''); return; }
+    ssgStateStatus('取り込んでいます…');
+    // localStorage：ssg_* を消してから入れる
+    const del=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.startsWith(SSG_PREFIX)) del.push(k); }
+    for(const k of del) localStorage.removeItem(k);
+    for(const [k,v] of Object.entries(o.localStorage)){ if(k.startsWith(SSG_PREFIX) && typeof v==='string') localStorage.setItem(k, v); }
+    // IndexedDB：3つとも空にして入れる。画像・読み上げの日付は今日にする（起動時に「前の日のもの」として消されないように）
+    const today=ssgToday();
+    for(const name of SSG_STATE_DBS){
+      let rows=ssgUnpack(Array.isArray(o.idb[name])?o.idb[name]:[]);
+      if(name==='ssg-images') rows=rows.map(r=>(r.value&&typeof r.value==='object'&&'date' in r.value)?{ key:r.key, value:Object.assign({}, r.value, { date:today }) }:r);
+      await ssgKvReplace(name, rows);
+    }
+    localStorage.setItem(SSG_PREFIX+'lastDate', today);   // 読み込み直しで「日付が変わった」扱いにならないように
+    if(o.baseDate) localStorage.setItem(SSG_PREFIX+'restoreBaseDate', String(o.baseDate));
+    if(o.step) localStorage.setItem(SSG_PREFIX+'restoreStep', String(o.step));
+    ssgStateStatus('✅ 取り込みました。読み込み直します…','ok');
+    setTimeout(()=>location.reload(), 300);
+  }catch(e){ ssgStateStatus('❌ '+e.message,'error'); }
+}
+
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '1e3f18354d';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '915d609a61';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -3378,6 +3495,7 @@ ssgImgRestore();
 try{ if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ try{ renderVThumbPreview(); }catch(e){} }); }catch(e){}
 autoLoadCustomDict();
 autoInitDict();
+try{ const k=localStorage.getItem(SSG_PREFIX+'restoreStep'); if(k){ localStorage.removeItem(SSG_PREFIX+'restoreStep'); window.__autoStepK=k; } }catch(e){}   // 「取込」の直後は、出力したときに開いていた工程へ
 switchTab('full');   // 初期表示を全自動版にする
 </script>
 </body>
