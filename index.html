@@ -1060,6 +1060,7 @@ function apBindAutosave(){
 }
 function apClearStorage(){
   for (const id of AP_STORAGE_IDS) localStorage.removeItem(SSG_PREFIX + id);
+  try{ localStorage.removeItem(SSG_PREFIX+'vThumbSrc'); }catch(e){}
 }
 function apResetAll(){
   if (!confirm('テキスト・画像をすべて初期値に戻します。よろしいですか？')) return;
@@ -1538,8 +1539,10 @@ function vThumbSyncFromThumb(force){
   const src=((document.getElementById('thumbInput')||{}).value||'').trim();
   if(!src) return;
   const filled=[1,2,3].some(i=>{ const el=document.getElementById('vThumbL'+i); return el && el.value.trim(); });
-  if(!force && filled && window.__vThumbSrc===src) return;
-  window.__vThumbSrc=src;
+  // 前回分割した元の文言は保存しておく（読み込み直し・取込のあとに、手で直した段を分割結果で上書きしないため）
+  let last=null; try{ last=localStorage.getItem(SSG_PREFIX+'vThumbSrc'); }catch(e){}
+  if(!force && filled && last===src) return;
+  try{ localStorage.setItem(SSG_PREFIX+'vThumbSrc', src); }catch(e){}
   const parts=vThumbSplitSource(src, vThumbBandCount());
   [1,2,3].forEach(i=>{
     const el=document.getElementById('vThumbL'+i);
