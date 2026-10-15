@@ -1033,7 +1033,7 @@ function apClearTextarea(id){ apSetValue(id, ''); }
 const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thumbInput',
   'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoFullInfo','autoSnsThumb','autoSnsX','autoScriptOut','autoScriptOut2','autoThumbInput','autoScriptFinal','vThumbL1','vThumbL2','vThumbL3'];
 // 設定系（テキスト一括リセットの対象外・常時保持）
-const AP_SETTING_IDS = ['autoFixedHashtags','autoModelOverride','autoTtsVoice','autoTtsModel'];
+const AP_SETTING_IDS = ['autoFixedHashtags','autoModelOverride','autoTtsVoice','autoTtsModel','autoTtsClarity','autoTtsGap','autoTtsFormat'];   // 読み上げの補正・間・形式も保持（読み込み直し・取込で音が変わらないように）
 const THUMB_DEFAULT = '日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%';
 const SSG_PREFIX = 'ssg_';
 
@@ -1100,6 +1100,8 @@ function apInit(){
   localStorage.setItem(SSG_PREFIX + 'lastDate', iso);
   // フィールド復元
   apLoadAll();
+  // スライダーの表示値（補正%・間ms）を保存した値に合わせる
+  try{ const c=document.getElementById('autoTtsClarity'), cv=document.getElementById('autoTtsClarityVal'); if(c&&cv) cv.textContent=c.value+'%'; const g=document.getElementById('autoTtsGap'), gv=document.getElementById('autoTtsGapVal'); if(g&&gv) gv.textContent=g.value+'ms'; }catch(e){}
   apBindAutosave();
   try{ updateScriptStats(); }catch(e){}
   // 基準日
