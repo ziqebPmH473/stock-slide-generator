@@ -1551,6 +1551,7 @@ function vThumbSyncFromThumb(force){
     apSetValue(el.id, parts[i-1]||'');
   });
   renderVThumbPreview();
+  if(typeof vidEnsureThumbs==='function') vidEnsureThumbs();   // 動画のサムネにも反映（読み込み中なら、読み込みのあとに確かめる）
 }
 
 function renderVThumbPreview(){
@@ -3435,12 +3436,22 @@ async function vidThumbImageV(){
 }
 
 // 保存してある動画のデータを読み込んで表示する（サムネとニュース画像は、いまのものを入れる）
-async function vidMount(force){
+// 読み込みは1つずつ順に行う（サムネを画像にする場所 renderTarget を同時に使わないため）
+let vidMountQ=Promise.resolve(), vidMountPending=0;
+function vidQueue(fn){
+  vidMountPending++;
+  const p=vidMountQ.then(fn).finally(()=>{ vidMountPending--; });
+  vidMountQ=p.catch(()=>{});
+  return p;
+}
+function vidMount(force){ return vidQueue(()=>vidMountNow(force)); }
+async function vidMountNow(force){
   const saved=vidLoadSaved();
   const sel=document.getElementById('vidMonths'); if(sel && saved && saved.months) sel.value=saved.months;
   if(!saved || !saved.data) return;
   if(vidHandle && !force) return;
   const KV=await vidLoadLib();
+  const thumbSig=vidThumbSig();   // 画像にする前の文言を覚えておく（書き出しの前に、変わっていたら作り直す）
   const data=Object.assign({}, saved.data, { news_image:newsImgUrl||null, thumbnail:await vidThumbImage(), thumbnail_portrait:await vidThumbImageV() });
   const voice=()=>(document.getElementById('autoTtsVoice')||{}).value||'Erinome';
   const model=()=>(document.getElementById('autoTtsModel')||{}).value||undefined;
@@ -3471,10 +3482,44 @@ async function vidMount(force){
     fileName:`tsemarket_${data.date.replace(/-/g,'')}.mp4`,
   };
   document.getElementById('vidControls').style.display='';
+  vidThumbSigUsed=thumbSig;
   if(vidHandle){ vidHandle.update(props); vidPlaceInPanel(); return; }
   vidHandle=KV.tse.mount(document.getElementById('vidPreview'), props);
   vidPlaceInPanel();
 }
+// 動画に入れたサムネ（横・縦）の元になる文言。これが変わったら、動画のサムネ画像を作り直す
+let vidThumbSigUsed=null;
+function vidThumbSig(){
+  try{ return JSON.stringify([((document.getElementById('thumbInput')||{}).value||'').trim(), vThumbBandCount(), vThumbTexts(), vThumbDateLabel()]); }catch(e){ return null; }
+}
+// サムネの文言が動画に入れたときから変わっていれば、動画を読み直してサムネ画像を作り直す（保存してある動画のデータ・音声はそのまま。AI・読み上げは呼ばない）
+function vidEnsureThumbs(){
+  if(!vidHandle) return Promise.resolve(false);
+  return vidQueue(async()=>{
+    if(!vidHandle || vidThumbSig()===vidThumbSigUsed) return false;
+    await vidMountNow(true); return true;
+  }).catch(e=>{ vidStatus('❌ '+e.message); return false; });
+}
+// サムネの欄から離れたとき（文言が変わっていたら）に作り直す。③動画のプレビューにもすぐ反映する
+['thumbInput','autoThumbInput','vThumbL1','vThumbL2','vThumbL3','vThumbBands'].forEach(id=>{
+  const el=document.getElementById(id); if(el) el.addEventListener('change', ()=>{ vidEnsureThumbs(); });
+});
+// MP4 の書き出しボタンを押したとき、サムネが古ければ先に作り直してから書き出す
+let vidExportPass=false;
+document.addEventListener('click', e=>{
+  if(vidExportPass || !vidHandle) return;
+  const btn=e.target && e.target.closest && e.target.closest('#vidExportSlot button, #vidExportSlotV button');
+  if(!btn || btn.disabled) return;
+  if(!vidMountPending && vidThumbSig()===vidThumbSigUsed) return;
+  e.preventDefault(); e.stopPropagation();
+  const slot=btn.closest('#vidExportSlot, #vidExportSlotV'), idx=[...slot.querySelectorAll('button')].indexOf(btn);
+  vidStatus('サムネを作り直しています…');
+  vidEnsureThumbs().then(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))).then(()=>{
+    vidStatus('');
+    const b=slot.querySelectorAll('button')[idx]; if(!b) return;
+    vidExportPass=true; try{ b.click(); }finally{ vidExportPass=false; }
+  });
+}, true);
 // ⑥を開くたびに、いまのサムネ・ニュース画像を入れて描き直す（保存してある動画のデータ・音声はそのまま。AI・読み上げは呼ばない）
 // ③動画の横サムネのプレビュー
 function renderHThumbPreview(){
