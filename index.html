@@ -459,6 +459,13 @@ Appier G|4180|818|+96|+13.30%
         <span id="ssgStateStatus" style="font-size:11px;color:var(--muted);"></span></div>
       <p style="margin-bottom:0;">いまの作業をまるごと1つのファイル（JSON）に出力し、取込で全く同じ状態から再開できます。入っているもの：各欄の文章、取得データ、画像、③の読み上げ、動画のデータ・場面ごとの音声・BGM、設定、基準日、開いている工程。取込はいまの内容を消して置き換え、ページを読み込み直します（翌日に開くと日付が変わって自動リセットされるので、その日のうちに取り込むか、取り込んでから続けてください）。</p>
     </div>
+    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+      <div class="auto-row"><strong style="font-size:12px;color:var(--text);">サーバー保存（別の端末で続きから）</strong>
+        <button class="btn-mini" onclick="ssgSyncRefreshList()">↻</button>
+        <span id="ssgSyncStatus" style="font-size:11px;color:var(--muted);"></span></div>
+      <div id="ssgSyncList" style="margin-top:4px;"></div>
+      <p style="margin-bottom:0;">その日に最初にプロンプトをコピーした時点から、作業を自動でサーバーにも保存します（日付が入っただけでは保存しません）。別の端末で開くと、今日の保存があればその続きから開きます。日が変わって今日の保存が無ければ、新しく始まります。サーバーには直近5日分が残り、「開く」で前の日の作業に戻せます。</p>
+    </div>
     <div class="auto-row" style="margin-top:8px;">
       <button class="btn-sm" id="autoTestBtn" onclick="autoTestGemini()">🔌 AI接続テスト</button>
       <span id="autoTestStatus" style="font-size:11px;color:var(--muted);"></span>
@@ -972,6 +979,7 @@ function apBuildVars(copyId){
 }
 
 function apCopyWithFeedback(text, btn){
+  if(typeof ssgSyncStart==='function') ssgSyncStart();   // プロンプトをコピーしたら、その日の作業をサーバーにも保存し始める
   const done = () => {
     const original = btn.innerText;
     btn.innerText = '✔ コピー完了！';
@@ -1041,6 +1049,7 @@ function apSaveField(id){
   const el = document.getElementById(id);
   if (!el) return;
   localStorage.setItem(SSG_PREFIX + id, el.value);
+  if(typeof ssgSyncKick==='function') ssgSyncKick();   // 保存を始めている日なら、少し置いてサーバーにも送る
 }
 function apLoadAll(){
   for (const id of AP_STORAGE_IDS.concat(AP_SETTING_IDS)){
@@ -1065,6 +1074,7 @@ function apClearStorage(){
 function apResetAll(){
   if (!confirm('テキスト・画像をすべて初期値に戻します。よろしいですか？')) return;
   apDoReset();
+  try{ const s=JSON.parse(localStorage.getItem(SSG_PREFIX+'sync')||'null'); if(s){ s.on=false; localStorage.setItem(SSG_PREFIX+'sync', JSON.stringify(s)); } }catch(e){}   // 次にプロンプトをコピーするまでサーバーに送らない
 }
 function apDoReset(){
   apClearStorage();
@@ -1097,6 +1107,7 @@ function apInit(){
   const lastDate = localStorage.getItem(SSG_PREFIX + 'lastDate');
   if (lastDate && lastDate !== iso){
     apDoReset();
+    try{ localStorage.removeItem(SSG_PREFIX+'sync'); }catch(e){}   // サーバー保存も新しい日として始める（プロンプトをコピーするまで保存しない）
   }
   localStorage.setItem(SSG_PREFIX + 'lastDate', iso);
   // フィールド復元
@@ -1999,6 +2010,62 @@ const AutoState = { sources: null, fetchedAt: null };
 
 function autoEsc(s){ return String(s==null?'':s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
+// ==================== AIの呼び出し：画面から Google（Gemini）に直接頼む（2026-10-18）====================
+// ・/api/analyze 経由だと、Cloudflare が Google の最初の返事を125秒までしか待たず、
+//   考える時間の長い 3.8・3.7 Flash が重い作業で毎回切られて下のモデルへ降格していた（HTTP 524。stream でも直らず）。
+// ・呼び方と返す形は fetch('/api/analyze',…) と同じ。組み立て・下のモデルへの切り替え（各モデル1回リトライ）は functions/api/analyze.js と同じ。
+//   analyze.js を直すときは、ここも同じように直す（2か所にある）。
+// ・キーは /api/gemini-key から受け取ってメモリにだけ持つ（保存しない・URL に載せない）。受け取れないときは今までどおり /api/analyze へ。
+let _aiKey=null;
+async function aiKey(){
+  if(_aiKey!==null) return _aiKey;
+  try{ const r=await fetch('/api/gemini-key',{cache:'no-store'}); const d=await r.json(); _aiKey=(r.ok&&d.ok&&d.key)||''; }
+  catch(e){ _aiKey=''; }
+  return _aiKey;
+}
+async function aiFetch(url, init){
+  const key=await aiKey();
+  if(!key) return fetch(url, init);
+  const out=(obj,status=200)=>new Response(JSON.stringify(obj),{status,headers:{'Content-Type':'application/json'}});
+  let p; try{ p=JSON.parse(init.body); }catch(e){ return out({ok:false,error:'リクエストの解析に失敗しました'},400); }
+  const prompt=(p&&p.prompt||'').trim();
+  if(!prompt) return out({ok:false,error:'prompt が空です'},400);
+  const resText=(Array.isArray(p.resources)?p.resources:[]).map(r=>`【${r.label||'資料'}】\n${r.text||''}`).join('\n\n');
+  const full=resText?`以下の資料のみを根拠として、指示に厳密に従って回答してください。資料に無い情報を創作しないでください。\n\n===== 資料 =====\n${resText}\n\n===== 指示 =====\n${prompt}`:prompt;
+  const body={contents:[{role:'user',parts:[{text:full}]}],generationConfig:{temperature:typeof p.temperature==='number'?p.temperature:0.4}};
+  if(p.json===true) body.generationConfig.responseMimeType='application/json';
+  const models=(Array.isArray(p.models)&&p.models.length)?p.models:[p.model||'gemini-3.5-flash-lite'];
+  const isTransient=(st,raw)=>st===429||st>=500||/quota|rate|exhaust|limit:\s*0|overload|high demand|unavailable|temporarily|try again|resource has been exhausted/i.test(raw||'');
+  const delay=ms=>new Promise(r=>setTimeout(r,ms));
+  let lastErr='';
+  for(let i=0;i<models.length;i++){
+    const m=models[i];
+    for(let attempt=0;attempt<2;attempt++){   // 各モデル最大2回（一時エラー時に1回リトライ）
+      try{
+        // キーは URL に載せず、ヘッダーで渡す
+        const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`,
+          {method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify(body)});
+        const raw0=await res.text();
+        let data; try{ data=JSON.parse(raw0); }catch(e){ throw new Error(`HTTP ${res.status} 応答がJSONではありません: ${raw0.slice(0,80)}`); }
+        if(res.ok){
+          const text=((data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts)||[])
+            .filter(x=>!x.thought).map(x=>x.text||'').join('').trim();
+          return out({ok:true,text,usage:data.usageMetadata||null,model:m,fellBack:i>0});
+        }
+        const raw=data&&data.error&&data.error.message?data.error.message:`HTTP ${res.status}`;
+        lastErr=raw;
+        if(!isTransient(res.status,raw)) return out({ok:false,error:'Gemini API エラー: '+raw,model:m},502);   // 認証ミス等は即中断
+        if(attempt===0){ await delay(800); continue; }
+      }catch(e){
+        lastErr=(e&&e.message)?e.message:String(e);
+        if(attempt===0){ await delay(800); continue; }
+      }
+      break;   // このモデルは諦めて次モデルへ
+    }
+  }
+  return out({ok:false,error:'全モデルが混雑/上限のようです。少し待って再試行してください（最後のエラー: '+lastErr+'）',triedModels:models},502);
+}
+
 // テキストモデルの優先チェーン。cls: 'high'(思考系④⑤) / 'low'(その他)。
 // セレクタでモデル固定時はその1つだけ（テスト用）。
 function autoModelChain(cls){
@@ -2455,6 +2522,7 @@ function autoVars(){
 // コピー成功時はテキストを変えず、ボタンの色を約1秒変えるだけ
 function autoFlash(btn){ if(!btn) return; btn.classList.add('copied-flash'); setTimeout(()=>btn.classList.remove('copied-flash'), 900); }
 function autoClip(text, btn){
+  if(typeof ssgSyncStart==='function') ssgSyncStart();   // プロンプトをコピーしたら、その日の作業をサーバーにも保存し始める
   const done=()=>autoFlash(btn);
   // クリップボードAPIが失敗したら execCommand にフォールバック（成功表示だけで未コピー、を防ぐ）
   if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(()=>apFallbackCopy(text, done));
@@ -2506,7 +2574,7 @@ async function autoRunAiBackup(btn){
 async function autoRunExtractRaw(promptKey, outId){
   const prompt=apReplaceVariables(AP_COPY_TEXTS[promptKey], autoVars());
   const resources=autoBuildResources({forExtract:true, raw:true});
-  const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},
+  const res=await aiFetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({prompt,resources,temperature:0.2,models:autoModelChain('low')})});
   const data=await res.json();
   if(!data.ok) throw new Error(data.error||'AI失敗');
@@ -2527,7 +2595,7 @@ async function autoRunExtract(promptKey, outId, statusId, btn, full, modelCls){
   if(btn){ btn.disabled=true; btn.textContent='実行中…'; }
   if(st) st.textContent='AI実行中…';
   try{
-    const res=await fetch('/api/analyze',{
+    const res=await aiFetch('/api/analyze',{
       method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ prompt, resources, temperature:0.4, models: autoModelChain(modelCls||'low') })
     });
@@ -2880,7 +2948,7 @@ async function autoGenerateSlideText(){
   const prompt = autoSlidePrompt();
   btn.disabled=true; st.textContent='Geminiが生成中…（20〜40秒ほど）';
   try{
-    const res=await fetch('/api/analyze',{
+    const res=await aiFetch('/api/analyze',{
       method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ prompt, resources, temperature:0.3, models: autoModelChain('high') })
     });
@@ -2919,7 +2987,7 @@ async function autoGenerateFullInfo(btn){
   const resources=autoBuildResources();  // 構造化データ＋銘柄名一覧表＋ChatGPTレポート
   const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…'; st.textContent='全情報を生成中…';
   try{
-    const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},
+    const res=await aiFetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({prompt,resources,temperature:0.3,models:autoModelChain('low')})});
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'不明なエラー');
@@ -2984,7 +3052,7 @@ async function autoGenerateSns(btn, materialOverride){
   const resources=[{label:'本日の東証マーケットのデータ・サマリ', text: material}];
   const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…'; st.textContent='Geminiが生成中…';
   try{
-    const res=await fetch('/api/analyze',{
+    const res=await aiFetch('/api/analyze',{
       method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ prompt, resources, temperature:0.85, models: autoModelChain('high') })
     });
@@ -3045,7 +3113,7 @@ async function autoTestGemini(){
   const out=document.getElementById('autoTestResult');
   btn.disabled=true; st.textContent='Geminiに問い合わせ中…'; out.style.display='none'; out.textContent='';
   try{
-    const res=await fetch('/api/analyze',{
+    const res=await aiFetch('/api/analyze',{
       method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ prompt:'「接続テスト成功」とだけ日本語で返してください。', models:['gemini-3.5-flash-lite'] })
     });
@@ -3179,7 +3247,7 @@ async function ssgStateExport(btn){
     ssgStateStatus('まとめています…');
     try{ if(typeof autoPersistState==='function') autoPersistState(); }catch(e){}
     try{ await ssgTtsPersist(); }catch(e){}
-    const ls={}; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.startsWith(SSG_PREFIX) && k!==SSG_PREFIX+'restoreBaseDate' && k!==SSG_PREFIX+'restoreStep') ls[k]=localStorage.getItem(k); }
+    const ls={}; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.startsWith(SSG_PREFIX) && !SSG_SYNC_SKIP.includes(k)) ls[k]=localStorage.getItem(k); }
     const idb={}; for(const name of SSG_STATE_DBS){ try{ idb[name]=await ssgPack(await ssgKvDump(name)); }catch(e){ console.warn('IndexedDB を読めませんでした', name, e); idb[name]=[]; } }
     const baseDate=((document.getElementById('autoBaseDate')||{}).value)||((document.getElementById('apBaseDate')||{}).value)||'';
     const out={ app:'stock-slide-generator', version:1, exportedAt:new Date().toISOString(), baseDate, step:window.__autoStepK||'1', localStorage:ls, idb };
@@ -3191,6 +3259,26 @@ async function ssgStateExport(btn){
   }catch(e){ ssgStateStatus('❌ '+e.message,'error'); }
   finally{ if(btn){ btn.disabled=false; btn.textContent=old; } }
 }
+// 置き換えて読み込み直す（「取込」と、サーバーから開くときで共通）。o={ ls:{ssg_*:文字}, idb:{名前:[{key,value}]}（Blob のまま）, baseDate, step }、sync は読み込み直したあとの ssg_sync
+async function ssgApplyState(o, sync, onDone){
+  // localStorage：ssg_* を消してから入れる
+  const del=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.startsWith(SSG_PREFIX)) del.push(k); }
+  for(const k of del) localStorage.removeItem(k);
+  for(const [k,v] of Object.entries(o.ls||{})){ if(k.startsWith(SSG_PREFIX) && !SSG_SYNC_SKIP.includes(k) && typeof v==='string') localStorage.setItem(k, v); }
+  // IndexedDB：3つとも空にして入れる。画像・読み上げの日付は今日にする（起動時に「前の日のもの」として消されないように）
+  const today=ssgToday();
+  for(const name of SSG_STATE_DBS){
+    let rows=Array.isArray(o.idb&&o.idb[name])?o.idb[name]:[];
+    if(name==='ssg-images') rows=rows.map(r=>(r.value&&typeof r.value==='object'&&'date' in r.value)?{ key:r.key, value:Object.assign({}, r.value, { date:today }) }:r);
+    await ssgKvReplace(name, rows);
+  }
+  localStorage.setItem(SSG_PREFIX+'lastDate', today);   // 読み込み直しで「日付が変わった」扱いにならないように
+  if(o.baseDate) localStorage.setItem(SSG_PREFIX+'restoreBaseDate', String(o.baseDate));
+  if(o.step) localStorage.setItem(SSG_PREFIX+'restoreStep', String(o.step));
+  ssgSyncSet(sync||{});
+  if(onDone) onDone();
+  setTimeout(()=>location.reload(), 300);
+}
 async function ssgStateImport(file){
   if(!file) return;
   try{
@@ -3200,23 +3288,184 @@ async function ssgStateImport(file){
     const when=o.exportedAt?new Date(o.exportedAt):null;
     if(!confirm(`いまの内容をすべて消して、ファイルの状態（${when&&!isNaN(when)?when.toLocaleString('ja-JP'):'日時不明'}・基準日 ${o.baseDate||'不明'}）に置き換えます。よろしいですか？\n（置き換えたあと、ページを読み込み直します）`)){ ssgStateStatus(''); return; }
     ssgStateStatus('取り込んでいます…');
-    // localStorage：ssg_* を消してから入れる
-    const del=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.startsWith(SSG_PREFIX)) del.push(k); }
-    for(const k of del) localStorage.removeItem(k);
-    for(const [k,v] of Object.entries(o.localStorage)){ if(k.startsWith(SSG_PREFIX) && typeof v==='string') localStorage.setItem(k, v); }
-    // IndexedDB：3つとも空にして入れる。画像・読み上げの日付は今日にする（起動時に「前の日のもの」として消されないように）
-    const today=ssgToday();
-    for(const name of SSG_STATE_DBS){
-      let rows=ssgUnpack(Array.isArray(o.idb[name])?o.idb[name]:[]);
-      if(name==='ssg-images') rows=rows.map(r=>(r.value&&typeof r.value==='object'&&'date' in r.value)?{ key:r.key, value:Object.assign({}, r.value, { date:today }) }:r);
-      await ssgKvReplace(name, rows);
-    }
-    localStorage.setItem(SSG_PREFIX+'lastDate', today);   // 読み込み直しで「日付が変わった」扱いにならないように
-    if(o.baseDate) localStorage.setItem(SSG_PREFIX+'restoreBaseDate', String(o.baseDate));
-    if(o.step) localStorage.setItem(SSG_PREFIX+'restoreStep', String(o.step));
-    ssgStateStatus('✅ 取り込みました。読み込み直します…','ok');
-    setTimeout(()=>location.reload(), 300);
+    const idb={}; for(const name of SSG_STATE_DBS) idb[name]=ssgUnpack(Array.isArray(o.idb[name])?o.idb[name]:[]);
+    // 取り込んだ内容を今日の作業としてサーバーにも保存する（サーバーに今日の保存があっても、こちらで上書き）
+    await ssgApplyState({ ls:o.localStorage, idb, baseDate:o.baseDate, step:o.step }, { day:ssgToday(), on:true, force:true }, ()=>ssgStateStatus('✅ 取り込みました。読み込み直します…','ok'));
   }catch(e){ ssgStateStatus('❌ '+e.message,'error'); }
+}
+
+// ==================== 別の端末で続きから開く（サーバー保存。2026-10-18）====================
+// ・保存先は /api/state（R2）。1日＝目録1つ＋中身（localStorage の ssg_* のまとめ1つ、IndexedDB の1件ずつ）。
+//   中身の名前は中身から作るので、変わったものだけを送る。サーバーは新しい順に5日分だけ残す。
+// ・保存を始めるのは、その日にプロンプトをコピーしたとき（autoClip・apCopyWithFeedback から ssgSyncStart）。日付が入っただけでは保存しない。
+// ・開いたとき：その日（ふつうは今日）の保存がサーバーにあって、この端末の内容と違えば、それに置き換えて読み込み直す。
+//   今日の保存が無ければ（日が変わった）、今までどおり新しく始める。別の端末から戻ってきたとき（画面が表に出たとき）も同じ確かめをする。
+// ・この端末の状態は localStorage の ssg_sync に持つ（{day, rev, parts, baseDate, on, force}）。保存・取込の対象には入れない。
+const SSG_SYNC_KEY = SSG_PREFIX+'sync';
+const SSG_SYNC_SKIP = ['sync','lastDate','restoreBaseDate','restoreStep'].map(k=>SSG_PREFIX+k);
+let ssgSyncReady=false, ssgSyncBusy=false, ssgSyncOff='', ssgSyncTimer=null, ssgSyncPending=false;
+function ssgSyncGet(){ try{ return JSON.parse(localStorage.getItem(SSG_SYNC_KEY)||'null')||{}; }catch(e){ return {}; } }
+function ssgSyncSet(o){ try{ localStorage.setItem(SSG_SYNC_KEY, JSON.stringify(o||{})); }catch(e){} }
+function ssgSyncStatus(msg, cls){
+  const el=document.getElementById('ssgSyncStatus'); if(!el) return;
+  el.textContent=msg||''; el.style.color=cls==='error'?'#f87171':cls==='ok'?'#4ade80':'var(--muted)';
+}
+function ssgSyncHm(iso){ const d=new Date(iso); return isNaN(d)?'':d.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'}); }
+async function ssgSyncApi(q, init){
+  const res=await fetch('/api/state'+(q?'?'+q:''), Object.assign({cache:'no-store'}, init||{}));
+  let d={}; try{ d=await res.json(); }catch(e){}
+  d.status=res.status; return d;
+}
+async function ssgHex(buf){ const h=await crypto.subtle.digest('SHA-256', buf); return Array.from(new Uint8Array(h)).map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,40); }
+const ssgHexStr = s => ssgHex(new TextEncoder().encode(s));
+// 中身の目印：Blob は種類・大きさ・先頭と末尾 64KB から（毎回すべてを読むと重いので）。ssg-images の date は端末で変わるので入れない
+async function ssgSig(v, top){
+  if(v instanceof Blob){
+    const n=65536, head=await v.slice(0,n).arrayBuffer(), tail=v.size>n?await v.slice(-n).arrayBuffer():new ArrayBuffer(0);
+    const u=new Uint8Array(head.byteLength+tail.byteLength); u.set(new Uint8Array(head),0); u.set(new Uint8Array(tail),head.byteLength);
+    return { __blob:v.type||'', size:v.size, h:await ssgHex(u) };
+  }
+  if(Array.isArray(v)){ const a=[]; for(const x of v) a.push(await ssgSig(x)); return a; }
+  if(v && typeof v==='object'){ const o={}; for(const k of Object.keys(v).sort()){ if(top && k==='date') continue; o[k]=await ssgSig(v[k]); } return o; }
+  return v;
+}
+// いまの内容を集める（中身はまだ送る形にしない。名前だけ作る）
+async function ssgSyncCollect(){
+  const ls={}; const keys=[];
+  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.startsWith(SSG_PREFIX) && !SSG_SYNC_SKIP.includes(k)) keys.push(k); }
+  for(const k of keys.sort()) ls[k]=localStorage.getItem(k);
+  const lsText=JSON.stringify(ls);
+  const lsName=await ssgHexStr('ls\n'+lsText);
+  const parts={ [lsName]:{ text:lsText } };
+  const idb={};
+  for(const name of SSG_STATE_DBS){
+    idb[name]=[];
+    let rows=[]; try{ rows=await ssgKvDump(name); }catch(e){ continue; }
+    for(const r of rows){
+      const sig=JSON.stringify(await ssgSig(r.value, name==='ssg-images'));
+      const part=await ssgHexStr(name+'\n'+JSON.stringify(r.key)+'\n'+sig);
+      idb[name].push({ key:r.key, part });
+      parts[part]={ value:r.value };
+    }
+  }
+  const baseDate=((document.getElementById('autoBaseDate')||{}).value)||((document.getElementById('apBaseDate')||{}).value)||'';
+  return { lsName, idb, parts, baseDate };
+}
+const ssgSyncNames = c => [c.lsName].concat(...Object.values(c.idb).map(rows=>rows.map(r=>r.part))).sort();
+function ssgSyncSame(c, s){ const a=ssgSyncNames(c), b=(s.parts||[]).slice().sort(); return a.length===b.length && a.every((x,i)=>x===b[i]); }
+async function ssgSyncPutPart(day, name, p){
+  const body='text' in p ? p.text : JSON.stringify(await ssgPack(p.value));
+  const r=await ssgSyncApi(`date=${day}&part=${name}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body });
+  if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
+}
+
+// 送る：変わった中身を置いてから目録を置く
+async function ssgSyncPush(force){
+  const s=ssgSyncGet(); if(!s.on || !s.day) return;
+  const c=await ssgSyncCollect();
+  if(!force && !s.force && ssgSyncSame(c, s) && (s.baseDate||'')===c.baseDate) return;
+  const have=new Set(s.parts||[]);
+  ssgSyncStatus('☁ 保存中…');
+  for(const [name, p] of Object.entries(c.parts)) if(!have.has(name)) await ssgSyncPutPart(s.day, name, p);
+  const man={ baseRev:s.rev||0, force:!!(force||s.force), baseDate:c.baseDate, step:window.__autoStepK||'1', ls:c.lsName, idb:c.idb };
+  const putMan=()=>ssgSyncApi(`date=${s.day}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(man) });
+  let r=await putMan();
+  if(r.status===422 && Array.isArray(r.missing)){
+    // サーバーに無かった中身（前に置いたはずのもの）を置き直してもう一度
+    for(const name of r.missing) if(c.parts[name]) await ssgSyncPutPart(s.day, name, c.parts[name]);
+    r=await putMan();
+  }
+  if(r.status===409){
+    // 別の端末が先に保存していた
+    if(confirm(`別の端末で、${s.day} の作業が新しく保存されています（${ssgSyncHm(r.updatedAt)}）。\nOK：そちらの内容に置き換えて読み込み直す\nキャンセル：この端末の内容でサーバーを上書きする`)){ await ssgSyncLoad(s.day); return; }
+    return ssgSyncPush(true);
+  }
+  if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
+  ssgSyncSet(Object.assign(ssgSyncGet(), { day:s.day, rev:r.rev, parts:ssgSyncNames(c), baseDate:c.baseDate, force:false }));
+  ssgSyncStatus(`☁ ${s.day} を保存しました（${ssgSyncHm(r.updatedAt)}）`, 'ok');
+}
+async function ssgSyncTick(force){
+  if(!ssgSyncReady || ssgSyncOff) return;
+  if(ssgSyncBusy){ ssgSyncPending=true; return; }
+  ssgSyncBusy=true;
+  try{ await ssgSyncPush(force); }
+  catch(e){ ssgSyncStatus('☁ 保存できませんでした：'+e.message, 'error'); }
+  finally{ ssgSyncBusy=false; if(ssgSyncPending){ ssgSyncPending=false; ssgSyncKick(); } }
+}
+function ssgSyncKick(){ clearTimeout(ssgSyncTimer); ssgSyncTimer=setTimeout(()=>ssgSyncTick(), 3000); }
+// プロンプトをコピーしたら、その日の保存を始める（2回目以降は送るきっかけになるだけ）
+function ssgSyncStart(){
+  const s=ssgSyncGet();
+  if(!(s.on && s.day)) ssgSyncSet(Object.assign(s, { day:s.day||ssgToday(), on:true }));
+  ssgSyncKick();
+}
+
+// サーバーの1日分で置き換えて読み込み直す
+async function ssgSyncLoad(day){
+  ssgSyncStatus(`☁ ${day} の作業を読み込んでいます…`);
+  const r=await ssgSyncApi(`date=${day}`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
+  const m=r.manifest;
+  const get=async name=>{ const res=await fetch(`/api/state?date=${day}&part=${name}`,{cache:'no-store'}); if(!res.ok) throw new Error(`中身を読めませんでした（HTTP ${res.status}）`); return res.text(); };
+  const ls=JSON.parse(await get(m.ls));
+  const idb={};
+  for(const [name, rows] of Object.entries(m.idb||{})){
+    idb[name]=[];
+    for(const row of rows) idb[name].push({ key:row.key, value:ssgUnpack(JSON.parse(await get(row.part))) });
+  }
+  const parts=[m.ls].concat(...Object.values(m.idb||{}).map(rows=>rows.map(x=>x.part))).sort();
+  await ssgApplyState({ ls, idb, baseDate:m.baseDate, step:m.step }, { day, rev:m.rev, parts, baseDate:m.baseDate||'', on:true });
+}
+
+// 開いたとき・表に出たとき：サーバーにその日の新しい保存があれば置き換える
+async function ssgSyncCheckRemote(boot){
+  if(ssgSyncBusy) return;
+  ssgSyncBusy=true;
+  try{
+    const lst=await ssgSyncApi('');
+    if(lst.status===403 || lst.notReady || lst.status===404 || lst.status===405){ ssgSyncOff=lst.error||'使えません'; ssgSyncStatus('☁ '+ssgSyncOff+'（この端末だけに保存）'); return; }
+    if(!lst.ok){ ssgSyncStatus('☁ サーバーを確かめられませんでした：'+(lst.error||`HTTP ${lst.status}`), 'error'); return; }
+    ssgSyncOff='';
+    ssgSyncRenderDays(lst.days||[]);
+    const s=ssgSyncGet(), day=s.day||ssgToday();
+    const d=(lst.days||[]).find(x=>x.date===day);
+    if(!d){
+      if(s.rev) ssgSyncSet(Object.assign(s, { rev:0, parts:[] }));
+      ssgSyncStatus(s.on?`☁ ${day} はまだサーバーにありません（保存します）`:'☁ 今日の作業はまだ保存していません（プロンプトをコピーすると保存を始めます）');
+      if(s.on) ssgSyncKick();
+      return;
+    }
+    if(s.force){ ssgSyncSet(Object.assign(s, { rev:d.rev, on:true })); ssgSyncKick(); return; }   // 取込の直後など：この端末の内容でサーバーを上書きする
+    if((s.rev||0)===d.rev){ ssgSyncStatus(`☁ ${day} の保存と同じ内容です（${ssgSyncHm(d.updatedAt)}）`, 'ok'); return; }
+    // この端末に、まだ送っていない変更があるか
+    let dirty=false;
+    if(s.on && s.day===day && s.rev){ try{ dirty=!ssgSyncSame(await ssgSyncCollect(), s); }catch(e){} }
+    if(dirty && !confirm(`別の端末で、${day} の作業が新しく保存されています（${ssgSyncHm(d.updatedAt)}）。\nOK：そちらの内容に置き換えて読み込み直す\nキャンセル：この端末の内容を残す（次の保存でサーバーを上書き）`)){
+      ssgSyncSet(Object.assign(s, { force:true })); ssgSyncKick(); return;
+    }
+    await ssgSyncLoad(day);
+  }catch(e){ ssgSyncStatus('☁ 読み込めませんでした：'+e.message, 'error'); }
+  finally{ ssgSyncBusy=false; if(boot) ssgSyncReady=true; }
+}
+// ⚙設定の一覧（直近5日。開くとその日の作業に置き換える）
+function ssgSyncRenderDays(days){
+  const el=document.getElementById('ssgSyncList'); if(!el) return;
+  const cur=ssgSyncGet().day||'';
+  const when=iso=>new Date(iso).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  el.innerHTML=days.length?days.map(d=>`<div class="auto-row" style="gap:8px;font-size:11px;"><span style="min-width:96px;">${autoEsc(d.date)}</span><span style="color:var(--muted);">最終保存 ${autoEsc(when(d.updatedAt))}</span>${d.date===cur?'<span style="color:var(--muted);">（いま開いている日）</span>':`<button class="btn-mini" onclick="ssgSyncOpenDay('${autoEsc(d.date)}')">開く</button>`}</div>`).join('')
+    :'<span style="font-size:11px;color:var(--muted);">まだありません</span>';
+}
+async function ssgSyncOpenDay(day){
+  if(!confirm(`いまの内容を、サーバーに保存してある ${day} の作業に置き換えます。よろしいですか？\n（いまの作業は、保存していればサーバーに残っています。開いたあとの変更は ${day} の保存に入ります）`)) return;
+  try{ await ssgSyncTick(); await ssgSyncLoad(day); }catch(e){ ssgSyncStatus('☁ 開けませんでした：'+e.message, 'error'); }
+}
+async function ssgSyncRefreshList(){ const r=await ssgSyncApi(''); if(r.ok) ssgSyncRenderDays(r.days||[]); else ssgSyncStatus('☁ '+(r.error||`HTTP ${r.status}`), 'error'); }
+function ssgSyncBoot(){
+  ssgSyncCheckRemote(true);
+  setInterval(()=>{ if(document.visibilityState==='visible') ssgSyncTick(); }, 20000);   // 動画の部品が IndexedDB に置く音声などは、ここで拾う
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState==='hidden') ssgSyncTick();
+    else if(ssgSyncReady && !ssgSyncOff) ssgSyncCheckRemote(false);
+  });
 }
 
 const VID_KEY = SSG_PREFIX + 'video';
@@ -3363,7 +3612,7 @@ const VID_SCREEN_PROMPT = `以下の資料と台本をもとに、この日の�
 {"headline":"","feature":"","points":[{"title":"","body":"","stocks":[{"code":"","show":"pct"}]}],"closing":""}`;
 async function vidScreenText(){
   const resources=autoBuildResources().concat([{label:'台本', text:autoScriptFull()}, {label:'スライド文章', text:(document.getElementById('mainInput')||{}).value||''}]);
-  const res=await fetch('/api/analyze',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ prompt:VID_SCREEN_PROMPT, resources, temperature:0.3, models:autoModelChain('low'), json:true }) });
+  const res=await aiFetch('/api/analyze',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ prompt:VID_SCREEN_PROMPT, resources, temperature:0.3, models:autoModelChain('low'), json:true }) });
   const d=await res.json();
   if(!d.ok) throw new Error(d.error||'画面の文を作れませんでした');
   const m=String(d.text||'').match(/\{[\s\S]*\}/); if(!m) throw new Error('画面の文の形が読めませんでした');
@@ -3548,6 +3797,7 @@ autoLoadCustomDict();
 autoInitDict();
 try{ const k=localStorage.getItem(SSG_PREFIX+'restoreStep'); if(k){ localStorage.removeItem(SSG_PREFIX+'restoreStep'); window.__autoStepK=k; } }catch(e){}   // 「取込」の直後は、出力したときに開いていた工程へ
 switchTab('full');   // 初期表示を全自動版にする
+ssgSyncBoot();   // サーバーに今日の作業があれば、それに置き換える（別の端末で続きから）
 </script>
 </body>
 </html>
