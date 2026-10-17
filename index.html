@@ -464,7 +464,7 @@ Appier G|4180|818|+96|+13.30%
         <button class="btn-mini" onclick="ssgSyncRefreshList()">↻</button>
         <span id="ssgSyncStatus" style="font-size:11px;color:var(--muted);"></span></div>
       <div id="ssgSyncList" style="margin-top:4px;"></div>
-      <p style="margin-bottom:0;">作業は営業日（基準日の営業日。土日・祝日は直前の営業日）ごとに保存します。たとえば 10/18（日）に作っても 10/16（金）の回として残ります。最初にプロンプトをコピーした時点から自動でサーバーにも保存します（日付が入っただけでは保存しません）。別の端末で開くと、その営業日の保存があれば続きから開きます。営業日が変わって保存が無ければ、新しく始まります。サーバーには直近5営業日分が残り、「開く」で前の回に戻せます。基準日を変えると、その営業日の回として保存します。</p>
+      <p style="margin-bottom:0;">作業は営業日（基準日の営業日。土日・祝日は直前の営業日）ごとに保存します。たとえば 10/18（日）に作っても 10/16（金）の回として残ります。最初にプロンプトをコピーした時点から自動でサーバーにも保存します（日付が入っただけでは保存しません）。別の端末で開くと、その営業日の保存があれば続きから開きます。営業日が変わって保存が無ければ、新しく始まります。サーバーには直近5営業日分が残り、「開く」で前の回に戻せます。基準日を変えたときは、次にプロンプトをコピーした時点から、その営業日の回として保存します。</p>
     </div>
     <div class="auto-row" style="margin-top:8px;">
       <button class="btn-sm" id="autoTestBtn" onclick="autoTestGemini()">🔌 AI接続テスト</button>
@@ -3365,7 +3365,7 @@ async function ssgSyncCollect(){
       parts[part]={ value:r.value };
     }
   }
-  const baseDate=((document.getElementById('autoBaseDate')||{}).value)||((document.getElementById('apBaseDate')||{}).value)||'';
+  const baseDate=ssgSyncBaseOverride||((document.getElementById('autoBaseDate')||{}).value)||((document.getElementById('apBaseDate')||{}).value)||'';
   return { lsName, idb, parts, baseDate };
 }
 const ssgSyncNames = c => [c.lsName].concat(...Object.values(c.idb).map(rows=>rows.map(r=>r.part))).sort();
@@ -3487,18 +3487,21 @@ async function ssgSyncOpenDay(day){
   if(!confirm(`いまの内容を、サーバーに保存してある ${day} の作業に置き換えます。よろしいですか？\n（いまの作業は、保存していればサーバーに残っています。開いたあとの変更は ${day} の保存に入ります）`)) return;
   try{ await ssgSyncTick(); await ssgSyncLoad(day); }catch(e){ ssgSyncStatus('☁ 開けませんでした：'+e.message, 'error'); }
 }
-// 基準日を変えて、作っている回の営業日が変わったとき：その日の保存があれば開くか聞く。無ければ、いまの内容をその日の作業として保存していく
+// 基準日を変えて、作っている回の営業日が変わったとき：その日の保存があれば開くか聞く。
+// 開かないときは、次にプロンプトをコピーした時点から、その日の作業として保存する（日付を変えただけでは保存しない）
+let ssgSyncBaseOverride='';
 async function ssgSyncBaseDateChanged(){
   const s=ssgSyncGet(), nd=ssgBizDay();
   if(!s.day || s.day===nd || !ssgSyncReady || ssgSyncOff) return;
   try{
+    // 変える前の回に、まだ送っていない変更があれば送っておく（基準日は変える前のまま）
+    if(s.on){ ssgSyncBaseOverride=s.baseDate||''; try{ await ssgSyncTick(); }finally{ ssgSyncBaseOverride=''; } }
     const lst=await ssgSyncApi(''); if(!lst.ok) return;
     const d=(lst.days||[]).find(x=>x.date===nd);
-    if(d && confirm(`${nd} の作業がサーバーに保存されています。開きますか？\nOK：開く（いまの内容は ${s.day} の保存に残ります）\nキャンセル：いまの内容を ${nd} の作業として保存する（サーバーの ${nd} は上書き）`)){ await ssgSyncLoad(nd); return; }
-    ssgSyncSet(Object.assign(ssgSyncGet(), { day:nd, rev:d?d.rev:0, parts:[], force:!!d }));
+    if(d && confirm(`${nd} の作業がサーバーに保存されています。開きますか？\nOK：開く（いまの内容は ${s.day} の保存に残ります）\nキャンセル：いまの内容のまま続ける（プロンプトをコピーした時点で ${nd} として保存し、サーバーの ${nd} は上書き）`)){ await ssgSyncLoad(nd); return; }
+    ssgSyncSet(Object.assign(ssgSyncGet(), { day:nd, rev:d?d.rev:0, parts:[], force:!!d, on:false }));
     ssgSyncRenderDays(lst.days||[]);
-    ssgSyncStatus(`☁ ${nd} の作業として保存します`);
-    ssgSyncKick();
+    ssgSyncStatus(`☁ ${nd} の作業は、プロンプトをコピーすると保存を始めます`);
   }catch(e){ ssgSyncStatus('☁ '+e.message, 'error'); }
 }
 async function ssgSyncRefreshList(){ const r=await ssgSyncApi(''); if(r.ok) ssgSyncRenderDays(r.days||[]); else ssgSyncStatus('☁ '+(r.error||`HTTP ${r.status}`), 'error'); }
