@@ -826,6 +826,8 @@ Appier G|4180|818|+96|+13.30%
       <button class="btn" id="vidAiBtn" onclick="vidScreenAi(this)" title="冒頭の一言とまとめ（特長・注目点・締めの1文）を AI で作ります。押すたびに AI を1回呼びます">🤖 一言・まとめを AI で作る</button>
       <span id="vidStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
+    <!-- 台本の生成状況（③音声生成の欄は全自動版では出ないので、ここに写す。使ったモデル・降格もわかる） -->
+    <div id="vidScriptModelRow" style="font-size:11px;color:var(--muted);margin-top:4px;display:none;">台本：<span id="vidScriptModel"></span></div>
     <!-- 左にプレビュー（小さめ・スクロールしても見える）、右に場面ごとの台本と操作。狭い画面では縦に並ぶ -->
     <!-- 音声の声・モデル（③音声生成から移す。音声生成のボタンで使う） -->
     <div id="slotVidVoice" style="max-width:640px;margin-top:8px;"></div>
@@ -3828,6 +3830,13 @@ function vidPlaceInPanel(tries){
   const v=document.getElementById('blkTtsVoice'); if(v && autoIsFull() && v.parentNode!==voiceSlot) voiceSlot.appendChild(v);
   const m=document.getElementById('vidMonthsBox'); if(m && m.parentNode!==tableSlot) tableSlot.appendChild(m);
 }
+// 台本の生成状況（autoScriptStatus）を ③動画 に写す
+(function(){
+  const src=document.getElementById('autoScriptStatus'), dst=document.getElementById('vidScriptModel'), row=document.getElementById('vidScriptModelRow');
+  if(!src||!dst||!row) return;
+  const copy=()=>{ dst.textContent=src.textContent; row.style.display=src.textContent.trim()?'':'none'; };
+  new MutationObserver(copy).observe(src,{childList:true,characterData:true,subtree:true}); copy();
+})();
 // 場面ごとの表（動画の部品）が出るまでは、台本をそのまま見せる
 function vidScriptEarlyRender(){
   const box=document.getElementById('vidScriptEarly'), ta=document.getElementById('vidScriptEarlyText'); if(!box||!ta) return;
