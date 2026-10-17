@@ -3439,6 +3439,8 @@ async function ssgSyncCheckRemote(boot){
     // この端末に、まだ送っていない変更があるか
     let dirty=false;
     if(s.on && s.day===day && s.rev){ try{ dirty=!ssgSyncSame(await ssgSyncCollect(), s); }catch(e){} }
+    // まだ保存を始めていない端末でも、今日の欄に書いてあれば聞く（サーバー保存を入れる前からの作業を黙って消さない）
+    else if(!s.on && day===ssgToday()){ dirty=AP_STORAGE_IDS.some(id=>{ const v=(localStorage.getItem(SSG_PREFIX+id)||'').trim(); return v && v!==THUMB_DEFAULT; }); }
     if(dirty && !confirm(`別の端末で、${day} の作業が新しく保存されています（${ssgSyncHm(d.updatedAt)}）。\nOK：そちらの内容に置き換えて読み込み直す\nキャンセル：この端末の内容を残す（次の保存でサーバーを上書き）`)){
       ssgSyncSet(Object.assign(s, { force:true })); ssgSyncKick(); return;
     }
