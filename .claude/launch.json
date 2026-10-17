@@ -4,29 +4,9 @@
     {
       "name": "slide-gen",
       "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "-e",
-        "const s=require('node:http'),fs=require('node:fs'),path=require('node:path');s.createServer((req,res)=>{const f=path.join(process.cwd(),req.url==='/'?'index.html':req.url);try{const d=fs.readFileSync(f);const ct=f.endsWith('.html')?'text/html':'application/octet-stream';res.writeHead(200,{'Content-Type':ct,'Access-Control-Allow-Origin':'*'});res.end(d);}catch(e){res.writeHead(404);res.end('');}}).listen(3456,()=>console.log('ready'));"
-      ],
+      "runtimeArgs": ["-e", "const s=require('node:http'),fs=require('node:fs'),path=require('node:path');s.createServer((req,res)=>{const f=path.join(process.cwd(),req.url==='/'?'index.html':req.url);try{const d=fs.readFileSync(f);const ct=f.endsWith('.html')?'text/html':'application/octet-stream';res.writeHead(200,{'Content-Type':ct,'Access-Control-Allow-Origin':'*'});res.end(d);}catch(e){res.writeHead(404);res.end('');}}).listen(3456,()=>console.log('ready'));"],
       "port": 3456,
       "autoPort": false
-    },
-    {
-      "name": "pages-dev",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "wrangler",
-        "pages",
-        "dev",
-        ".",
-        "--r2",
-        "STATE",
-        "--port",
-        "8788", "--compatibility-date", "2026-06-01",
-        "--ip",
-        "127.0.0.1"
-      ],
-      "port": 8788
     }
   ]
 }
