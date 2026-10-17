@@ -464,7 +464,7 @@ Appier G|4180|818|+96|+13.30%
         <button class="btn-mini" onclick="ssgSyncRefreshList()">↻</button>
         <span id="ssgSyncStatus" style="font-size:11px;color:var(--muted);"></span></div>
       <div id="ssgSyncList" style="margin-top:4px;"></div>
-      <p style="margin-bottom:0;">その日に最初にプロンプトをコピーした時点から、作業を自動でサーバーにも保存します（日付が入っただけでは保存しません）。別の端末で開くと、今日の保存があればその続きから開きます。日が変わって今日の保存が無ければ、新しく始まります。サーバーには直近5日分が残り、「開く」で前の日の作業に戻せます。</p>
+      <p style="margin-bottom:0;">作業は営業日（基準日の営業日。土日・祝日は直前の営業日）ごとに保存します。たとえば 10/18（日）に作っても 10/16（金）の回として残ります。最初にプロンプトをコピーした時点から自動でサーバーにも保存します（日付が入っただけでは保存しません）。別の端末で開くと、その営業日の保存があれば続きから開きます。営業日が変わって保存が無ければ、新しく始まります。サーバーには直近5営業日分が残り、「開く」で前の回に戻せます。基準日を変えると、その営業日の回として保存します。</p>
     </div>
     <div class="auto-row" style="margin-top:8px;">
       <button class="btn-sm" id="autoTestBtn" onclick="autoTestGemini()">🔌 AI接続テスト</button>
@@ -1109,12 +1109,13 @@ function apInit(){
   const now = new Date();
   const iso = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   // 日付が変わっていたら自動リセット
+  // 営業日が変わっていたら自動リセット（土日・祝日は直前の営業日のまま。前の版の「作業した日」が今日でもリセットしない）
   const lastDate = localStorage.getItem(SSG_PREFIX + 'lastDate');
-  if (lastDate && lastDate !== iso){
+  if (lastDate && lastDate !== ssgWorkDay() && lastDate !== iso){
     apDoReset();
     try{ localStorage.removeItem(SSG_PREFIX+'sync'); }catch(e){}   // サーバー保存も新しい日として始める（プロンプトをコピーするまで保存しない）
   }
-  localStorage.setItem(SSG_PREFIX + 'lastDate', iso);
+  localStorage.setItem(SSG_PREFIX + 'lastDate', ssgWorkDay());
   // フィールド復元
   apLoadAll();
   // スライダーの表示値（補正%・間ms）を保存した値に合わせる
@@ -1125,12 +1126,12 @@ function apInit(){
   const dateInput = document.getElementById('apBaseDate');
   if (dateInput){
     dateInput.value = iso;
-    dateInput.addEventListener('change', () => { apUpdateDates(dateInput.value); const a=document.getElementById('autoBaseDate'); if(a) a.value=dateInput.value; });
+    dateInput.addEventListener('change', () => { apUpdateDates(dateInput.value); const a=document.getElementById('autoBaseDate'); if(a) a.value=dateInput.value; if(typeof ssgSyncBaseDateChanged==='function') ssgSyncBaseDateChanged(); });
   }
   const autoDate = document.getElementById('autoBaseDate');
   if (autoDate){
     autoDate.value = iso;
-    autoDate.addEventListener('change', () => { apUpdateDates(autoDate.value); if(dateInput) dateInput.value=autoDate.value; });
+    autoDate.addEventListener('change', () => { apUpdateDates(autoDate.value); if(dateInput) dateInput.value=autoDate.value; if(typeof ssgSyncBaseDateChanged==='function') ssgSyncBaseDateChanged(); });
   }
   apUpdateDates(iso);
   // 「取込」の直後は、ファイルに入っていた基準日に戻す（1回だけ）
@@ -1207,12 +1208,19 @@ const SSG_IMG_DB='ssg-images';
 function ssgImgDb(){ return new Promise((res,rej)=>{ const r=indexedDB.open(SSG_IMG_DB,1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
 async function ssgImgPut(key, val){ try{ const db=await ssgImgDb(); await new Promise((res,rej)=>{ const t=db.transaction('kv','readwrite'); if(val==null) t.objectStore('kv').delete(key); else t.objectStore('kv').put(val,key); t.oncomplete=res; t.onerror=()=>rej(t.error); }); db.close(); }catch(e){ console.warn('画像の保存に失敗', e); } }
 async function ssgImgGet(key){ try{ const db=await ssgImgDb(); const v=await new Promise((res,rej)=>{ const q=db.transaction('kv','readonly').objectStore('kv').get(key); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); }); db.close(); return v||null; }catch(e){ return null; } }
-function ssgToday(){ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; }
+function ssgIso(n){ return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; }
+function ssgToday(){ return ssgIso(new Date()); }
+// 営業日で管理する（2026-10-18）：土日・祝日は直前の営業日。10/18（日）に開いても 10/16（金）の作業として扱う
+function ssgWorkDay(){ return ssgIso(apMostRecentBizDay(new Date())); }   // 今日の営業日（ブラウザ保存の「日が変わった」の判定・画像の日付）
+function ssgBizDayOf(dateStr){ return /^\d{4}-\d{2}-\d{2}$/.test(String(dateStr||'')) ? ssgIso(apMostRecentBizDay(new Date(dateStr+'T00:00:00'))) : ssgWorkDay(); }
+function ssgBizDay(){ return ssgBizDayOf(((document.getElementById('autoBaseDate')||{}).value)||((document.getElementById('apBaseDate')||{}).value)||''); }   // 作っている回の営業日（基準日から。サーバー保存の日付）
+// 前の版で入れた日付（作業した日。土日もある）でも、今日の営業日のものなら今日のものとして扱う
+function ssgIsWorkDay(d){ return d===ssgWorkDay() || d===ssgToday(); }
 // 起動時：保存してある画像を戻す（今日保存したものだけ。前の日の画像は消す）
 async function ssgImgRestore(){
   for(const type of ['cover','news']){
     const v=await ssgImgGet(type); if(!v || !v.url) continue;
-    if(v.date!==ssgToday()){ ssgImgPut(type, null); continue; }
+    if(!ssgIsWorkDay(v.date)){ ssgImgPut(type, null); continue; }
     if(type==='cover') coverImgUrl=v.url; else newsImgUrl=v.url;
     applyImgUI(type, v.url, v.name||'');
   }
@@ -1220,7 +1228,7 @@ async function ssgImgRestore(){
   try{
     const t=await ssgImgGet('tts');
     if(t && Array.isArray(t.parts) && t.parts.length){
-      if(t.date!==ssgToday()) ssgImgPut('tts', null);
+      if(!ssgIsWorkDay(t.date)) ssgImgPut('tts', null);
       else if(typeof AutoState==='object' && !(AutoState.ttsParts&&AutoState.ttsParts.length)){
         AutoState.ttsParts=t.parts; AutoState.ttsSeconds=t.seconds||0; AutoState.ttsVoice=t.voice||''; AutoState.ttsRaw=null; AutoState.ttsText=t.text||'';
         if(typeof autoRenderTts==='function') await autoRenderTts();
@@ -1232,7 +1240,7 @@ async function ssgImgRestore(){
 // ③の読み上げを IndexedDB（ssg-images の tts）に保存する（画像と同じく、その日のうちだけ戻す）
 function ssgTtsPersist(){
   if(typeof AutoState!=='object' || !AutoState.ttsParts || !AutoState.ttsParts.length) return;
-  return ssgImgPut('tts', { parts:AutoState.ttsParts, seconds:AutoState.ttsSeconds||0, voice:AutoState.ttsVoice||'', text:AutoState.ttsText||'', date:ssgToday() });
+  return ssgImgPut('tts', { parts:AutoState.ttsParts, seconds:AutoState.ttsSeconds||0, voice:AutoState.ttsVoice||'', text:AutoState.ttsText||'', date:ssgWorkDay() });
 }
 function setImg(file, type){
   if(!file || !file.type.startsWith('image/')) return;
@@ -1242,7 +1250,7 @@ function setImg(file, type){
     if(type==='cover') coverImgUrl = e.target.result; else newsImgUrl = e.target.result;
     applyImgUI(pfx, e.target.result, file.name);
     debouncedPreview();
-    ssgImgPut(pfx, { url:e.target.result, name:file.name, date:ssgToday() });
+    ssgImgPut(pfx, { url:e.target.result, name:file.name, date:ssgWorkDay() });
     if(pfx==='news' && typeof vidRefresh==='function') vidRefresh();   // ⑥動画にもすぐ反映（AI・読み上げは呼ばない）
   };
   r.readAsDataURL(file);
@@ -3273,7 +3281,7 @@ async function ssgApplyState(o, sync, onDone){
   for(const k of del) localStorage.removeItem(k);
   for(const [k,v] of Object.entries(o.ls||{})){ if(k.startsWith(SSG_PREFIX) && !SSG_SYNC_SKIP.includes(k) && typeof v==='string') localStorage.setItem(k, v); }
   // IndexedDB：3つとも空にして入れる。画像・読み上げの日付は今日にする（起動時に「前の日のもの」として消されないように）
-  const today=ssgToday();
+  const today=ssgWorkDay();
   for(const name of SSG_STATE_DBS){
     let rows=Array.isArray(o.idb&&o.idb[name])?o.idb[name]:[];
     if(name==='ssg-images') rows=rows.map(r=>(r.value&&typeof r.value==='object'&&'date' in r.value)?{ key:r.key, value:Object.assign({}, r.value, { date:today }) }:r);
@@ -3296,8 +3304,8 @@ async function ssgStateImport(file){
     if(!confirm(`いまの内容をすべて消して、ファイルの状態（${when&&!isNaN(when)?when.toLocaleString('ja-JP'):'日時不明'}・基準日 ${o.baseDate||'不明'}）に置き換えます。よろしいですか？\n（置き換えたあと、ページを読み込み直します）`)){ ssgStateStatus(''); return; }
     ssgStateStatus('取り込んでいます…');
     const idb={}; for(const name of SSG_STATE_DBS) idb[name]=ssgUnpack(Array.isArray(o.idb[name])?o.idb[name]:[]);
-    // 取り込んだ内容を今日の作業としてサーバーにも保存する（サーバーに今日の保存があっても、こちらで上書き）
-    await ssgApplyState({ ls:o.localStorage, idb, baseDate:o.baseDate, step:o.step }, { day:ssgToday(), on:true, force:true }, ()=>ssgStateStatus('✅ 取り込みました。読み込み直します…','ok'));
+    // 取り込んだ内容を、その基準日の営業日の作業としてサーバーにも保存する（サーバーに同じ日の保存があっても、こちらで上書き）
+    await ssgApplyState({ ls:o.localStorage, idb, baseDate:o.baseDate, step:o.step }, { day:ssgBizDayOf(o.baseDate), on:true, force:true }, ()=>ssgStateStatus('✅ 取り込みました。読み込み直します…','ok'));
   }catch(e){ ssgStateStatus('❌ '+e.message,'error'); }
 }
 
@@ -3390,6 +3398,7 @@ async function ssgSyncPush(force){
   if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
   ssgSyncSet(Object.assign(ssgSyncGet(), { day:s.day, rev:r.rev, parts:ssgSyncNames(c), baseDate:c.baseDate, force:false }));
   ssgSyncStatus(`☁ ${s.day} を保存しました（${ssgSyncHm(r.updatedAt)}）`, 'ok');
+  if(r.rev===1 || man.force) ssgSyncRefreshList();   // 一覧に新しい日が増えたとき
 }
 async function ssgSyncTick(force){
   if(!ssgSyncReady || ssgSyncOff) return;
@@ -3403,13 +3412,14 @@ function ssgSyncKick(){ clearTimeout(ssgSyncTimer); ssgSyncTimer=setTimeout(()=>
 // プロンプトをコピーしたら、その日の保存を始める（2回目以降は送るきっかけになるだけ）
 function ssgSyncStart(){
   const s=ssgSyncGet();
-  if(!(s.on && s.day)) ssgSyncSet(Object.assign(s, { day:s.day||ssgToday(), on:true }));
+  if(!(s.on && s.day)) ssgSyncSet(Object.assign(s, { day:s.day||ssgBizDay(), on:true }));
   ssgSyncKick();
 }
 
 // サーバーの1日分で置き換えて読み込み直す
-async function ssgSyncLoad(day){
-  ssgSyncStatus(`☁ ${day} の作業を読み込んでいます…`);
+// asDay：前の版（作業した日の日付）で保存したものを、営業日の日付で保存し直すときに使う
+async function ssgSyncLoad(day, asDay){
+  ssgSyncStatus(`☁ ${asDay||day} の作業を読み込んでいます…`);
   const r=await ssgSyncApi(`date=${day}`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
   const m=r.manifest;
   const get=async name=>{ const res=await fetch(`/api/state?date=${day}&part=${name}`,{cache:'no-store'}); if(!res.ok) throw new Error(`中身を読めませんでした（HTTP ${res.status}）`); return res.text(); };
@@ -3420,7 +3430,7 @@ async function ssgSyncLoad(day){
     for(const row of rows) idb[name].push({ key:row.key, value:ssgUnpack(JSON.parse(await get(row.part))) });
   }
   const parts=[m.ls].concat(...Object.values(m.idb||{}).map(rows=>rows.map(x=>x.part))).sort();
-  await ssgApplyState({ ls, idb, baseDate:m.baseDate, step:m.step }, { day, rev:m.rev, parts, baseDate:m.baseDate||'', on:true });
+  await ssgApplyState({ ls, idb, baseDate:m.baseDate, step:m.step }, asDay ? { day:asDay, rev:0, parts:[], on:true, force:true } : { day, rev:m.rev, parts, baseDate:m.baseDate||'', on:true });
 }
 
 // 開いたとき・表に出たとき：サーバーにその日の新しい保存があれば置き換える
@@ -3433,11 +3443,17 @@ async function ssgSyncCheckRemote(boot){
     if(!lst.ok){ ssgSyncStatus('☁ サーバーを確かめられませんでした：'+(lst.error||`HTTP ${lst.status}`), 'error'); return; }
     ssgSyncOff='';
     ssgSyncRenderDays(lst.days||[]);
-    const s=ssgSyncGet(), day=s.day||ssgToday();
+    let s=ssgSyncGet();
+    // 前の版（作業した日の日付。土日もある）で持っていたら、その基準日の営業日に直して保存し直す
+    if(s.day && ssgBizDayOf(s.day)!==s.day){ s=Object.assign(s, { day:ssgBizDayOf(s.baseDate||s.day), rev:0, parts:[], force:true }); ssgSyncSet(s); }
+    const day=s.day||ssgBizDay();
     const d=(lst.days||[]).find(x=>x.date===day);
+    // その営業日の保存が、前の版の日付（例：10/18 に作った 10/16 の回）で残っていれば、それを開いて営業日の日付で保存し直す
+    const old=!d && !s.on && (lst.days||[]).find(x=>ssgBizDayOf(x.date)!==x.date && ssgBizDayOf(x.baseDate||x.date)===day);
+    if(old){ await ssgSyncLoad(old.date, day); return; }
     if(!d){
       if(s.rev) ssgSyncSet(Object.assign(s, { rev:0, parts:[] }));
-      ssgSyncStatus(s.on?`☁ ${day} はまだサーバーにありません（保存します）`:'☁ 今日の作業はまだ保存していません（プロンプトをコピーすると保存を始めます）');
+      ssgSyncStatus(s.on?`☁ ${day} はまだサーバーにありません（保存します）`:`☁ ${day} の作業はまだ保存していません（プロンプトをコピーすると保存を始めます）`);
       if(s.on) ssgSyncKick();
       return;
     }
@@ -3447,7 +3463,7 @@ async function ssgSyncCheckRemote(boot){
     let dirty=false;
     if(s.on && s.day===day && s.rev){ try{ dirty=!ssgSyncSame(await ssgSyncCollect(), s); }catch(e){} }
     // まだ保存を始めていない端末でも、今日の欄に書いてあれば聞く（サーバー保存を入れる前からの作業を黙って消さない）
-    else if(!s.on && day===ssgToday()){ dirty=AP_STORAGE_IDS.some(id=>{ const v=(localStorage.getItem(SSG_PREFIX+id)||'').trim(); return v && v!==THUMB_DEFAULT; }); }
+    else if(!s.on && day===ssgBizDay()){ dirty=AP_STORAGE_IDS.some(id=>{ const v=(localStorage.getItem(SSG_PREFIX+id)||'').trim(); return v && v!==THUMB_DEFAULT; }); }
     if(dirty && !confirm(`別の端末で、${day} の作業が新しく保存されています（${ssgSyncHm(d.updatedAt)}）。\nOK：そちらの内容に置き換えて読み込み直す\nキャンセル：この端末の内容を残す（次の保存でサーバーを上書き）`)){
       ssgSyncSet(Object.assign(s, { force:true })); ssgSyncKick(); return;
     }
@@ -3460,12 +3476,28 @@ function ssgSyncRenderDays(days){
   const el=document.getElementById('ssgSyncList'); if(!el) return;
   const cur=ssgSyncGet().day||'';
   const when=iso=>new Date(iso).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
-  el.innerHTML=days.length?days.map(d=>`<div class="auto-row" style="gap:8px;font-size:11px;"><span style="min-width:96px;">${autoEsc(d.date)}</span><span style="color:var(--muted);">最終保存 ${autoEsc(when(d.updatedAt))}</span>${d.date===cur?'<span style="color:var(--muted);">（いま開いている日）</span>':`<button class="btn-mini" onclick="ssgSyncOpenDay('${autoEsc(d.date)}')">開く</button>`}</div>`).join('')
+  const wd=iso=>'日月火水木金土'[new Date(iso+'T00:00:00').getDay()];
+  days=days.filter(d=>ssgBizDayOf(d.date)===d.date);   // 前の版の日付（作業した日）のものは出さない（開いたときに営業日の日付で保存し直す）
+  el.innerHTML=days.length?days.map(d=>`<div class="auto-row" style="gap:8px;font-size:11px;"><span style="min-width:110px;">${autoEsc(d.date)}（${wd(d.date)}）</span><span style="color:var(--muted);">最終保存 ${autoEsc(when(d.updatedAt))}</span>${d.date===cur?'<span style="color:var(--muted);">（いま開いている日）</span>':`<button class="btn-mini" onclick="ssgSyncOpenDay('${autoEsc(d.date)}')">開く</button>`}</div>`).join('')
     :'<span style="font-size:11px;color:var(--muted);">まだありません</span>';
 }
 async function ssgSyncOpenDay(day){
   if(!confirm(`いまの内容を、サーバーに保存してある ${day} の作業に置き換えます。よろしいですか？\n（いまの作業は、保存していればサーバーに残っています。開いたあとの変更は ${day} の保存に入ります）`)) return;
   try{ await ssgSyncTick(); await ssgSyncLoad(day); }catch(e){ ssgSyncStatus('☁ 開けませんでした：'+e.message, 'error'); }
+}
+// 基準日を変えて、作っている回の営業日が変わったとき：その日の保存があれば開くか聞く。無ければ、いまの内容をその日の作業として保存していく
+async function ssgSyncBaseDateChanged(){
+  const s=ssgSyncGet(), nd=ssgBizDay();
+  if(!s.day || s.day===nd || !ssgSyncReady || ssgSyncOff) return;
+  try{
+    const lst=await ssgSyncApi(''); if(!lst.ok) return;
+    const d=(lst.days||[]).find(x=>x.date===nd);
+    if(d && confirm(`${nd} の作業がサーバーに保存されています。開きますか？\nOK：開く（いまの内容は ${s.day} の保存に残ります）\nキャンセル：いまの内容を ${nd} の作業として保存する（サーバーの ${nd} は上書き）`)){ await ssgSyncLoad(nd); return; }
+    ssgSyncSet(Object.assign(ssgSyncGet(), { day:nd, rev:d?d.rev:0, parts:[], force:!!d }));
+    ssgSyncRenderDays(lst.days||[]);
+    ssgSyncStatus(`☁ ${nd} の作業として保存します`);
+    ssgSyncKick();
+  }catch(e){ ssgSyncStatus('☁ '+e.message, 'error'); }
 }
 async function ssgSyncRefreshList(){ const r=await ssgSyncApi(''); if(r.ok) ssgSyncRenderDays(r.days||[]); else ssgSyncStatus('☁ '+(r.error||`HTTP ${r.status}`), 'error'); }
 function ssgSyncBoot(){
