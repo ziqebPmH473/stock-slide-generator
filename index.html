@@ -802,7 +802,7 @@ Appier G|4180|818|+96|+13.30%
       <div id="slotVidImage" style="flex:0 1 300px;"></div>
     </div>
     <div id="slotVidThumb"></div>
-    <!-- 動画の先頭に入るサムネ。横は上のサムネ文言、縦は右の欄で直す（全自動版のときだけ、縦型サムネの欄をここへ移す） -->
+    <!-- 横は動画の先頭に入るサムネ（上のサムネ文言で直す）。縦は動画には入れず、縦動画の書き出しで別の画像として一緒に保存する（右の欄で直す。全自動版のときだけ、縦型サムネの欄をここへ移す） -->
     <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-top:10px;">
       <div>
         <strong style="font-size:11px;color:var(--text);display:block;margin-bottom:4px;">サムネ（横）</strong>
@@ -846,7 +846,7 @@ Appier G|4180|818|+96|+13.30%
   <div class="card full-only">
     <h2>④ SNS</h2>
     <div class="auto-row">
-      <!-- 動画のボタンは部品が vidExportSlot（横）/ vidExportSlotV（縦）に置く -->
+      <!-- 動画のボタンは部品が vidExportSlot（横：サムネ入りの MP4 だけ）/ vidExportSlotV（縦：サムネ無しの MP4 と 9:16 の縦サムネ画像を別ファイルで）に置く -->
       <span id="vidExportSlot"></span>
       <span id="vidExportSlotV"></span>
       <!-- 縦型サムネは SNS の投稿に使う（文言は③動画で直す）。4:5 は Instagram の投稿向け -->
@@ -1585,7 +1585,7 @@ function renderVThumbPreview(){
   if(!area) return;
   const has=vThumbTexts().some(t=>t&&t.trim());
   if(!has){ area.innerHTML=''; if(wrap) wrap.style.display='none'; return; }
-  // 全自動版は動画の冒頭に入る 9:16 で見せる（保存するサイズは ④SNS で選ぶ）
+  // 全自動版は縦動画と一緒に保存する 9:16 で見せる（④SNS の 🖼 縦サムネは、選んだサイズで保存する）
   const key=document.body.classList.contains('mode-full') ? '916' : (((document.getElementById('vThumbRatio')||{}).value)||'916');
   const sz=VTHUMB_SIZES[key];
   const w=160, scale=w/sz.w, h=Math.round(sz.h*scale);
@@ -3516,7 +3516,7 @@ function ssgSyncBoot(){
 
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '26af4ca5e0';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '0552971eb0';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -3717,7 +3717,7 @@ async function vidBuild(btn){
   finally{ btn.disabled=false; btn.textContent=old; }
 }
 
-// 縦型サムネ（9:16）を 1080×1920 の画像に（縦の動画の最初のコマ）
+// 縦型サムネ（9:16）を 1080×1920 の画像に（縦動画の冒頭には入れず、縦動画の書き出しで別のファイルとして一緒に保存する）
 async function vidThumbImageV(){
   if(!vThumbTexts().some(t=>t&&t.trim())) return null;
   const box=document.getElementById('renderTarget'); box.innerHTML=slideVThumb('916');
