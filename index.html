@@ -3277,16 +3277,29 @@ async function ssgStateExport(btn){
   finally{ if(btn){ btn.disabled=false; btn.textContent=old; } }
 }
 // 置き換えて読み込み直す（「取込」と、サーバーから開くときで共通）。o={ ls:{ssg_*:文字}, idb:{名前:[{key,value}]}（Blob のまま）, baseDate, step }、sync は読み込み直したあとの ssg_sync
+// BGM（⚙設定の曲 ssg-bgm・使う曲 ssg_bgm-sel・動画の部品の BGM kessan-viz-audio の _common/*）は日ごとの作業ではなく共通の設定。
+// サーバーの1日分やファイルで置き換えるとき、そちらに BGM が無ければこの端末のものを残す（新しい日を BGM の無い端末が先に始めても消えないように）
+const SSG_COMMON_LS=[SSG_PREFIX+'bgm-sel'];
+const ssgCommonRow=(name,key)=> name==='ssg-bgm' || (name==='kessan-viz-audio' && String(key).startsWith('_common/'));
+async function ssgKeepCommon(name, rows){
+  let local=[]; try{ local=(await ssgKvDump(name)).filter(r=>ssgCommonRow(name, r.key)); }catch(e){ return rows; }
+  if(!local.length) return rows;
+  if(name==='ssg-bgm'){ const idx=rows.find(r=>r.key===SSG_BGM_IDX); if(idx && Array.isArray(idx.value) && idx.value.length) return rows; return rows.filter(r=>!ssgCommonRow(name, r.key)).concat(local); }
+  const have=new Set(rows.map(r=>r.key)); return rows.concat(local.filter(r=>!have.has(r.key)));
+}
 async function ssgApplyState(o, sync, onDone){
-  // localStorage：ssg_* を消してから入れる
+  // localStorage：ssg_* を消してから入れる（BGM の選択は、入れる側に無ければ残す）
+  const keep={}; for(const k of SSG_COMMON_LS){ const v=localStorage.getItem(k); if(v!=null) keep[k]=v; }
   const del=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.startsWith(SSG_PREFIX)) del.push(k); }
   for(const k of del) localStorage.removeItem(k);
   for(const [k,v] of Object.entries(o.ls||{})){ if(k.startsWith(SSG_PREFIX) && !SSG_SYNC_SKIP.includes(k) && typeof v==='string') localStorage.setItem(k, v); }
-  // IndexedDB：3つとも空にして入れる。画像・読み上げの日付は今日にする（起動時に「前の日のもの」として消されないように）
+  for(const [k,v] of Object.entries(keep)) if(localStorage.getItem(k)==null) localStorage.setItem(k, v);
+  // IndexedDB：3つとも空にして入れる。画像・読み上げの日付は今日にする（起動時に「前の日のもの」として消されないように）。BGM は入れる側に無ければ残す
   const today=ssgWorkDay();
   for(const name of SSG_STATE_DBS){
     let rows=Array.isArray(o.idb&&o.idb[name])?o.idb[name]:[];
     if(name==='ssg-images') rows=rows.map(r=>(r.value&&typeof r.value==='object'&&'date' in r.value)?{ key:r.key, value:Object.assign({}, r.value, { date:today }) }:r);
+    rows=await ssgKeepCommon(name, rows);
     await ssgKvReplace(name, rows);
   }
   localStorage.setItem(SSG_PREFIX+'lastDate', today);   // 読み込み直しで「日付が変わった」扱いにならないように
@@ -3435,6 +3448,28 @@ async function ssgSyncLoad(day, asDay){
   await ssgApplyState({ ls, idb, baseDate:m.baseDate, step:m.step }, asDay ? { day:asDay, rev:0, parts:[], on:true, force:true } : { day, rev:m.rev, parts, baseDate:m.baseDate||'', on:true });
 }
 
+// 新しい日をこの端末で始めるとき、この端末に BGM が1曲も無ければ、サーバーの直近の日から BGM（曲・選択・動画の部品の BGM）を引き継ぐ
+// （BGM は共通の設定。別の端末で登録した曲を、日が変わった端末でも使えるように）
+async function ssgSyncInheritBgm(days, day){
+  if(!days.length) return;
+  const idx=await ssgBgmIndex(); if(idx.length) return;
+  const src=days.find(x=>x.date!==day); if(!src) return;
+  const r=await ssgSyncApi(`date=${src.date}`); if(!r.ok) return;
+  const m=r.manifest;
+  const get=async name=>{ const res=await fetch(`/api/state?date=${src.date}&part=${name}`,{cache:'no-store'}); if(!res.ok) throw new Error(`中身を読めませんでした（HTTP ${res.status}）`); return res.text(); };
+  let n=0;
+  for(const name of ['ssg-bgm','kessan-viz-audio']){
+    const rows=(m.idb&&m.idb[name]||[]).filter(row=>ssgCommonRow(name, row.key));
+    const db=await ssgKvDb(name);
+    try{
+      for(const row of rows){ const v=ssgUnpack(JSON.parse(await get(row.part))); await new Promise((res,rej)=>{ const t=db.transaction('kv','readwrite'); t.objectStore('kv').put(v, row.key); t.oncomplete=res; t.onerror=()=>rej(t.error); }); n++; }
+    } finally { db.close(); }
+  }
+  if(!n) return;
+  try{ const ls=JSON.parse(await get(m.ls)); for(const k of SSG_COMMON_LS) if(typeof ls[k]==='string') localStorage.setItem(k, ls[k]); }catch(e){}
+  try{ await ssgBgmRender(); }catch(e){}
+  ssgSyncStatus(`☁ ${day} の作業はまだ保存していません（プロンプトをコピーすると保存を始めます）。BGM は ${src.date} の保存から引き継ぎました`);
+}
 // 開いたとき・表に出たとき：サーバーにその日の新しい保存があれば置き換える
 async function ssgSyncCheckRemote(boot){
   if(ssgSyncBusy) return;
@@ -3457,6 +3492,7 @@ async function ssgSyncCheckRemote(boot){
       if(s.rev) ssgSyncSet(Object.assign(s, { rev:0, parts:[] }));
       ssgSyncStatus(s.on?`☁ ${day} はまだサーバーにありません（保存します）`:`☁ ${day} の作業はまだ保存していません（プロンプトをコピーすると保存を始めます）`);
       if(s.on) ssgSyncKick();
+      else{ try{ await ssgSyncInheritBgm(lst.days||[], day); }catch(e){ console.warn('BGM を引き継げませんでした', e); } }
       return;
     }
     if(s.force){ ssgSyncSet(Object.assign(s, { rev:d.rev, on:true })); ssgSyncKick(); return; }   // 取込の直後など：この端末の内容でサーバーを上書きする
