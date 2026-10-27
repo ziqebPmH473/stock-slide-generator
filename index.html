@@ -1076,7 +1076,7 @@ function apBindAutosave(){
 }
 function apClearStorage(){
   for (const id of AP_STORAGE_IDS) localStorage.removeItem(SSG_PREFIX + id);
-  try{ localStorage.removeItem(SSG_PREFIX+'vThumbSrc'); }catch(e){}
+  try{ localStorage.removeItem(SSG_PREFIX+'vThumbSrc'); }catch(e){}   // 旧版が残した値の掃除
 }
 function apResetAll(){
   if (!confirm('テキスト・画像をすべて初期値に戻します。よろしいですか？')) return;
@@ -1559,17 +1559,15 @@ function vThumbBandsChanged(){
   renderVThumbPreview();
 }
 
-// 「出力」を開いたとき等に、スライドのサムネ文言をコピーして1〜3段目へ分割して流し込む
-// force=false のときは、前回取り込んだ文言から変わっていなければ手編集を残す
+// 縦サムネの1〜3段目へ、スライドのサムネ文言を「：」で分割して流し込む
+// force=true ：📥 サムネ文言から取込 ボタン（いつでも上書き）
+// force=false：タブを開いたとき。縦の段がすべて空のときだけ流し込み、文が入っていれば何もしない
+//   （横のサムネ文言を作り直しても、縦の文言を勝手に書き換えない）
 function vThumbSyncFromThumb(force){
   const src=((document.getElementById('thumbInput')||{}).value||'').trim();
   if(!src) return;
   const filled=[1,2,3].some(i=>{ const el=document.getElementById('vThumbL'+i); return el && el.value.trim(); });
-  // 前回分割した元の文言は保存しておく（読み込み直し・取込のあとに、手で直した段を分割結果で上書きしないため）
-  let last=null; try{ last=localStorage.getItem(SSG_PREFIX+'vThumbSrc'); }catch(e){}
-  // 前の版で保存した状態（判定が無い）でも、段に文があるなら手で直したものとして残す
-  if(!force && filled && (last===src || last===null)){ if(last===null){ try{ localStorage.setItem(SSG_PREFIX+'vThumbSrc', src); }catch(e){} } return; }
-  try{ localStorage.setItem(SSG_PREFIX+'vThumbSrc', src); }catch(e){}
+  if(!force && filled) return;
   const parts=vThumbSplitSource(src, vThumbBandCount());
   [1,2,3].forEach(i=>{
     const el=document.getElementById('vThumbL'+i);
