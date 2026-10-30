@@ -1401,9 +1401,10 @@ const VTHUMB = {
   maxChars2: 3.8,    // 2段構成の上限。帯が広いぶん3段構成より大きく見せる
   paddingX:  56,     // 帯の左右余白 (px)
   lineHeight:1.24,   // 行間（枠内で改行したときの行送り・3段構成）
-  lineHeight2:1.38,  // 行間（2段構成。帯が広いので3段より広めに）
-  gap2:      0.09,   // 2段構成のとき、2枠の境目に空ける余白（帯の高さに対する比率）
-  ratios3:   [0.34,0.34,0.32],   // 3段構成のときの各段の高さ比率
+  lineHeight2:1.24,  // 行間（2段構成）
+  gap2:      0.02,   // 2段構成のとき、2枠の境目に空ける余白（帯の高さに対する比率）
+  safeRatio2:4/3,    // 2段構成の文字を収める範囲（幅に対する高さ。3:4 に切り抜かれても上段・下段が切れない）
+  ratios3:  [0.34,0.34,0.32],   // 3段構成のときの各段の高さ比率
   ratios2:   [0.50,0.50],        // 2段構成のときの各段の高さ比率
   // 上部バー
   headH:     100,    // 上部バーの高さ (px)
@@ -1533,6 +1534,10 @@ function slideVThumb(key){
   // 2段構成は2枠の文字を画像全体の中央へ寄せる（1段目は下寄せ・2段目は上寄せ）
   const aligns = (n===2 ? ['flex-end','flex-start'] : ['center','center','center']);
   const lh = (n===2 ? VTHUMB.lineHeight2 : VTHUMB.lineHeight);
+  // 2段構成の文字は、画像の中央の 3:4 の範囲に収める（4:5 は画像より範囲が広いのでバーの内側まで）
+  const safeTop = Math.max(VTHUMB.headH, Math.round((H-W*VTHUMB.safeRatio2)/2));
+  const safeBot = Math.min(H-VTHUMB.footH, H-Math.round((H-W*VTHUMB.safeRatio2)/2));
+  const border = VTHUMB.headH+heights[0];   // 1段目と2段目の境目
   const bands = texts.map((t,i)=>{
     const st = VTHUMB_BAND_STYLE[i];
     const weight = VTHUMB_WEIGHT[st.weight]();
@@ -1541,7 +1546,8 @@ function slideVThumb(key){
     const padY = (n===2 ? Math.round(heights[i]*VTHUMB.gap2) : 0);
     // 上限（＝1文字あたりの最大幅）。2段構成は全段、3段構成は中央（白帯）だけゆるめて大きく見せる
     const mc = n===2 ? VTHUMB.maxChars2 : (i===1 ? VTHUMB.maxCharsMid3 : VTHUMB.maxChars);
-    const sizes = vThumbLineSizes(lines, usable, heights[i]-padY, lh, mc);
+    const fitH = n===2 ? (i===0 ? border-safeTop : safeBot-border)-padY : heights[i];
+    const sizes = vThumbLineSizes(lines, usable, fitH, lh, mc);
     return vThumbBand(lines, sizes, weight, heights[i], st.bg, st.color, aligns[i], padY, lh);
   }).join('');
   const inner = `${vThumbHeader()}${bands}${vThumbFooter()}`;
