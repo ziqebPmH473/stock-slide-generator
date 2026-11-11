@@ -1078,14 +1078,14 @@ const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thum
 const AP_SETTING_IDS = ['autoFixedHashtags','autoModelOverride','autoTtsVoice','autoTtsModel','autoTtsClarity','autoTtsGap','autoTtsFormat'];   // 読み上げの補正・間・形式も保持（読み込み直し・取込で音が変わらないように）
 const THUMB_DEFAULT = '日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%';
 const SSG_PREFIX = 'ssg_';
-// サムネ1段目の初期値は、日経平均の値動きから言葉を決める（2％超＝大幅、0.5％未満＝小幅、前日と逆向きなら反発・反落）
-const THUMB_WORDS = ['大幅高','小幅高','上昇','大幅安','小幅安','下落','大幅反発','小幅反発','反発','大幅反落','小幅反落','反落','横ばい'];
+// サムネ1段目の初期値は、日経平均の値動きから言葉を決める（2％超＝大幅、0.5％未満＝小幅、0.1％未満＝ほぼ横ばい、前日と逆向きなら反発・反落）
+const THUMB_WORDS = ['大幅高','小幅高','上昇','大幅安','小幅安','下落','大幅反発','小幅反発','反発','大幅反落','小幅反落','反落','横ばい','ほぼ横ばい'];
 let thumbWord = '大幅高';   // 値動きを取れるまでは従来の初期値
 function thumbDefault(){ return THUMB_DEFAULT.replace('大幅高', thumbWord); }
 function thumbIsDefault(v){ v=String(v||'').trim(); return THUMB_WORDS.some(w=>v===THUMB_DEFAULT.replace('大幅高', w)); }   // 言葉だけ違う初期値も「初期値のまま」と見る
 function thumbMoveWord(pct, prevPct){
-  if(!isFinite(pct) || pct===0) return '横ばい';
   const up=pct>0, a=Math.abs(pct);
+  if(!isFinite(pct) || a<0.1) return 'ほぼ横ばい';   // ±0.1％未満は向きを言わない（反発・反落にもしない）
   const size = a>2 ? '大幅' : a<0.5 ? '小幅' : '';
   const turned = isFinite(prevPct) && prevPct!==0 && (prevPct>0)!==up;
   if(turned) return size+(up?'反発':'反落');
