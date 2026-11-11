@@ -230,9 +230,9 @@ body.mode-full #vThumbBtn { display:none; }
 
 <div class="tab-bar">
   <button class="tab-btn" id="tabBtnFull" onclick="switchTab('full')" title="自動版＋動画（MP4）。取得データ・台本などは自動版と共通">全自動版<span class="tab-badge beta">NEW</span></button>
+  <button class="tab-btn" id="tabBtnWeekly" onclick="switchTab('weekly')" title="1週間ぶんの日別データを、場面ごとの画像（Instagram の画像投稿用）にまとめる">週間まとめ</button>
   <button class="tab-btn" id="tabBtnAuto" onclick="switchTab('auto')">自動版<span class="tab-badge beta">BETA</span></button>
   <button class="tab-btn active" id="tabBtnManual" onclick="switchTab('manual')">手動版</button>
-  <button class="tab-btn" id="tabBtnWeekly" onclick="switchTab('weekly')" title="1週間ぶんの日別データを、場面ごとの画像（Instagram の画像投稿用）にまとめる">週間まとめ</button>
 </div>
 
 <div id="tabManual" class="tab-panel active">
@@ -881,7 +881,7 @@ Appier G|4180|818|+96|+13.30%
     <div class="auto-row" id="wkThemes"></div>
     <div class="auto-row">
       <button class="btn-sm" onclick="wkMake(this)">🖼 画像を作る</button>
-      <button class="btn-sm" id="wkZipBtn" onclick="wkZip(this)" style="display:none;">📦 ZIP で保存</button>
+      <button class="btn-mini" id="wkZipBtn" onclick="wkZip(this)" style="display:none;" title="全部の場面の画像と投稿文を、1つの ZIP にまとめて保存">📦 全部を ZIP で</button>
       <span id="wkStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
     <div id="wkResult"></div>
@@ -4021,7 +4021,9 @@ async function wkMake(btn){
     const plan=[]; const specs=[];
     for(const t of KV.tse.weekThemes.filter(t=>ids.includes(t.id))){
       const ds=days.filter(has[t.id]); if(!ds.length) continue;
-      const names=['00_表紙.png'].concat(ds.map((x,i)=>`${String(i+1).padStart(2,'0')}_${x.date.slice(5).replace('-','')}_${WK_WD[new Date(x.date+'T00:00:00').getDay()]}.png`));
+      // ファイル名は「種類の番号-何枚目_その週の月曜の日付」（1-1_20261109.png が指数の表紙、1-2 から日別）。種類の番号は場面の並びで固定
+      const no=WK_THEMES.findIndex(w=>w.id===t.id)+1, mon=wkMonday(dates[0]).replace(/-/g,'');
+      const names=['表紙'].concat(ds.map(x=>x.date)).map((_,i)=>`${no}-${i+1}_${mon}.png`);
       plan.push({ id:t.id, title:t.title, dates:ds.map(x=>x.date), names, from:specs.length });
       specs.push({ kind:'weekcover', scene:t.id, dates:ds.map(x=>x.date) });
       for(const x of ds) specs.push({ kind:'scene', scene:t.id, data:x });
@@ -4029,7 +4031,7 @@ async function wkMake(btn){
     if(!specs.length){ wkStatus('選んだ場面のデータがありません','error'); return; }
     const blobs=await KV.tse.stills(specs, { onProgress:(n, all)=>wkStatus(`画像を作っています… ${n}/${all}`) });
     wkClearOut();
-    wkOut={ week:dates[0], last:dates[dates.length-1], themes:plan.map(p=>({ id:p.id, title:p.title, caption:wkCaption(p.id, p.dates), files:p.names.map((name,i)=>{ const blob=blobs[p.from+i]; return { name, blob, url:URL.createObjectURL(blob) }; }) })) };
+    wkOut={ week:wkMonday(dates[0]), last:dates[dates.length-1], themes:plan.map(p=>({ id:p.id, title:p.title, caption:wkCaption(p.id, p.dates), files:p.names.map((name,i)=>{ const blob=blobs[p.from+i]; return { name, blob, url:URL.createObjectURL(blob) }; }) })) };
     wkRenderResult();
     wkStatus(`✅ ${specs.length}枚できました`+(skipped.length?`（動画のデータが無い日：${skipped.map(wkMd).join('・')}）`:''), 'ok');
   }catch(e){ wkStatus('❌ '+e.message,'error'); }
@@ -4041,7 +4043,7 @@ function wkRenderResult(){
   el.innerHTML=wkOut.themes.map((t,k)=>`
     <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
       <div class="auto-row"><strong style="font-size:12px;color:var(--text);">${autoEsc(t.title)}</strong><span style="font-size:11px;color:var(--muted);">${t.files.length}枚</span>
-        <button class="btn-mini" onclick="wkSave(${k},this)" title="この場面の画像を1枚ずつ保存">⬇ 保存</button>
+        <button class="btn-sm" onclick="wkSave(${k},this)" title="この場面の画像を、1枚ずつのファイルで続けて保存（${autoEsc(t.files[0].name)} から）">⬇ まとめて保存</button>
         ${canShare?`<button class="btn-mini" onclick="wkShare(${k},this)" title="この場面の画像を、ほかのアプリに渡す">📤 共有</button>`:''}
         <button class="btn-mini" onclick="autoCopyEl('wkCap${k}',this)">📋 投稿文をコピー</button></div>
       <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;">${t.files.map(f=>`<a href="${f.url}" target="_blank" title="${autoEsc(f.name)}" style="flex:none;"><img src="${f.url}" alt="${autoEsc(f.name)}" style="height:200px;border:1px solid var(--border);border-radius:4px;display:block;"></a>`).join('')}</div>
@@ -4049,17 +4051,17 @@ function wkRenderResult(){
     </div>`).join('');
   document.getElementById('wkZipBtn').style.display='';
 }
-const wkFolder = (t,k) => `${String(k+1).padStart(2,'0')}_${t.title.replace(/\s+/g,'')}`;
+const wkFolder = t => `${WK_THEMES.findIndex(w=>w.id===t.id)+1}_${t.title.replace(/\s+/g,'')}`;
 async function wkSave(k, btn){
   const t=wkOut && wkOut.themes[k]; if(!t) return;
-  for(const f of t.files){ const a=document.createElement('a'); a.href=f.url; a.download=`${wkFolder(t,k)}_${f.name}`; a.click(); await new Promise(r=>setTimeout(r,400)); }   // 続けて保存すると落とされることがあるので少し空ける
+  for(const f of t.files){ const a=document.createElement('a'); a.href=f.url; a.download=f.name; a.click(); await new Promise(r=>setTimeout(r,400)); }   // 続けて保存すると落とされることがあるので少し空ける
   autoFlash(btn);
 }
 async function wkShare(k, btn){
   const t=wkOut && wkOut.themes[k]; if(!t) return;
-  const files=t.files.map(f=>new File([f.blob], f.name.replace(/[^\x00-\x7f]+/g,'').replace(/_+\./,'.')||'image.png', { type:'image/png' }));
+  const files=t.files.map(f=>new File([f.blob], f.name, { type:'image/png' }));
   try{
-    if(!navigator.canShare({ files })) throw new Error('この端末では画像を共有できません（⬇ 保存を使ってください）');
+    if(!navigator.canShare({ files })) throw new Error('この端末では画像を共有できません（⬇ まとめて保存を使ってください）');
     await navigator.share({ files });
   }catch(e){ if(e.name!=='AbortError') wkStatus('❌ '+e.message,'error'); }
 }
@@ -4068,9 +4070,9 @@ async function wkZip(btn){
   btn.disabled=true;
   try{
     const zip=new JSZip();
-    wkOut.themes.forEach((t,k)=>{ const dir=zip.folder(wkFolder(t,k)); for(const f of t.files) dir.file(f.name, f.blob); dir.file('投稿文.txt', (document.getElementById('wkCap'+k)||{}).value||t.caption); });
+    wkOut.themes.forEach((t,k)=>{ const dir=zip.folder(wkFolder(t)); for(const f of t.files) dir.file(f.name, f.blob); dir.file('投稿文.txt', (document.getElementById('wkCap'+k)||{}).value||t.caption); });
     const blob=await zip.generateAsync({ type:'blob' });
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`週間まとめ_${wkOut.week.replace(/-/g,'')}-${wkOut.last.slice(5).replace('-','')}.zip`; a.click();
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`weekly_${wkOut.week.replace(/-/g,'')}.zip`; a.click();
     setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
   }catch(e){ wkStatus('❌ '+e.message,'error'); }
   finally{ btn.disabled=false; }
