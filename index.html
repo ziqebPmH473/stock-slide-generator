@@ -177,6 +177,10 @@ body.mode-full #vThumbBtn { display:none; }
 #tabAuto label { font-size:11px; }
 #tabAuto select { min-height:32px; }
 #tabAuto .auto-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:4px; }
+/* 週間まとめ（別のタブ）も同じ並べ方 */
+#tabWeekly .auto-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:6px; }
+#tabWeekly label { font-size:12px; }
+#tabWeekly select { min-height:32px; }
 
 /* ===== 自動版：ステップウィザード（1画面1工程）===== */
 .astep-head { position:sticky; top:0; z-index:30; background:var(--bg); padding:6px 0 10px; margin-bottom:14px; border-bottom:1px solid var(--border); }
@@ -228,6 +232,7 @@ body.mode-full #vThumbBtn { display:none; }
   <button class="tab-btn" id="tabBtnFull" onclick="switchTab('full')" title="自動版＋動画（MP4）。取得データ・台本などは自動版と共通">全自動版<span class="tab-badge beta">NEW</span></button>
   <button class="tab-btn" id="tabBtnAuto" onclick="switchTab('auto')">自動版<span class="tab-badge beta">BETA</span></button>
   <button class="tab-btn active" id="tabBtnManual" onclick="switchTab('manual')">手動版</button>
+  <button class="tab-btn" id="tabBtnWeekly" onclick="switchTab('weekly')" title="1週間ぶんの日別データを、場面ごとの画像（Instagram の画像投稿用）にまとめる">週間まとめ</button>
 </div>
 
 <div id="tabManual" class="tab-panel active">
@@ -859,9 +864,14 @@ Appier G|4180|818|+96|+13.30%
     </div>
     <div id="slotSnsX"></div>
   </div>
-  <div class="card full-only">
-    <h2>④ SNS：週間まとめ（画像）</h2>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 6px;">サーバーに保存してある各日の動画のデータから、場面ごとに「表紙＋日別の画像」（1080×1440・3:4）を作ります。Instagram の画像投稿向け。いまの作業の内容は変わりません。</p>
+  <div id="autoStatusBar"><span class="spin"></span><span id="autoStatusMsg">処理中…</span></div>
+</div><!-- /#tabAuto -->
+
+<!-- 週間まとめ：日次の作業（日を選んで進める）とは別の入口。週を選んで、保存してある各日のデータから画像を作る -->
+<div id="tabWeekly" class="tab-panel">
+  <div class="card">
+    <h2>週間まとめ（画像）</h2>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 6px;">サーバーに保存してある各日の動画のデータから、場面ごとに「表紙＋日別の画像」（1080×1440・3:4）を作ります。Instagram の画像投稿向け。日次の作業（全自動版）で選んでいる日とは関係なく、週を選んで作ります。日次の作業の内容は変わりません。</p>
     <div class="auto-row">
       <span style="font-size:12px;color:var(--muted);">週</span>
       <select id="wkWeek" onchange="wkWeekChanged()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;"></select>
@@ -876,8 +886,7 @@ Appier G|4180|818|+96|+13.30%
     </div>
     <div id="wkResult"></div>
   </div>
-  <div id="autoStatusBar"><span class="spin"></span><span id="autoStatusMsg">処理中…</span></div>
-</div><!-- /#tabAuto -->
+</div><!-- /#tabWeekly -->
 
 <div id="renderTarget" style="position:fixed;left:-3000px;top:0;pointer-events:none;"></div>
 
@@ -1959,6 +1968,16 @@ function autoPlaceBlocks(full){
   if(full && typeof vidHandle!=='undefined' && vidHandle) vidPlaceInPanel();
 }
 function switchTab(name){
+  // 週間まとめは日次の画面とは別。全自動版／自動版の切り替え（部品の置き場所）には触らず、表示だけ切り替える
+  const weekly = name === 'weekly';
+  document.getElementById('tabWeekly').classList.toggle('active', weekly);
+  document.getElementById('tabBtnWeekly').classList.toggle('active', weekly);
+  if(weekly){
+    for(const id of ['tabManual','tabAuto']) document.getElementById(id).classList.remove('active');
+    for(const id of ['tabBtnManual','tabBtnAuto','tabBtnFull']) document.getElementById(id).classList.remove('active');
+    try{ wkRefresh(); }catch(e){ console.warn(e); }
+    return;
+  }
   const isManual = name === 'manual', full = name === 'full';
   document.body.classList.toggle('mode-full', full);
   autoPlaceBlocks(full);
@@ -2009,7 +2028,6 @@ function autoStep(k){
   if(k==='n' && typeof vidHandle!=='undefined' && !vidHandle){ try{ vidOpen(); }catch(e){ console.warn(e); } }
   if(k==='v'){ try{ vidOpen(); }catch(e){ console.warn(e); } try{ vidScriptEarlyRender(); }catch(e){} try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); renderHThumbPreview(); }catch(e){} }
   if(k==='s'){ try{ ssgBgmRender(); }catch(e){ console.warn(e); } }
-  if(k==='n'){ try{ wkRefresh(); }catch(e){ console.warn(e); } }   // 週間まとめ：週の一覧を読み直す
   // ④SNS を開いたら、⑤出力と同じくサムネ文言を縦型サムネへ流し込む
   // 工程切替でプレビュー領域が可視になった直後に、実幅で再描画する
   // （非表示中は clientWidth=0 で幅を過大評価し、初回1列4枚縦積み→2列にズレるのを防ぐ）
@@ -3920,7 +3938,7 @@ autoInitDict();
 try{ const k=localStorage.getItem(SSG_PREFIX+'restoreStep'); if(k){ localStorage.removeItem(SSG_PREFIX+'restoreStep'); window.__autoStepK=k; } }catch(e){}   // 「取込」の直後は、出力したときに開いていた工程へ
 switchTab('full');   // 初期表示を全自動版にする
 ssgSyncBoot();   // サーバーに今日の作業があれば、それに置き換える（別の端末で続きから）
-// ==================== ④SNS：週間まとめ（画像。2026-11-11）====================
+// ==================== 週間まとめ（画像。上のタブ「週間まとめ」。2026-11-11）====================
 // ・サーバーに保存してある各日の作業から、動画のデータ（ssg_video の data）だけを読む（画像・音声は読まない。いまの作業は置き換えない）。
 // ・場面ごとに「表紙＋その週の日別の画像」を、動画の部品（KessanViz.tse.stills。縦の場面を 3:4 に詰めて描く）で作る。
 // ・この端末で作業中の日は、サーバーにまだ無くても入れる。
