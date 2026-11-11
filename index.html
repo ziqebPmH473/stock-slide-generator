@@ -464,7 +464,7 @@ Appier G|4180|818|+96|+13.30%
         <button class="btn-mini" onclick="ssgSyncRefreshList()">↻</button>
         <span id="ssgSyncStatus" style="font-size:11px;color:var(--muted);"></span></div>
       <div id="ssgSyncList" style="margin-top:4px;"></div>
-      <p style="margin-bottom:0;">作業は営業日（基準日の営業日。土日・祝日は直前の営業日）ごとに保存します。たとえば 10/18（日）に作っても 10/16（金）の回として残ります。最初にプロンプトをコピーした時点から自動でサーバーにも保存します（日付が入っただけでは保存しません）。別の端末で開くと、その営業日の保存があれば続きから開きます。営業日が変わって保存が無ければ、新しく始まります。サーバーには直近5営業日分が残り、「開く」で前の回に戻せます。基準日を変えたときは、次にプロンプトをコピーした時点から、その営業日の回として保存します。</p>
+      <p style="margin-bottom:0;">作業は営業日（基準日の営業日。土日・祝日は直前の営業日）ごとに保存します。たとえば 10/18（日）に作っても 10/16（金）の回として残ります。最初にプロンプトをコピーした時点から自動でサーバーにも保存します（日付が入っただけでは保存しません）。別の端末で開くと、その営業日の保存があれば続きから開きます。営業日が変わって保存が無ければ、新しく始まります。サーバーには直近10営業日分が残り、「開く」で前の回に戻せます。基準日を変えたときは、次にプロンプトをコピーした時点から、その営業日の回として保存します。</p>
     </div>
     <div class="auto-row" style="margin-top:8px;">
       <button class="btn-sm" id="autoTestBtn" onclick="autoTestGemini()">🔌 AI接続テスト</button>
@@ -3334,7 +3334,7 @@ async function ssgStateImport(file){
 
 // ==================== 別の端末で続きから開く（サーバー保存。2026-10-18）====================
 // ・保存先は /api/state（R2）。1日＝目録1つ＋中身（localStorage の ssg_* のまとめ1つ、IndexedDB の1件ずつ）。
-//   中身の名前は中身から作るので、変わったものだけを送る。サーバーは新しい順に5日分だけ残す。
+//   中身の名前は中身から作るので、変わったものだけを送る。サーバーは新しい順に10日分だけ残す。
 // ・保存を始めるのは、その日にプロンプトをコピーしたとき（autoClip・apCopyWithFeedback から ssgSyncStart）。日付が入っただけでは保存しない。
 // ・開いたとき：その日（ふつうは今日）の保存がサーバーにあって、この端末の内容と違えば、それに置き換えて読み込み直す。
 //   今日の保存が無ければ（日が変わった）、今までどおり新しく始める。別の端末から戻ってきたとき（画面が表に出たとき）も同じ確かめをする。
@@ -3517,7 +3517,7 @@ async function ssgSyncCheckRemote(boot){
   }catch(e){ ssgSyncStatus('☁ 読み込めませんでした：'+e.message, 'error'); }
   finally{ ssgSyncBusy=false; if(boot) ssgSyncReady=true; }
 }
-// ⚙設定の一覧（直近5日。開くとその日の作業に置き換える）
+// ⚙設定の一覧（直近10日。開くとその日の作業に置き換える）
 function ssgSyncRenderDays(days){
   const el=document.getElementById('ssgSyncList'); if(!el) return;
   const cur=ssgSyncGet().day||'';

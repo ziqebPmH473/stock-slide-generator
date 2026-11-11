@@ -15,7 +15,7 @@
  */
 
 const PROD_HOST = 'ssg-9506afd114d7.pages.dev';
-const KEEP_DAYS = 5;   // 残す日数（保存はプロンプトをコピーした日だけできるので、だいたい直近5営業日）
+const KEEP_DAYS = 10;  // 残す日数（保存はプロンプトをコピーした日だけできるので、だいたい直近10営業日）
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PART_RE = /^[0-9a-f]{32,64}$/;
 
