@@ -859,6 +859,23 @@ Appier G|4180|818|+96|+13.30%
     </div>
     <div id="slotSnsX"></div>
   </div>
+  <div class="card full-only">
+    <h2>④ SNS：週間まとめ（画像）</h2>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 6px;">サーバーに保存してある各日の動画のデータから、場面ごとに「表紙＋日別の画像」（1080×1440・3:4）を作ります。Instagram の画像投稿向け。いまの作業の内容は変わりません。</p>
+    <div class="auto-row">
+      <span style="font-size:12px;color:var(--muted);">週</span>
+      <select id="wkWeek" onchange="wkWeekChanged()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;"></select>
+      <button class="btn-mini" onclick="wkRefresh()" title="サーバーの保存を読み直す">🔄</button>
+      <span id="wkDays" style="font-size:11px;color:var(--muted);"></span>
+    </div>
+    <div class="auto-row" id="wkThemes"></div>
+    <div class="auto-row">
+      <button class="btn-sm" onclick="wkMake(this)">🖼 画像を作る</button>
+      <button class="btn-sm" id="wkZipBtn" onclick="wkZip(this)" style="display:none;">📦 ZIP で保存</button>
+      <span id="wkStatus" style="font-size:11px;color:var(--muted);"></span>
+    </div>
+    <div id="wkResult"></div>
+  </div>
   <div id="autoStatusBar"><span class="spin"></span><span id="autoStatusMsg">処理中…</span></div>
 </div><!-- /#tabAuto -->
 
@@ -1992,6 +2009,7 @@ function autoStep(k){
   if(k==='n' && typeof vidHandle!=='undefined' && !vidHandle){ try{ vidOpen(); }catch(e){ console.warn(e); } }
   if(k==='v'){ try{ vidOpen(); }catch(e){ console.warn(e); } try{ vidScriptEarlyRender(); }catch(e){} try{ vThumbSyncFromThumb(false); vThumbBandsChanged(); renderHThumbPreview(); }catch(e){} }
   if(k==='s'){ try{ ssgBgmRender(); }catch(e){ console.warn(e); } }
+  if(k==='n'){ try{ wkRefresh(); }catch(e){ console.warn(e); } }   // 週間まとめ：週の一覧を読み直す
   // ④SNS を開いたら、⑤出力と同じくサムネ文言を縦型サムネへ流し込む
   // 工程切替でプレビュー領域が可視になった直後に、実幅で再描画する
   // （非表示中は clientWidth=0 で幅を過大評価し、初回1列4枚縦積み→2列にズレるのを防ぐ）
@@ -3560,7 +3578,7 @@ function ssgSyncBoot(){
 
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '36bfca3696';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '11898ce321';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -3902,6 +3920,146 @@ autoInitDict();
 try{ const k=localStorage.getItem(SSG_PREFIX+'restoreStep'); if(k){ localStorage.removeItem(SSG_PREFIX+'restoreStep'); window.__autoStepK=k; } }catch(e){}   // 「取込」の直後は、出力したときに開いていた工程へ
 switchTab('full');   // 初期表示を全自動版にする
 ssgSyncBoot();   // サーバーに今日の作業があれば、それに置き換える（別の端末で続きから）
+// ==================== ④SNS：週間まとめ（画像。2026-11-11）====================
+// ・サーバーに保存してある各日の作業から、動画のデータ（ssg_video の data）だけを読む（画像・音声は読まない。いまの作業は置き換えない）。
+// ・場面ごとに「表紙＋その週の日別の画像」を、動画の部品（KessanViz.tse.stills。縦の場面を 3:4 に詰めて描く）で作る。
+// ・この端末で作業中の日は、サーバーにまだ無くても入れる。
+const WK_WD='日月火水木金土';
+const wkMd = iso => { const d=new Date(iso+'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()}（${WK_WD[d.getDay()]}）`; };
+const wkMonday = iso => { const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()-((d.getDay()+6)%7)); return ssgIso(d); };
+let wkServerDays=[], wkData={}, wkOut=null;   // wkData：日付 → 動画のデータ。wkOut：作った画像 {week, themes:[{id,title,files:[{name,blob,url}],caption}]}
+function wkStatus(msg, cls){ const el=document.getElementById('wkStatus'); if(!el) return; el.textContent=msg||''; el.style.color=cls==='error'?'#f87171':cls==='ok'?'#4ade80':'var(--muted)'; }
+function wkLocalData(){ const o=vidLoadSaved(); return (o && o.data && /^\d{4}-\d{2}-\d{2}$/.test(o.data.date||'')) ? o.data : null; }
+// 投稿文（場面ごとの定型文。日付だけ差し替える）
+const WK_CAPTIONS = {
+  index:   { head:'今週の株式市場｜主要株価指数', lines:['日経平均・TOPIX など、各営業日の終値と前日比をまとめました。','週の前半と後半で、相場はどう動いたのか？'], tags:'#日経平均 #TOPIX #日本株 #株式投資 #東京株式市場' },
+  contrib: { head:'今週の日経平均 寄与度ランキング', lines:['各営業日に日経平均を押し上げた銘柄・押し下げた銘柄をまとめました。','今週の日経平均を動かしたのは、どの銘柄だったのか？'], tags:'#日経平均 #寄与度 #日本株 #株式投資 #東京株式市場' },
+  sectors: { head:'今週の業種別 変動率ランキング', lines:['各営業日の上位5業種・下位5業種をまとめました。','くり返し上位に入った業種、弱かった業種はどこか？'], tags:'#日本株 #業種別 #セクター #株式投資 #東京株式市場' },
+  rise:    { head:'今週の値上がり率ランキング', lines:['各営業日の値上がり率トップ5（プライム市場）をまとめました。','今週、大きく買われたのはどの銘柄だったのか？'], tags:'#日本株 #値上がり率 #急騰 #株式投資 #東京株式市場' },
+  fall:    { head:'今週の値下がり率ランキング', lines:['各営業日の値下がり率トップ5（プライム市場）をまとめました。','今週、大きく売られたのはどの銘柄だったのか？'], tags:'#日本株 #値下がり率 #急落 #株式投資 #東京株式市場' },
+  trading: { head:'今週の売買代金ランキング', lines:['各営業日の売買代金トップ5をまとめました。','今週、資金が集まったのはどの銘柄だったのか？'], tags:'#日本株 #売買代金 #株式投資 #東京株式市場 #プライム市場' },
+};
+function wkCaption(id, dates){
+  const c=WK_CAPTIONS[id]; if(!c) return '';
+  const range=dates.length>1 ? `${wkMd(dates[0])}〜${wkMd(dates[dates.length-1])}` : wkMd(dates[0]);
+  return [`📊【${c.head}】`, '', `${range}の東京株式市場を、日ごとに振り返り。`, ...c.lines, '', '📌 スワイプして日ごとの変化をチェック！', '', '※各画像はその日の大引け時点のデータです（1週間を通した騰落率ではありません）。', '', c.tags].join('\n');
+}
+// 週の一覧を作り直す（サーバーの保存＋この端末で作業中の日）
+async function wkRefresh(){
+  const sel=document.getElementById('wkWeek'); if(!sel) return;
+  wkServerDays=[];
+  if(ssgSyncReady && !ssgSyncOff){ try{ const r=await ssgSyncApi(''); if(r.ok) wkServerDays=(r.days||[]).map(d=>d.date).filter(d=>ssgBizDayOf(d)===d); }catch(e){} }
+  const loc=wkLocalData();
+  const all=[...new Set(wkServerDays.concat(loc?[loc.date]:[]))].sort();
+  const weeks=[...new Set(all.map(wkMonday))].sort().reverse();
+  const keep=sel.value;
+  sel.innerHTML=weeks.map(w=>{ const n=all.filter(d=>wkMonday(d)===w).length; return `<option value="${w}">${wkMd(w)}の週（${n}日分）</option>`; }).join('');
+  if(weeks.includes(keep)) sel.value=keep;
+  if(!weeks.length) document.getElementById('wkDays').textContent=ssgSyncOff?'サーバー保存が使えないため、この端末で動画を作った日だけが対象です（まだありません）':'動画を作った日の保存がまだありません';
+  wkWeekChanged();
+}
+function wkWeekDates(){
+  const w=(document.getElementById('wkWeek')||{}).value||''; if(!w) return [];
+  const loc=wkLocalData();
+  return [...new Set(wkServerDays.concat(loc?[loc.date]:[]))].filter(d=>wkMonday(d)===w).sort();
+}
+function wkWeekChanged(){
+  const ds=wkWeekDates(); if(!ds.length) return;
+  document.getElementById('wkDays').textContent='保存のある日：'+ds.map(wkMd).join('・');
+}
+// 場面の一覧（部品の KessanViz.tse.weekThemes と同じ並び。部品は画像を作るときに読むので、欄はここから出す）
+const WK_THEMES=[{id:'index',title:'主要株価指数'},{id:'contrib',title:'日経平均 寄与度'},{id:'sectors',title:'業種別 変動率'},{id:'rise',title:'値上がり率ランキング'},{id:'fall',title:'値下がり率ランキング'},{id:'trading',title:'売買代金ランキング'}];
+function wkRenderThemes(){
+  const el=document.getElementById('wkThemes'); if(!el || el.childElementCount) return;
+  el.innerHTML=WK_THEMES.map(t=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="${t.id}" checked>${autoEsc(t.title)}</label>`).join('');
+}
+// その日の動画のデータを読む（サーバーの目録 → 各欄のまとめ → ssg_video）。この端末で作業中の日は、この端末の内容を使う
+async function wkLoadDay(day){
+  const loc=wkLocalData();
+  if(loc && loc.date===day) return loc;
+  if(wkData[day]) return wkData[day];
+  const r=await ssgSyncApi(`date=${day}`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
+  const res=await fetch(`/api/state?date=${day}&part=${r.manifest.ls}`,{cache:'no-store'}); if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  const ls=await res.json();
+  let v=null; try{ v=JSON.parse(ls[VID_KEY]||'null'); }catch(e){}
+  if(!v || !v.data) return null;
+  return (wkData[day]=v.data);
+}
+function wkClearOut(){ if(wkOut) for(const t of wkOut.themes) for(const f of t.files) URL.revokeObjectURL(f.url); wkOut=null; document.getElementById('wkResult').innerHTML=''; document.getElementById('wkZipBtn').style.display='none'; }
+async function wkMake(btn){
+  const dates=wkWeekDates();
+  if(!dates.length){ wkStatus('作れる日がありません（動画を作った日が対象です）','error'); return; }
+  btn.disabled=true;
+  try{
+    wkStatus('データを読んでいます…');
+    const KV=await vidLoadLib();
+    const ids=[...document.querySelectorAll('#wkThemes input:checked')].map(x=>x.value);
+    if(!ids.length){ wkStatus('場面を1つ以上選んでください','error'); return; }
+    const days=[]; const skipped=[];
+    for(const d of dates){ let x=null; try{ x=await wkLoadDay(d); }catch(e){ console.warn('週間まとめ：読めませんでした', d, e); } if(x) days.push(Object.assign({}, x, { date:/^\d{4}-\d{2}-\d{2}$/.test(x.date||'')?x.date:d, thumbnail:null, thumbnail_portrait:null, news_image:null })); else skipped.push(d); }
+    if(!days.length){ wkStatus('動画のデータがある日がありません（③動画で動画を作った日が対象です）','error'); return; }
+    // その場面のデータが無い日は外す
+    const has={ index:x=>(x.charts||[]).length+(x.others||[]).length>0, contrib:x=>x.contrib && (x.contrib.plus||[]).length+(x.contrib.minus||[]).length>0, sectors:x=>x.sectors && (x.sectors.up||[]).length+(x.sectors.down||[]).length>0, rise:x=>(x.rise||[]).length>0, fall:x=>(x.fall||[]).length>0, trading:x=>(x.trading||[]).length>0 };
+    const plan=[]; const specs=[];
+    for(const t of KV.tse.weekThemes.filter(t=>ids.includes(t.id))){
+      const ds=days.filter(has[t.id]); if(!ds.length) continue;
+      const names=['00_表紙.png'].concat(ds.map((x,i)=>`${String(i+1).padStart(2,'0')}_${x.date.slice(5).replace('-','')}_${WK_WD[new Date(x.date+'T00:00:00').getDay()]}.png`));
+      plan.push({ id:t.id, title:t.title, dates:ds.map(x=>x.date), names, from:specs.length });
+      specs.push({ kind:'weekcover', scene:t.id, dates:ds.map(x=>x.date) });
+      for(const x of ds) specs.push({ kind:'scene', scene:t.id, data:x });
+    }
+    if(!specs.length){ wkStatus('選んだ場面のデータがありません','error'); return; }
+    const blobs=await KV.tse.stills(specs, { onProgress:(n, all)=>wkStatus(`画像を作っています… ${n}/${all}`) });
+    wkClearOut();
+    wkOut={ week:dates[0], last:dates[dates.length-1], themes:plan.map(p=>({ id:p.id, title:p.title, caption:wkCaption(p.id, p.dates), files:p.names.map((name,i)=>{ const blob=blobs[p.from+i]; return { name, blob, url:URL.createObjectURL(blob) }; }) })) };
+    wkRenderResult();
+    wkStatus(`✅ ${specs.length}枚できました`+(skipped.length?`（動画のデータが無い日：${skipped.map(wkMd).join('・')}）`:''), 'ok');
+  }catch(e){ wkStatus('❌ '+e.message,'error'); }
+  finally{ btn.disabled=false; }
+}
+function wkRenderResult(){
+  const el=document.getElementById('wkResult'); if(!el || !wkOut) return;
+  const canShare=!!(navigator.canShare && window.File);
+  el.innerHTML=wkOut.themes.map((t,k)=>`
+    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+      <div class="auto-row"><strong style="font-size:12px;color:var(--text);">${autoEsc(t.title)}</strong><span style="font-size:11px;color:var(--muted);">${t.files.length}枚</span>
+        <button class="btn-mini" onclick="wkSave(${k},this)" title="この場面の画像を1枚ずつ保存">⬇ 保存</button>
+        ${canShare?`<button class="btn-mini" onclick="wkShare(${k},this)" title="この場面の画像を、ほかのアプリに渡す">📤 共有</button>`:''}
+        <button class="btn-mini" onclick="autoCopyEl('wkCap${k}',this)">📋 投稿文をコピー</button></div>
+      <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;">${t.files.map(f=>`<a href="${f.url}" target="_blank" title="${autoEsc(f.name)}" style="flex:none;"><img src="${f.url}" alt="${autoEsc(f.name)}" style="height:200px;border:1px solid var(--border);border-radius:4px;display:block;"></a>`).join('')}</div>
+      <textarea id="wkCap${k}" style="min-height:120px !important;font-size:12px;margin-top:4px;">${autoEsc(t.caption)}</textarea>
+    </div>`).join('');
+  document.getElementById('wkZipBtn').style.display='';
+}
+const wkFolder = (t,k) => `${String(k+1).padStart(2,'0')}_${t.title.replace(/\s+/g,'')}`;
+async function wkSave(k, btn){
+  const t=wkOut && wkOut.themes[k]; if(!t) return;
+  for(const f of t.files){ const a=document.createElement('a'); a.href=f.url; a.download=`${wkFolder(t,k)}_${f.name}`; a.click(); await new Promise(r=>setTimeout(r,400)); }   // 続けて保存すると落とされることがあるので少し空ける
+  autoFlash(btn);
+}
+async function wkShare(k, btn){
+  const t=wkOut && wkOut.themes[k]; if(!t) return;
+  const files=t.files.map(f=>new File([f.blob], f.name.replace(/[^\x00-\x7f]+/g,'').replace(/_+\./,'.')||'image.png', { type:'image/png' }));
+  try{
+    if(!navigator.canShare({ files })) throw new Error('この端末では画像を共有できません（⬇ 保存を使ってください）');
+    await navigator.share({ files });
+  }catch(e){ if(e.name!=='AbortError') wkStatus('❌ '+e.message,'error'); }
+}
+async function wkZip(btn){
+  if(!wkOut) return;
+  btn.disabled=true;
+  try{
+    const zip=new JSZip();
+    wkOut.themes.forEach((t,k)=>{ const dir=zip.folder(wkFolder(t,k)); for(const f of t.files) dir.file(f.name, f.blob); dir.file('投稿文.txt', (document.getElementById('wkCap'+k)||{}).value||t.caption); });
+    const blob=await zip.generateAsync({ type:'blob' });
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`週間まとめ_${wkOut.week.replace(/-/g,'')}-${wkOut.last.slice(5).replace('-','')}.zip`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+  }catch(e){ wkStatus('❌ '+e.message,'error'); }
+  finally{ btn.disabled=false; }
+}
+// 週の一覧は、サーバー保存の確かめが済んだころに作る
+function wkBoot(){ wkRenderThemes(); let n=0; const t=setInterval(()=>{ if(ssgSyncReady || ssgSyncOff || ++n>20){ clearInterval(t); wkRefresh(); } }, 500); }
+wkBoot();
 </script>
 </body>
 </html>
