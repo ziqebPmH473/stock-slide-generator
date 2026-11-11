@@ -599,6 +599,7 @@ Appier G|4180|818|+96|+13.30%
           <button class="btn-mini" onclick="autoCopyEl('autoSnsThumb',this)">📋</button>
           <span id="autoSnsStatus" style="font-size:11px;color:var(--muted);"></span></div>
         <textarea id="autoSnsThumb"></textarea>
+        <div id="thumbMoves" style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.7;"></div>
       </div>
       <div>
         <div class="auto-row"><strong style="font-size:11px;color:var(--text);">サムネ文言</strong>
@@ -1077,6 +1078,58 @@ const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thum
 const AP_SETTING_IDS = ['autoFixedHashtags','autoModelOverride','autoTtsVoice','autoTtsModel','autoTtsClarity','autoTtsGap','autoTtsFormat'];   // 読み上げの補正・間・形式も保持（読み込み直し・取込で音が変わらないように）
 const THUMB_DEFAULT = '日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%';
 const SSG_PREFIX = 'ssg_';
+// サムネ1段目の初期値は、日経平均の値動きから言葉を決める（2％超＝大幅、0.5％未満＝小幅、前日と逆向きなら反発・反落）
+const THUMB_WORDS = ['大幅高','小幅高','上昇','大幅安','小幅安','下落','大幅反発','小幅反発','反発','大幅反落','小幅反落','反落','横ばい'];
+let thumbWord = '大幅高';   // 値動きを取れるまでは従来の初期値
+function thumbDefault(){ return THUMB_DEFAULT.replace('大幅高', thumbWord); }
+function thumbIsDefault(v){ v=String(v||'').trim(); return THUMB_WORDS.some(w=>v===THUMB_DEFAULT.replace('大幅高', w)); }   // 言葉だけ違う初期値も「初期値のまま」と見る
+function thumbMoveWord(pct, prevPct){
+  if(!isFinite(pct) || pct===0) return '横ばい';
+  const up=pct>0, a=Math.abs(pct);
+  const size = a>2 ? '大幅' : a<0.5 ? '小幅' : '';
+  const turned = isFinite(prevPct) && prevPct!==0 && (prevPct>0)!==up;
+  if(turned) return size+(up?'反発':'反落');
+  return size ? size+(up?'高':'安') : (up?'上昇':'下落');
+}
+// 日経平均の日足（株探）から、前日までの7営業日と当日の値動きを出し、サムネ文言が初期値のままなら1段目を入れ替える
+let thumbMovesSeq=0, thumbMovesDay='';
+async function thumbLoadMoves(force){
+  const box=document.getElementById('thumbMoves'); if(!box) return;
+  const day=ssgBizDay();
+  if(!force && day===thumbMovesDay) return;
+  thumbMovesDay=day; const seq=++thumbMovesSeq;
+  const reload=' <button class="btn-mini" onclick="thumbLoadMoves(true)" title="値動きを取り直す">🔄</button>';
+  box.textContent='日経平均の値動きを取得中…';
+  try{
+    const h=await (await fetch(`/api/index-history?months=1&until=${day}`)).json();
+    if(seq!==thumbMovesSeq) return;
+    if(!h.ok) throw new Error(h.error||'取得できませんでした');
+    const s=h.nikkei||[];
+    const rows=s.slice(1).map((x,i)=>({ date:x.date, close:x.close, pct:Math.round((x.close/s[i].close-1)*10000)/100 }));
+    if(!rows.length) throw new Error('日経平均の値がありません');
+    const cur = rows[rows.length-1].date===day ? rows[rows.length-1] : null;
+    const past = (cur ? rows.slice(0,-1) : rows).slice(-7);
+    const fmt=r=>{ const [,m,d]=r.date.split('-'); const c=r.pct>0?'#f87171':r.pct<0?'#60a5fa':'inherit';
+      return `<span style="white-space:nowrap;">${+m}/${+d} ${Math.round(r.close)}<span style="color:${c};">（${r.pct>=0?'+':''}${r.pct.toFixed(2)}％）</span></span>`; };
+    let html=`<div>日経平均 前日までの${past.length}営業日${reload}</div><div>${past.map(fmt).join('　')}</div>`;
+    if(cur){
+      thumbWord=thumbMoveWord(cur.pct, past.length ? past[past.length-1].pct : NaN);
+      html+=`<div>当日 ${fmt(cur)} → <strong style="color:var(--text);">${thumbWord}</strong></div>`;
+      // 自動版の欄は入力すると手動版の欄にも写る。手動版だけ初期値のまま残っている場合も入れ替える
+      const a=document.getElementById('autoThumbInput'), t=document.getElementById('thumbInput');
+      if(a && thumbIsDefault(a.value) && a.value.trim()!==thumbDefault()) apSetValue('autoThumbInput', thumbDefault());
+      if(t && thumbIsDefault(t.value) && t.value.trim()!==thumbDefault()) apSetValue('thumbInput', thumbDefault());
+    }else{
+      const [,m,d]=day.split('-');
+      html+=`<div>当日（${+m}/${+d}）の終値はまだ出ていません。1段目は自動で入れていません</div>`;
+    }
+    box.innerHTML=html;
+  }catch(e){
+    if(seq!==thumbMovesSeq) return;
+    thumbMovesDay='';
+    box.innerHTML='⚠ 日経平均の値動きを取得できませんでした（'+String(e.message||e).replace(/[<>&]/g,'')+'）'+reload;
+  }
+}
 
 function apSaveField(id){
   const el = document.getElementById(id);
@@ -1122,7 +1175,7 @@ function apDoReset(){
   if (typeof AutoState === 'object'){ AutoState.sources=null; AutoState.meigaraTable=''; AutoState.slideText=''; }
   for (const id of AP_STORAGE_IDS){
     if (!document.getElementById(id)) continue;
-    apSetValue(id, (id==='thumbInput'||id==='autoThumbInput') ? THUMB_DEFAULT : '');
+    apSetValue(id, (id==='thumbInput'||id==='autoThumbInput') ? thumbDefault() : '');
   }
   try { ssgImgPut('tts', null); } catch(e){}
   if (typeof AutoState === 'object'){ AutoState.ttsParts=null; AutoState.ttsText=''; }
@@ -2425,7 +2478,7 @@ function autoInitDict(){
   const thumbEl = document.getElementById('autoThumbInput');
   if(thumbEl && !thumbEl.value.trim()){
     const cur=(document.getElementById('thumbInput')||{}).value;
-    thumbEl.value = (cur && cur.trim()) ? cur : THUMB_DEFAULT;
+    thumbEl.value = (cur && cur.trim()) ? cur : thumbDefault();
   }
 }
 // 東証data_j（Excel .xls/.xlsx またはCSV/Shift-JIS）を取り込んで辞書を更新（localStorage保存）
@@ -3545,7 +3598,7 @@ async function ssgSyncCheckRemote(boot){
     let dirty=false;
     if(s.on && s.day===day && s.rev){ try{ dirty=!ssgSyncSame(await ssgSyncCollect(), s); }catch(e){} }
     // まだ保存を始めていない端末でも、今日の欄に書いてあれば聞く（サーバー保存を入れる前からの作業を黙って消さない）
-    else if(!s.on && day===ssgBizDay()){ dirty=AP_STORAGE_IDS.some(id=>{ const v=(localStorage.getItem(SSG_PREFIX+id)||'').trim(); return v && v!==THUMB_DEFAULT; }); }
+    else if(!s.on && day===ssgBizDay()){ dirty=AP_STORAGE_IDS.some(id=>{ const v=(localStorage.getItem(SSG_PREFIX+id)||'').trim(); return v && !thumbIsDefault(v); }); }
     if(dirty && !confirm(`別の端末で、${day} の作業が新しく保存されています（${ssgSyncHm(d.updatedAt)}）。\nOK：そちらの内容に置き換えて読み込み直す\nキャンセル：この端末の内容を残す（次の保存でサーバーを上書き）`)){
       ssgSyncSet(Object.assign(s, { force:true })); ssgSyncKick(); return;
     }
@@ -3935,6 +3988,9 @@ ssgImgRestore();
 try{ if(document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ try{ renderVThumbPreview(); }catch(e){} }); }catch(e){}
 autoLoadCustomDict();
 autoInitDict();
+// サムネ1段目の初期値と前日までの値動き（基準日を変えたら取り直す）
+['autoBaseDate','apBaseDate'].forEach(id=>{ const el=document.getElementById(id); if(el) el.addEventListener('change', ()=>{ thumbLoadMoves(); }); });
+setTimeout(()=>{ thumbLoadMoves(); }, 0);
 try{ const k=localStorage.getItem(SSG_PREFIX+'restoreStep'); if(k){ localStorage.removeItem(SSG_PREFIX+'restoreStep'); window.__autoStepK=k; } }catch(e){}   // 「取込」の直後は、出力したときに開いていた工程へ
 switchTab('full');   // 初期表示を全自動版にする
 ssgSyncBoot();   // サーバーに今日の作業があれば、それに置き換える（別の端末で続きから）
