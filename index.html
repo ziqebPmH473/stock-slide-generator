@@ -3578,7 +3578,7 @@ function ssgSyncBoot(){
 
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '581e1e405d';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '3754ab9743';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -3933,8 +3933,8 @@ function wkLocalData(){ const o=vidLoadSaved(); return (o && o.data && /^\d{4}-\
 // 投稿文（場面ごとの定型文。日付だけ差し替える）
 const WK_CAPTIONS = {
   index:   { head:'今週の株式市場｜主要株価指数', lines:['日経平均・TOPIX など、各営業日の終値と前日比をまとめました。','週の前半と後半で、相場はどう動いたのか？'], tags:'#日経平均 #TOPIX #日本株 #株式投資 #東京株式市場' },
-  contrib: { head:'今週の日経平均 寄与度ランキング', lines:['各営業日に日経平均を押し上げた銘柄・押し下げた銘柄をまとめました。','今週の日経平均を動かしたのは、どの銘柄だったのか？'], tags:'#日経平均 #寄与度 #日本株 #株式投資 #東京株式市場' },
-  sectors: { head:'今週の業種別 変動率ランキング', lines:['各営業日の上位5業種・下位5業種をまとめました。','くり返し上位に入った業種、弱かった業種はどこか？'], tags:'#日本株 #業種別 #セクター #株式投資 #東京株式市場' },
+  contrib: { head:'今週の日経平均寄与度ランキング', lines:['各営業日に日経平均を押し上げた銘柄・押し下げた銘柄をまとめました。','今週の日経平均を動かしたのは、どの銘柄だったのか？'], tags:'#日経平均 #寄与度 #日本株 #株式投資 #東京株式市場' },
+  sectors: { head:'今週の業種別変動率ランキング', lines:['各営業日の上位5業種・下位5業種をまとめました。','くり返し上位に入った業種、弱かった業種はどこか？'], tags:'#日本株 #業種別 #セクター #株式投資 #東京株式市場' },
   rise:    { head:'今週の値上がり率ランキング', lines:['各営業日の値上がり率トップ5（プライム市場）をまとめました。','今週、大きく買われたのはどの銘柄だったのか？'], tags:'#日本株 #値上がり率 #急騰 #株式投資 #東京株式市場' },
   fall:    { head:'今週の値下がり率ランキング', lines:['各営業日の値下がり率トップ5（プライム市場）をまとめました。','今週、大きく売られたのはどの銘柄だったのか？'], tags:'#日本株 #値下がり率 #急落 #株式投資 #東京株式市場' },
   trading: { head:'今週の売買代金ランキング', lines:['各営業日の売買代金トップ5をまとめました。','今週、資金が集まったのはどの銘柄だったのか？'], tags:'#日本株 #売買代金 #株式投資 #東京株式市場 #プライム市場' },
@@ -3968,7 +3968,7 @@ function wkWeekChanged(){
   document.getElementById('wkDays').textContent='保存のある日：'+ds.map(wkMd).join('・');
 }
 // 場面の一覧（部品の KessanViz.tse.weekThemes と同じ並び。部品は画像を作るときに読むので、欄はここから出す）
-const WK_THEMES=[{id:'index',title:'主要株価指数'},{id:'contrib',title:'日経平均 寄与度'},{id:'sectors',title:'業種別 変動率'},{id:'rise',title:'値上がり率ランキング'},{id:'fall',title:'値下がり率ランキング'},{id:'trading',title:'売買代金ランキング'}];
+const WK_THEMES=[{id:'index',title:'主要株価指数'},{id:'contrib',title:'日経平均寄与度'},{id:'sectors',title:'業種別変動率'},{id:'rise',title:'値上がり率ランキング'},{id:'fall',title:'値下がり率ランキング'},{id:'trading',title:'売買代金ランキング'}];
 function wkRenderThemes(){
   const el=document.getElementById('wkThemes'); if(!el || el.childElementCount) return;
   el.innerHTML=WK_THEMES.map(t=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="${t.id}" checked>${autoEsc(t.title)}</label>`).join('');
