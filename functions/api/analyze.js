@@ -29,7 +29,7 @@ export async function onRequestPost(context) {
   // ふだんは画面の aiFetch が直接呼ぶので、ここを通るのはキーを画面に渡せないURL（プレビュー等）のときだけ
   const claudeKey = (!env.ANTHROPIC_API_KEY || env.ANTHROPIC_API_KEY === "xxxxx") ? "" : env.ANTHROPIC_API_KEY;
   if (!geminiKey && !claudeKey) {
-    return json({ ok: false, error: "APIキーが未設定です（.dev.vars の GEMINI_API_KEY を設定してください）" }, 400);
+    return json({ ok: false, error: "APIキーが未設定です（.dev.vars / Cloudflare の環境変数 GEMINI_API_KEY、Claude は ANTHROPIC_API_KEY を設定してください）" }, 400);
   }
 
   let payload;
@@ -123,7 +123,9 @@ export async function onRequestPost(context) {
       break;   // このモデルは諦めて次モデルへ
     }
   }
-  return json({ ok: false, error: "全モデルが混雑/上限のようです。少し待って再試行してください（最後のエラー: " + lastErr + "）", triedModels: models }, 502);
+  // 1つだけ選んだモデルが「キー未設定」「断られた」で止まったときは、混雑と言わずにその理由をそのまま返す（画面の aiFetch と同じ）
+  const plain = models.length === 1 && /未設定|断りました/.test(lastErr);
+  return json({ ok: false, error: plain ? lastErr : "全モデルが混雑/上限のようです。少し待って再試行してください（最後のエラー: " + lastErr + "）", triedModels: models }, 502);
 }
 
 export async function onRequestGet() {
