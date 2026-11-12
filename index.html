@@ -441,6 +441,9 @@ Appier G|4180|818|+96|+13.30%
         <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite（500回/日）</option>
         <option value="gemini-2.5-flash">Gemini 2.5 Flash（20回/日）</option>
         <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite（20回/日）</option>
+        <option value="claude-haiku-5-5">Claude Haiku 5.5</option>
+        <option value="claude-sonnet-5-5">Claude Sonnet 5.5</option>
+        <option value="claude-opus-5-5">Claude Opus 5.5</option>
       </select>
     </div>
     <p>モデルを固定するとそのモデルで実行（テスト用）。「自動」で各工程の推奨モデル＋上限時の自動降格になります。</p>
@@ -2128,16 +2131,21 @@ function autoEsc(s){ return String(s==null?'':s).replace(/[&<>]/g, c=>({'&':'&am
 // ・呼び方と返す形は fetch('/api/analyze',…) と同じ。組み立て・下のモデルへの切り替え（各モデル1回リトライ）は functions/api/analyze.js と同じ。
 //   analyze.js を直すときは、ここも同じように直す（2か所にある）。
 // ・キーは /api/gemini-key から受け取ってメモリにだけ持つ（保存しない・URL に載せない）。受け取れないときは今までどおり /api/analyze へ。
-let _aiKey=null;
-async function aiKey(){
+// ・Claude（Anthropic）のモデル（claude-〜）を選んだときは、同じ形で Anthropic の API を画面から直接呼ぶ（2026-11-12。決算ツールと同じ）。
+//   キーは /api/gemini-key が Gemini のキーと一緒に返す（環境変数 ANTHROPIC_API_KEY）。
+let _aiKey=null;   // {gemini:'…',claude:'…'}。取りに行く前は null
+async function aiKeys(){
   if(_aiKey!==null) return _aiKey;
-  try{ const r=await fetch('/api/gemini-key',{cache:'no-store'}); const d=await r.json(); _aiKey=(r.ok&&d.ok&&d.key)||''; }
-  catch(e){ _aiKey=''; }
+  try{ const r=await fetch('/api/gemini-key',{cache:'no-store'}); const d=await r.json(); _aiKey=(r.ok&&d.ok)?{gemini:d.key||'',claude:d.claudeKey||''}:{gemini:'',claude:''}; }
+  catch(e){ _aiKey={gemini:'',claude:''}; }
   return _aiKey;
 }
+const aiIsClaude=m=>/^claude-/.test(String(m||''));
+// 進行中の表示に出す AI の名前（「テキストモデル」で claude-〜 を選んでいれば Claude、それ以外は Gemini）
+const aiName=()=>aiIsClaude((document.getElementById('autoModelOverride')||{}).value)?'Claude':'Gemini';
 async function aiFetch(url, init){
-  const key=await aiKey();
-  if(!key) return fetch(url, init);
+  const keys=await aiKeys();
+  if(!keys.gemini&&!keys.claude) return fetch(url, init);
   const out=(obj,status=200)=>new Response(JSON.stringify(obj),{status,headers:{'Content-Type':'application/json'}});
   let p; try{ p=JSON.parse(init.body); }catch(e){ return out({ok:false,error:'リクエストの解析に失敗しました'},400); }
   const prompt=(p&&p.prompt||'').trim();
@@ -2146,19 +2154,35 @@ async function aiFetch(url, init){
   const full=resText?`以下の資料のみを根拠として、指示に厳密に従って回答してください。資料に無い情報を創作しないでください。\n\n===== 資料 =====\n${resText}\n\n===== 指示 =====\n${prompt}`:prompt;
   const body={contents:[{role:'user',parts:[{text:full}]}],generationConfig:{temperature:typeof p.temperature==='number'?p.temperature:0.4}};
   if(p.json===true) body.generationConfig.responseMimeType='application/json';
+  // Claude 用の本文（資料・JSON指定を同じ意味で組み立てる）
+  const clBody={model:'',max_tokens:16000,messages:[{role:'user',content:[{type:'text',text:full}]}]};
+  if(p.json===true) clBody.system='答えは JSON だけを出力してください。前置き・説明・コードブロックは付けないでください。';
   const models=(Array.isArray(p.models)&&p.models.length)?p.models:[p.model||'gemini-3.5-flash-lite'];
   const isTransient=(st,raw)=>st===429||st>=500||/quota|rate|exhaust|limit:\s*0|overload|high demand|unavailable|temporarily|try again|resource has been exhausted/i.test(raw||'');
   const delay=ms=>new Promise(r=>setTimeout(r,ms));
   let lastErr='';
   for(let i=0;i<models.length;i++){
-    const m=models[i];
+    const m=models[i], cl=aiIsClaude(m);
+    if(cl&&!keys.claude){ lastErr='Claude のAPIキーが未設定です（Cloudflare の環境変数 ANTHROPIC_API_KEY）'; continue; }
+    if(!cl&&!keys.gemini){ lastErr='Gemini のAPIキーが未設定です'; continue; }
     for(let attempt=0;attempt<2;attempt++){   // 各モデル最大2回（一時エラー時に1回リトライ）
       try{
-        // キーは URL に載せず、ヘッダーで渡す
-        const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`,
-          {method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify(body)});
+        // キーは URL に載せず、ヘッダーで渡す。Anthropic は、画面から直接呼ぶのを許可するヘッダーが要る
+        const res=cl
+          ? await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+              headers:{'Content-Type':'application/json','x-api-key':keys.claude,'anthropic-version':'2026-10-21','anthropic-dangerous-direct-browser-access':'true'},
+              body:JSON.stringify({...clBody,model:m})})
+          : await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`,
+              {method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':keys.gemini},body:JSON.stringify(body)});
         const raw0=await res.text();
         let data; try{ data=JSON.parse(raw0); }catch(e){ throw new Error(`HTTP ${res.status} 応答がJSONではありません: ${raw0.slice(0,80)}`); }
+        if(res.ok&&cl){
+          // 安全側で断られたとき（stop_reason: refusal）は、このモデルを諦めて次へ
+          if(data.stop_reason==='refusal'){ lastErr='Claude が回答を断りました'+(data.stop_details&&data.stop_details.explanation?'：'+data.stop_details.explanation:''); break; }
+          const text=(data.content||[]).filter(x=>x.type==='text').map(x=>x.text||'').join('').trim();
+          const u=data.usage||{}; const inTok=(u.input_tokens||0)+(u.cache_read_input_tokens||0)+(u.cache_creation_input_tokens||0);
+          return out({ok:true,text,usage:{promptTokenCount:inTok,candidatesTokenCount:u.output_tokens||0,totalTokenCount:inTok+(u.output_tokens||0)},model:m,fellBack:i>0});
+        }
         if(res.ok){
           const text=((data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts)||[])
             .filter(x=>!x.thought).map(x=>x.text||'').join('').trim();
@@ -2166,7 +2190,7 @@ async function aiFetch(url, init){
         }
         const raw=data&&data.error&&data.error.message?data.error.message:`HTTP ${res.status}`;
         lastErr=raw;
-        if(!isTransient(res.status,raw)) return out({ok:false,error:'Gemini API エラー: '+raw,model:m},502);   // 認証ミス等は即中断
+        if(!isTransient(res.status,raw)) return out({ok:false,error:(cl?'Claude API エラー: ':'Gemini API エラー: ')+raw,model:m},502);   // 認証ミス等は即中断
         if(attempt===0){ await delay(800); continue; }
       }catch(e){
         lastErr=(e&&e.message)?e.message:String(e);
@@ -2175,7 +2199,7 @@ async function aiFetch(url, init){
       break;   // このモデルは諦めて次モデルへ
     }
   }
-  return out({ok:false,error:'全モデルが混雑/上限のようです。少し待って再試行してください（最後のエラー: '+lastErr+'）',triedModels:models},502);
+  return out({ok:false,error:(models.length===1&&/未設定|断りました/.test(lastErr))?lastErr:'全モデルが混雑/上限のようです。少し待って再試行してください（最後のエラー: '+lastErr+'）',triedModels:models},502);
 }
 
 // テキストモデルの優先チェーン。cls: 'high'(思考系④⑤) / 'low'(その他)。
@@ -3060,7 +3084,7 @@ async function autoGenerateSlideText(){
   if(!AutoState.sources){ st.textContent='先に①データ取得を実行してください'; return; }
   const resources=autoBuildResources();
   const prompt = autoSlidePrompt();
-  btn.disabled=true; st.textContent='Geminiが生成中…（20〜40秒ほど）';
+  btn.disabled=true; st.textContent=aiName()+'が生成中…（20〜40秒ほど）';
   try{
     const res=await aiFetch('/api/analyze',{
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -3164,7 +3188,7 @@ async function autoGenerateSns(btn, materialOverride){
   if(!material){ st.textContent='先に④スライド文章か④\'全情報を生成してください'; return; }
   const prompt = autoSnsPrompt();
   const resources=[{label:'本日の東証マーケットのデータ・サマリ', text: material}];
-  const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…'; st.textContent='Geminiが生成中…';
+  const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…'; st.textContent=aiName()+'が生成中…';
   try{
     const res=await aiFetch('/api/analyze',{
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -3225,11 +3249,11 @@ async function autoTestGemini(){
   const btn=document.getElementById('autoTestBtn');
   const st=document.getElementById('autoTestStatus');
   const out=document.getElementById('autoTestResult');
-  btn.disabled=true; st.textContent='Geminiに問い合わせ中…'; out.style.display='none'; out.textContent='';
+  btn.disabled=true; st.textContent=aiName()+'に問い合わせ中…'; out.style.display='none'; out.textContent='';
   try{
     const res=await aiFetch('/api/analyze',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ prompt:'「接続テスト成功」とだけ日本語で返してください。', models:['gemini-3.5-flash-lite'] })
+      body:JSON.stringify({ prompt:'「接続テスト成功」とだけ日本語で返してください。', models:[aiName()==='Claude'?document.getElementById('autoModelOverride').value:'gemini-3.5-flash-lite'] })
     });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'不明なエラー');

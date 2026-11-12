@@ -24,7 +24,11 @@ function json(obj, status = 200) {
 export async function onRequestPost(context) {
   const { request, env } = context;
   const key = env.GEMINI_API_KEY;
-  if (!key || key === "xxxxx") {
+  const geminiKey = (!key || key === "xxxxx") ? "" : key;
+  // models に claude-〜 があれば Anthropic（環境変数 ANTHROPIC_API_KEY）を呼ぶ（2026-11-12。決算ツールと同じ）。
+  // ふだんは画面の aiFetch が直接呼ぶので、ここを通るのはキーを画面に渡せないURL（プレビュー等）のときだけ
+  const claudeKey = (!env.ANTHROPIC_API_KEY || env.ANTHROPIC_API_KEY === "xxxxx") ? "" : env.ANTHROPIC_API_KEY;
+  if (!geminiKey && !claudeKey) {
     return json({ ok: false, error: "APIキーが未設定です（.dev.vars の GEMINI_API_KEY を設定してください）" }, 400);
   }
 
@@ -53,6 +57,10 @@ export async function onRequestPost(context) {
   };
   // json: true なら、Gemini に JSON の形で返させる（答えの書き方が崩れて読み取れないのを防ぐ。kessan-tool と同じ）
   if (payload.json === true) body.generationConfig.responseMimeType = "application/json";
+  // Claude 用の本文（資料・JSON指定を同じ意味で組み立てる）
+  const clBody = { max_tokens: 16000, messages: [{ role: "user", content: [{ type: "text", text: fullPrompt }] }] };
+  if (payload.json === true) clBody.system = "答えは JSON だけを出力してください。前置き・説明・コードブロックは付けないでください。";
+  const isClaude = (m) => /^claude-/.test(String(m || ""));
 
   // モデルは配列(models)で優先順に受け取り、上限(429)なら次の下位モデルへフォールバックする。
   const models = (Array.isArray(payload.models) && payload.models.length)
@@ -67,15 +75,35 @@ export async function onRequestPost(context) {
 
   let lastErr = "";
   for (let i = 0; i < models.length; i++) {
-    const m = models[i];
+    const m = models[i], cl = isClaude(m);
+    if (cl && !claudeKey) { lastErr = "Claude のAPIキーが未設定です（ANTHROPIC_API_KEY）"; continue; }
+    if (!cl && !geminiKey) { lastErr = "Gemini のAPIキーが未設定です"; continue; }
     for (let attempt = 0; attempt < 2; attempt++) {   // 各モデル最大2回（一時エラー時に1回リトライ）
       try {
-        const res = await fetch(ENDPOINT(m, key), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        const res = cl
+          ? await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-api-key": claudeKey, "anthropic-version": "2026-10-21" },
+              body: JSON.stringify({ ...clBody, model: m }),
+            })
+          : await fetch(ENDPOINT(m, geminiKey), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
         const data = await res.json();
+        if (res.ok && cl) {
+          // 安全側で断られたとき（stop_reason: refusal）は、このモデルを諦めて次へ
+          if (data.stop_reason === "refusal") {
+            lastErr = "Claude が回答を断りました" + (data.stop_details && data.stop_details.explanation ? "：" + data.stop_details.explanation : "");
+            break;
+          }
+          const text = (data.content || []).filter((x) => x.type === "text").map((x) => x.text || "").join("").trim();
+          const u = data.usage || {};
+          const inTok = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+          const usage = { promptTokenCount: inTok, candidatesTokenCount: u.output_tokens || 0, totalTokenCount: inTok + (u.output_tokens || 0) };
+          return json({ ok: true, text, usage, model: m, fellBack: i > 0 });
+        }
         if (res.ok) {
           const text =
             (data.candidates && data.candidates[0] && data.candidates[0].content &&
@@ -86,7 +114,7 @@ export async function onRequestPost(context) {
         const raw = data && data.error && data.error.message ? data.error.message : `HTTP ${res.status}`;
         lastErr = raw;
         // 一時エラー以外（認証ミス等）は即中断
-        if (!isTransient(res.status, raw)) return json({ ok: false, error: "Gemini API エラー: " + raw, model: m }, 502);
+        if (!isTransient(res.status, raw)) return json({ ok: false, error: (cl ? "Claude API エラー: " : "Gemini API エラー: ") + raw, model: m }, 502);
         if (attempt === 0) { await delay(800); continue; }  // 同モデルで1回リトライ
       } catch (e) {
         lastErr = (e && e.message) ? e.message : String(e);
