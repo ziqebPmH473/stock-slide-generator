@@ -46,7 +46,7 @@ function usFillSettings(){
   for(const k of Object.keys(US_DEFAULT_SET)){ const el = document.getElementById('usSet_' + k); if(el) el.value = s[k]; }
 }
 function usPersist(){
-  const o = { data: US.data, report: US.report, script: US.script, snsThumb: US.snsThumb, snsX: US.snsX, step: US.step };
+  const o = { data: US.data, report: US.report, script: US.script, snsThumb: US.snsThumb, snsX: US.snsX, step: US.step, cal: US.cal || null };
   try{ localStorage.setItem(US_STATE_KEY, JSON.stringify(o)); }catch(e){ console.warn('米国版の保存に失敗', e); }
 }
 function usRestore(){
@@ -144,6 +144,7 @@ async function usFetch(btn){
   usStatus('usFetchStatus', '取得中…（指数・決算・変動率の高い銘柄）');
   try{
     const get = async (o) => { const r = await fetch('/api/us-sources?' + q(o), { cache: 'no-store' }); const j = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` })); if(!r.ok && !j.error) j.error = `HTTP ${r.status}`; return j; };
+    const calP = usFetchCalendar();   // 休みのカレンダー（確定／取引中の判定に使う）
     const [m, e, v] = await Promise.all([
       get({ part: 'markets' }),
       get({ part: 'earnings', must, mcap: s.mcap, max: s.max, eu: s.eu, ed: s.ed, su: s.su, sd: s.sd }),
@@ -152,6 +153,7 @@ async function usFetch(btn){
     const err = [m, e, v].filter(x => !x.ok).map(x => x.error).filter(Boolean);
     if(!m.markets && !e.earnings) throw new Error(err.join(' / ') || '取得できませんでした');
     US.data = { fetchedAt: new Date().toISOString(), targetDate: m.targetDate || e.targetDate, prevDate: m.prevDate || e.prevDate, markets: m.markets || null, earnings: e.earnings || null, movers: v.movers || null };
+    await calP;
     usPersist(); usRenderAll();
     usStatus('usFetchStatus', '日本語の社名を取得中…（株探）');
     await usFetchNames().catch(() => {});
@@ -182,14 +184,16 @@ function usRenderMarkets(){
     rows.push(`<tr><th colspan="4" class="us-sec">${sc}. ${US_SCENE_LABEL[sc]}</th></tr>`);
     if(sc === 3 && m.nikkeiFutures){
       const f = m.nikkeiFutures;
-      rows.push(`<tr><td>日経先物（${autoEsc(f.source)}）</td><td class="num">${usFmt(f.value, 0)}</td><td class="num ${usCls(f.vsNk225)}">日経平均比 ${usSign(f.vsNk225, 0)}</td><td class="mut">${autoEsc(f.time || '')}${f.note ? '・' + autoEsc(f.note) : ''}</td></tr>`);
+      rows.push(`<tr><td>日経先物（${autoEsc(f.source)}）</td><td class="num">${usFmt(f.value, 0)}</td><td class="num ${usCls(f.vsNk225)}">日経平均比 ${usSign(f.vsNk225, 0)}</td><td class="mut">${usFixed('futures') ? '確定' : '取引中'}・${autoEsc(f.time || '')}${f.note ? '・' + autoEsc(f.note) : ''}</td></tr>`);
     }
     for(const r of m.markets.filter(x => x.scene === sc)){
       const chg = r.key === 'us10y' && r.changeBp !== undefined ? `${usSign(r.changeBp, 1)}bp` : usSign(r.change);
-      rows.push(`<tr><td>${autoEsc(r.name)}</td><td class="num">${r.error ? '－' : usFmt(r.value, r.key === 'usdjpy' || r.key === 'us10y' ? 3 : 2)}${r.unit === '%' ? '%' : ''}</td><td class="num ${usCls(r.pct)}">${r.error ? autoEsc(r.error) : chg + '（' + usPct(r.pct) + '）'}</td><td class="mut">${autoEsc(r.source || '')}${r.note ? '・' + autoEsc(r.note) : ''}</td></tr>`);
+      rows.push(`<tr><td>${autoEsc(r.name)}</td><td class="num">${r.error ? '－' : usFmt(r.value, r.key === 'usdjpy' || r.key === 'us10y' ? 3 : 2)}${r.unit === '%' ? '%' : ''}</td><td class="num ${usCls(r.pct)}">${r.error ? autoEsc(r.error) : chg + '（' + usPct(r.pct) + '）'}</td><td class="mut">${r.error ? '' : (usFixed(r.key) ? '確定・' : '取引中・')}${autoEsc(r.source || '')}${r.note ? '・' + autoEsc(r.note) : ''}</td></tr>`);
     }
   }
-  el.innerHTML = `<table class="us-tbl">${rows.join('')}</table>`;
+  const c = US.cal;
+  const calNote = c ? `休みのカレンダー：${autoEsc(c.until || '')} まで（米国＝${autoEsc((c.sources || {}).usHolidays || '')}・日本＝${autoEsc((c.sources || {}).jpHolidays || '')}・祝日取引＝${autoEsc((c.sources || {}).holidayTrading || '')}）${(c.errors || []).length ? '　⚠ ' + autoEsc(c.errors.join(' / ')) : ''}` : '⚠ 休みのカレンダーが取れていません（土日だけで判定しています）';
+  el.innerHTML = `<table class="us-tbl">${rows.join('')}</table><div class="mut" style="margin-top:4px;">「確定」＝取った時点で取引が止まっている値（台本で数字を読んでよい）。「取引中」＝動いている可能性がある値（台本では方向と％だけ）。${calNote}</div>`;
 }
 
 // 決算の行に、AI が補った実績と天気・ガイダンス・コメントを重ねる
@@ -267,18 +271,56 @@ function usRenderMovers(){
 // ---------- 数字を読んでよいか（確定／取引中）の決まり（2026-11-14 すみぽん）----------
 // 台本で細かい数字まで読んでよいのは、データを取った時点で取引が止まっていて、動画を見るときも変わらない値だけ。
 //   米国の指数（ダウ・S&P500・ナスダック・SOX・ラッセル2000・VIX）… 対象日の終値なので、いつでも確定
-//   日経平均先物（大阪）… 夜間取引は朝6:00に終わり、日中取引は8:45に始まる。取ったのが 6:00〜8:45 の間、または土曜の6:00〜月曜の8:45 なら確定
-//   ドル円・米10年債・金・原油 … 平日は動き続ける。取ったのが土曜の7:00〜月曜の7:00（週末で止まっている間）なら確定
-//   ビットコイン … 週末も動くので、いつでも取引中
+//   日経平均先物（大阪）… 取引しているのは、取引のある日の 8:45〜15:45 と、その日の 17:00〜翌朝 6:00（日本時間）。それ以外は確定。
+//       取引のある日＝平日。ただし日本の祝日と 12/31〜1/3 は、JPX の「祝日取引」を実施する日だけ
+//   米10年債・金・原油 … 取引しているのは、米国の取引のある日の 17:00 まで（ニューヨーク時間）と、翌日が取引のある日の 17:00 から（17:00〜18:00 の毎日の休み時間は、すぐ再開するので止まっている扱いにしない）。それ以外は確定
+//       取引のある日＝平日で、米国の休場日（NYSE）でない日。休場日は金・原油の電子取引が動いていることがあるが、止まっている扱いにする
+//   ドル円 … 週末（ニューヨークの金曜 17:00〜日曜 17:00）と、元日・クリスマス（1/1・12/25）は確定。米国の休場日でも為替は動くので取引中
+//   ビットコイン … 週末も休日も動くので、いつでも取引中
 //   時間外の株価 … 取った時点の値。米国の20時（日本時間 朝9時か10時）まで動くので取引中
-// 時刻はどれも日本時間。祝日は見ていない（祝日で止まっていても「取引中」扱いになるだけで、読み方が控えめになる）
+// 休みの日は /api/market-calendar（サーバーに保管したカレンダー。US.cal）で見る。カレンダーが無いときは土日だけで判定する
+function usDow(isoDate){ return new Date(isoDate + 'T12:00:00Z').getUTCDay(); }
+function usAddDays(isoDate, n){ return new Date(Date.parse(isoDate + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10); }
+// その場所の日付と、0時からの分
+function usLocal(at, tz){
+  const p = {}; for(const x of new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(at))) p[x.type] = x.value;
+  return { date: `${p.year}-${p.month}-${p.day}`, min: (+p.hour % 24) * 60 + +p.minute };
+}
+// 大阪の先物の取引がある日か
+function usOsakaDay(d){
+  const w = usDow(d); if(w === 0 || w === 6) return false;
+  const jp = (US.cal && US.cal.jp) || {};
+  const closed = (jp.holidays || []).includes(d) || /-(12-31|01-01|01-02|01-03)$/.test(d);
+  return closed ? (jp.holidayTrading || {})[d] === true : true;
+}
+// 米国の取引がある日か（NYSE）
+function usNyDay(d){
+  const w = usDow(d); if(w === 0 || w === 6) return false;
+  return !(((US.cal && US.cal.us) || {}).holidays || []).includes(d);
+}
 function usFixed(key, at){
   if(['dji', 'spx', 'ixic', 'sox', 'rut', 'vix'].includes(key)) return true;
   if(key === 'btc') return false;
-  const t = new Date(new Date(at || (US.data && US.data.fetchedAt) || Date.now()).getTime() + 9 * 3600 * 1000);
-  const day = t.getUTCDay(), min = t.getUTCHours() * 60 + t.getUTCMinutes();
-  if(key === 'futures') return (min >= 360 && min < 525) || (day === 6 && min >= 360) || day === 0 || (day === 1 && min < 525);
-  return (day === 6 && min >= 420) || day === 0 || (day === 1 && min < 420);   // usdjpy・us10y・gold・wti
+  const when = at || (US.data && US.data.fetchedAt) || Date.now();
+  if(key === 'futures'){
+    const t = usLocal(when, 'Asia/Tokyo');
+    const open = (usOsakaDay(t.date) && ((t.min >= 525 && t.min < 945) || t.min >= 1020)) || (t.min < 360 && usOsakaDay(usAddDays(t.date, -1)));
+    return !open;
+  }
+  const t = usLocal(when, 'America/New_York');
+  if(key === 'usdjpy'){
+    const fxDay = (d) => { const w = usDow(d); return w !== 0 && w !== 6 && !/-(01-01|12-25)$/.test(d); };
+    return !((fxDay(t.date) && t.min < 1020) || (t.min >= 1020 && fxDay(usAddDays(t.date, 1))));
+  }
+  // us10y・gold・wti。17:00〜18:00 の毎日の休み時間は、すぐ再開するので止まっている扱いにしない
+  return !((usNyDay(t.date) && t.min < 1020) || (t.min >= 1020 && usNyDay(usAddDays(t.date, 1))));
+}
+// カレンダーを取る（サーバーが保管している。期限が近ければサーバーが取り直す）。取れなければ前のものを使う
+async function usFetchCalendar(){
+  try{
+    const r = await fetch('/api/market-calendar', { cache: 'no-store' }); const c = await r.json();
+    if(c && c.ok && c.jp && c.us){ US.cal = { fetchedAt: c.fetchedAt, until: c.until, jp: c.jp, us: c.us, sources: c.sources, errors: c.errors || [] }; usPersist(); }
+  }catch(e){ console.warn('カレンダーを取れませんでした', e); }
 }
 // 取った時刻（日本時間）「11/14 7:02」
 function usFetchedJst(){
