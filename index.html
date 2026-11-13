@@ -11,6 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="meigara-dict.js"></script>
+<script src="us.js"></script>
 <script>
 // ==================== 操作の記録：押したボタンを /api の呼び出しに付ける（2026-11-14）====================
 // アカウントごとの回数を「ボタン1回＝1回」で数え、どのボタンの操作かを管理画面で見るため。
@@ -229,6 +230,40 @@ body.mode-full #vThumbBtn { display:none; }
 #tabWeekly label { font-size:12px; }
 #tabWeekly select { min-height:32px; }
 
+/* 上のタブが5つになったので、スマホでは縦に潰さず横にスクロールさせる（2026-11-14） */
+.tab-bar { overflow-x:auto; scrollbar-width:thin; }
+.tab-btn { white-space:nowrap; flex-shrink:0; }
+/* ===== 米国版（#tabUs。us.js）===== */
+#tabUs .card { padding:9px 11px; margin-bottom:0; display:none; }
+#tabUs .card.current { display:block; }
+#tabUs .card h2 { margin-bottom:5px; font-size:12px; }
+#tabUs .card > p { font-size:11px; margin-bottom:6px; line-height:1.5; color:var(--muted); }
+#tabUs .btn { width:auto; display:inline-block; padding:7px 16px; font-size:13px; margin-bottom:0; }
+#tabUs textarea { min-height:72px; margin-top:4px; }
+#tabUs .auto-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:4px; font-size:12px; }
+#tabUs input[type=text], #tabUs input[type=number], #tabUs input[type=date] { background:var(--bg); border:1px solid var(--border); color:var(--text); padding:4px 6px; border-radius:5px; font-size:12px; }
+#tabUs .mut { color:var(--muted); font-size:11px; }
+.us-sum { font-size:12px; font-weight:600; color:var(--text); cursor:pointer; }
+.us-scroll { overflow-x:auto; }
+.us-tbl { border-collapse:collapse; width:100%; font-size:12px; margin-top:4px; }
+.us-tbl th, .us-tbl td { border-bottom:1px solid var(--border); padding:4px 6px; text-align:left; vertical-align:top; }
+.us-tbl th { color:var(--muted); font-weight:600; white-space:nowrap; }
+.us-tbl th.us-sec { color:var(--text); background:#0b1324; }
+.us-tbl td.num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.us-tbl td.us-cmt { min-width:180px; }
+.us-tbl tr.us-off { opacity:.45; }
+.us-tbl .pos, .us-mv .pos { color:#f87171; }
+.us-tbl .neg, .us-mv .neg { color:#4ade80; }
+.us-ai { font-size:10px; font-weight:700; background:#7c2d12; color:#fdba74; border-radius:4px; padding:0 4px; margin-left:3px; }
+.us-must { font-size:10px; background:#1e3a5f; border-radius:4px; padding:0 4px; }
+.us-mvs { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; font-size:12px; }
+.us-mv { display:grid; grid-template-columns:56px 1fr auto; gap:4px; border-bottom:1px solid var(--border); padding:2px 0; }
+.us-warn { font-size:12px; background:#3b2a0a; border:1px solid #a16207; color:#fde68a; border-radius:6px; padding:6px 8px; margin:6px 0; }
+.us-err { font-size:12px; color:#f87171; margin:6px 0; }
+.us-rep ol { margin:4px 0 8px 18px; font-size:12px; }
+.us-rep li { margin-bottom:4px; }
+@media (max-width:700px){ .us-mvs { grid-template-columns:1fr; } }
+
 /* ===== 自動版：ステップウィザード（1画面1工程）===== */
 .astep-head { position:sticky; top:0; z-index:30; background:var(--bg); padding:6px 0 10px; margin-bottom:14px; border-bottom:1px solid var(--border); }
 .astep-titlebar { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
@@ -277,6 +312,7 @@ body.mode-full #vThumbBtn { display:none; }
 
 <div class="tab-bar">
   <button class="tab-btn" id="tabBtnFull" onclick="switchTab('full')" title="自動版＋動画（MP4）。取得データ・台本などは自動版と共通">全自動版<span class="tab-badge beta">NEW</span></button>
+  <button class="tab-btn" id="tabBtnUs" onclick="switchTab('us')" title="米国市場の振り返り（全自動）。東証版とは別の作業">米国版<span class="tab-badge beta">試作</span></button>
   <button class="tab-btn" id="tabBtnWeekly" onclick="switchTab('weekly')" title="1週間ぶんの日別データを、場面ごとの画像（Instagram の画像投稿用）にまとめる">週間まとめ</button>
   <button class="tab-btn" id="tabBtnAuto" onclick="switchTab('auto')">自動版<span class="tab-badge beta">BETA</span></button>
   <button class="tab-btn active" id="tabBtnManual" onclick="switchTab('manual')">手動版</button>
@@ -922,6 +958,98 @@ Appier G|4180|818|+96|+13.30%
   </div>
   <div id="autoStatusBar"><span class="spin"></span><span id="autoStatusMsg">処理中…</span></div>
 </div><!-- /#tabAuto -->
+
+<!-- 米国版（全自動）：東証版とは別の作業・別の保存（us.js）。2026-11-14 -->
+<div id="tabUs" class="tab-panel">
+  <div class="astep-head">
+    <div class="astep-pills" id="usPills">
+      <button class="astep-pill active" data-k="1" onclick="usStep('1')"><b>①</b>取得・抽出</button>
+      <button class="astep-pill" data-k="2" onclick="usStep('2')"><b>②</b>ファクトCK</button>
+      <button class="astep-pill" data-k="v" onclick="usStep('v')"><b>③</b>動画</button>
+      <button class="astep-pill" data-k="n" onclick="usStep('n')"><b>④</b>SNS</button>
+      <button class="astep-pill" data-k="s" onclick="usStep('s')" style="margin-left:6px;"><b>⚙</b>設定</button>
+    </div>
+  </div>
+
+  <div class="card us-step" data-step="s">
+    <h2>⚙ 設定（米国版）</h2>
+    <div class="auto-row"><strong>必ず載せる銘柄</strong><input id="usSet_must" type="text" onchange="usSaveSettings()" style="flex:1;min-width:220px;" placeholder="AAPL MSFT …（スペース区切り）"></div>
+    <p>決算一覧に、値動きが小さい日でも必ず載せるティッカー（初期値は Mag7）。その日に決算を出していなければ載りません。変えたら①の「データ取得」を押し直してください。</p>
+    <div class="auto-row"><strong>決算の時価総額</strong><input id="usSet_mcap" type="number" step="1" min="0" onchange="usSaveSettings()" style="width:80px;"> 十億ドル以上
+      <strong style="margin-left:12px;">載せる数</strong><input id="usSet_max" type="number" step="1" min="1" max="16" onchange="usSaveSettings()" style="width:60px;"> 銘柄まで（1ページ8銘柄・最大2ページ）</div>
+    <div class="auto-row"><strong>変動率の高い銘柄の時価総額</strong><input id="usSet_moversCap" type="number" step="0.5" min="0" onchange="usSaveSettings()" style="width:70px;"> 十億ドル以上</div>
+    <div class="auto-row"><strong>天気の幅（％）</strong>
+      EPS 晴れ <input id="usSet_eu" type="number" step="0.5" onchange="usSaveSettings()" style="width:60px;">以上・雨 <input id="usSet_ed" type="number" step="0.5" onchange="usSaveSettings()" style="width:60px;">より下
+      ／ 売上 晴れ <input id="usSet_su" type="number" step="0.1" onchange="usSaveSettings()" style="width:60px;">以上・雨 <input id="usSet_sd" type="number" step="0.1" onchange="usSaveSettings()" style="width:60px;">より下</div>
+    <p>予想との差がこの幅の間なら曇り。EPS の予想が ±0.10ドル未満のときは、上回ったか下回ったかだけで決めます。幅はたたき台で、実データを見て直します（変えるとすぐ表に反映）。</p>
+    <div class="auto-row"><strong>固定ハッシュタグ</strong><input id="usSet_hashtags" type="text" onchange="usSaveSettings()" style="flex:1;min-width:180px;" placeholder="例：#米国株"></div>
+    <p>X投稿文の末尾に付けます。テキストモデルは東証版の ⚙設定 と同じものを使います。</p>
+    <div class="auto-row" style="margin-top:6px;"><button class="btn-sm" onclick="usReset()">🗑 米国版の作業を消す</button></div>
+  </div>
+
+  <div class="card us-step" data-step="1">
+    <h2>① データ取得・抽出（米国）</h2>
+    <div class="auto-row">
+      <label>対象日（米国）</label>
+      <input type="date" id="usDate" title="空欄なら、取引が終わった直近の日">
+      <button class="btn-sm" data-btn="米国版 ① データ取得" onclick="usFetch(this)">🔄 データ取得</button>
+      <span id="usDateInfo" class="mut"></span>
+    </div>
+    <div id="usFetchStatus" class="mut"></div>
+    <details open style="margin-top:8px;"><summary class="us-sum">指数・為替・金利・商品（場面1〜4）</summary><div id="usMarkets"></div></details>
+    <details open style="margin-top:8px;"><summary class="us-sum">決算一覧（場面7。チェックした銘柄を載せる）</summary><div id="usEarnings"></div></details>
+    <details style="margin-top:8px;"><summary class="us-sum">変動率の高い銘柄（候補）</summary><div id="usMovers"></div></details>
+    <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
+      <button class="btn-copy" onclick="usCopyCollect(this)">📋 AI収集プロンプト</button>
+      <span class="mut">ChatGPT などに貼り、ニュース・個別株・決算のコメントとガイダンスを調べさせます（回答は JSON）。</span>
+    </div>
+  </div>
+
+  <div class="card us-step" data-step="2">
+    <h2>② ファクトチェック（米国）</h2>
+    <div class="auto-row">
+      <button class="btn-sm" onclick="usPasteReport(this)">📋 貼付</button>
+      <button class="btn-sm" onclick="document.getElementById('usReport').value='';usReportChanged();">✕ クリア</button>
+    </div>
+    <textarea id="usReport" placeholder="AI の回答（JSON）を貼付" oninput="usReportChanged()" style="min-height:140px;"></textarea>
+    <div class="auto-row" style="margin-top:6px;">
+      <button class="btn-copy" onclick="usCopyFactCheck(this)">✅ CK</button>
+      <button class="btn-copy" onclick="autoClip('修正後内容が正しいか確認して', this)">🔍 FCCK</button>
+      <button class="btn-copy" onclick="autoClip(AP_FIX_PROMPT, this)">🔧 修正</button>
+    </div>
+    <div id="usReportView"></div>
+    <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
+      <button class="btn" data-btn="米国版 ② ファクトチェック完了" onclick="usRunAll(this)">ファクトチェック完了</button>
+      <span class="mut">台本とサムネ案・X投稿文を AI で作り、③動画へ進みます。</span>
+    </div>
+  </div>
+
+  <div class="card us-step" data-step="v">
+    <h2>③ 動画（米国）</h2>
+    <div class="us-warn">米国の場面（その他の指数・日本への影響・金利と資産・個別株・決算一覧）は、動画の部品にまだ入っていません。いまは場面のデータと台本までを作ります。</div>
+    <div class="auto-row" style="margin-top:6px;"><strong>台本</strong>
+      <button class="btn-sm" data-btn="米国版 台本の再生成" onclick="usRegen('script', this)">🔁 再生成</button>
+      <button class="btn-mini" onclick="usCopy('usScript', this)">📋</button>
+      <span id="usScriptStatus" class="mut"></span></div>
+    <textarea id="usScript" oninput="usScriptChanged()" style="min-height:260px;"></textarea>
+    <div class="auto-row" style="margin-top:8px;"><strong>場面のデータ</strong>
+      <button class="btn-mini" onclick="usCopyVideoData(this)" title="動画の部品に渡す形（JSON）をコピー">📋</button></div>
+    <div id="usVideoData"></div>
+  </div>
+
+  <div class="card us-step" data-step="n">
+    <h2>④ SNS（米国）</h2>
+    <div class="auto-row"><strong>サムネ案</strong>
+      <button class="btn-sm" data-btn="米国版 サムネ案の再生成" onclick="usRegen('sns', this)">🔁 再生成</button>
+      <button class="btn-mini" onclick="usCopy('usSnsThumb', this)">📋</button>
+      <span id="usSnsStatus" class="mut"></span></div>
+    <textarea id="usSnsThumb" oninput="usSnsChanged()" style="min-height:110px;"></textarea>
+    <div class="auto-row" style="margin-top:8px;"><strong>X投稿文</strong>
+      <button class="btn-mini" onclick="usCopy('usSnsX', this)">📋</button></div>
+    <textarea id="usSnsX" oninput="usSnsChanged()" style="min-height:140px;"></textarea>
+  </div>
+</div><!-- /#tabUs -->
+
 
 <!-- 週間まとめ：日次の作業（日を選んで進める）とは別の入口。週を選んで、保存してある各日のデータから画像を作る -->
 <div id="tabWeekly" class="tab-panel">
@@ -2077,9 +2205,18 @@ function autoPlaceBlocks(full){
 }
 function switchTab(name){
   // 週間まとめは日次の画面とは別。全自動版／自動版の切り替え（部品の置き場所）には触らず、表示だけ切り替える
-  const weekly = name === 'weekly';
+  // 米国版も週間まとめと同じく、東証版の日次の画面とは別。表示だけ切り替える
+  const weekly = name === 'weekly', us = name === 'us';
   document.getElementById('tabWeekly').classList.toggle('active', weekly);
   document.getElementById('tabBtnWeekly').classList.toggle('active', weekly);
+  document.getElementById('tabUs').classList.toggle('active', us);
+  document.getElementById('tabBtnUs').classList.toggle('active', us);
+  if(us){
+    for(const id of ['tabManual','tabAuto']) document.getElementById(id).classList.remove('active');
+    for(const id of ['tabBtnManual','tabBtnAuto','tabBtnFull']) document.getElementById(id).classList.remove('active');
+    try{ usInit(); }catch(e){ console.warn(e); }
+    return;
+  }
   if(weekly){
     for(const id of ['tabManual','tabAuto']) document.getElementById(id).classList.remove('active');
     for(const id of ['tabBtnManual','tabBtnAuto','tabBtnFull']) document.getElementById(id).classList.remove('active');
