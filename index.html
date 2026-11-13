@@ -1026,8 +1026,18 @@ Appier G|4180|818|+96|+13.30%
 
   <div class="card us-step" data-step="v">
     <h2>③ 動画（米国）</h2>
-    <div class="us-warn">米国の場面（その他の指数・日本への影響・金利と資産・個別株・決算一覧）は、動画の部品にまだ入っていません。いまは場面のデータと台本までを作ります。</div>
-    <div class="auto-row" style="margin-top:6px;"><strong>台本</strong>
+    <div class="auto-row"><strong>動画</strong>
+      <button class="btn-sm" data-btn="米国版 動画のデータを作る" onclick="usVidBuild(this)" title="取得データ・レポート・台本から動画の場面を作り直す（AI は呼ばない）">🎬 動画のデータを作る</button>
+      <button class="btn-sm" data-btn="米国版 一言・まとめを AI で作る" onclick="usVidScreenAi(this)" title="冒頭に大きく出す一言と、最後のまとめを AI で作る">✍ 一言・まとめを AI で作る</button>
+      <span id="usVidStatus" class="mut"></span></div>
+    <div class="auto-row"><strong>サムネの文言</strong>
+      <input id="usThumbText" type="text" onchange="usThumbChanged()" style="flex:1;min-width:240px;" placeholder="上段：中段：下段（*赤* #青# %黄%）">
+      <span class="mut">横動画の最初に入れます（空欄なら入れない）。初期値は④のサムネ案の最有力。</span></div>
+    <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-top:8px;">
+      <div id="usVidControls" style="flex:6 1 420px;min-width:0;background:#fff;color:#1f2937;border-radius:8px;padding:8px 10px;display:none;"></div>
+      <div id="usVidPreview" class="vid-preview" style="flex:4 1 320px;min-width:0;"></div>
+    </div>
+    <div class="auto-row" style="margin-top:10px;"><strong>台本</strong>
       <button class="btn-sm" data-btn="米国版 台本の再生成" onclick="usRegen('script', this)">🔁 再生成</button>
       <button class="btn-mini" onclick="usCopy('usScript', this)">📋</button>
       <span id="usScriptStatus" class="mut"></span></div>
@@ -1039,6 +1049,10 @@ Appier G|4180|818|+96|+13.30%
 
   <div class="card us-step" data-step="n">
     <h2>④ SNS（米国）</h2>
+    <div class="auto-row"><strong>動画</strong>
+      <!-- 書き出しのボタンは動画の部品が置く（③動画で動画のデータを作ったあと） -->
+      <span id="usVidExport"></span><span id="usVidExportV"></span>
+      <span class="mut" id="usVidExportHint">③動画で「動画のデータを作る」を押すと、ここに書き出しのボタンが出ます。</span></div>
     <div class="auto-row"><strong>サムネ案</strong>
       <button class="btn-sm" data-btn="米国版 サムネ案の再生成" onclick="usRegen('sns', this)">🔁 再生成</button>
       <button class="btn-mini" onclick="usCopy('usSnsThumb', this)">📋</button>
@@ -1353,7 +1367,7 @@ function apDoReset(){
   try {
     const rq=indexedDB.open('kessan-viz-audio',1);
     rq.onupgradeneeded=()=>rq.result.createObjectStore('kv');
-    rq.onsuccess=()=>{ const db=rq.result; try{ const st=db.transaction('kv','readwrite').objectStore('kv'); const c=st.openCursor(); c.onsuccess=()=>{ const cur=c.result; if(!cur){ db.close(); return; } if(String(cur.key).startsWith('tse/')) cur.delete(); cur.continue(); }; }catch(e){ db.close(); } };
+    rq.onsuccess=()=>{ const db=rq.result; try{ const st=db.transaction('kv','readwrite').objectStore('kv'); const c=st.openCursor(); c.onsuccess=()=>{ const cur=c.result; if(!cur){ db.close(); return; } if(String(cur.key).startsWith('tse/') && !ssgIsUsAudio(cur.key)) cur.delete(); cur.continue(); }; }catch(e){ db.close(); } };
   } catch(e){}
   if (typeof AutoState === 'object'){ AutoState.sources=null; AutoState.meigaraTable=''; AutoState.slideText=''; }
   for (const id of AP_STORAGE_IDS){
@@ -3591,8 +3605,10 @@ async function ssgStateExport(btn){
 // サーバーの1日分やファイルで置き換えるとき、そちらに BGM が無ければこの端末のものを残す（新しい日を BGM の無い端末が先に始めても消えないように）
 const SSG_COMMON_LS=[SSG_PREFIX+'bgm-sel'];
 const ssgCommonRow=(name,key)=> name==='ssg-bgm' || (name==='kessan-viz-audio' && String(key).startsWith('_common/'));
+// 米国版の動画の読み上げ（部品の保存先 kessan-viz-audio の tse/us-日付/…）は東証版の作業ではない。東証版の保存・読み込み・日替わりの消去では触らない（2026-11-14）
+function ssgIsUsAudio(key){ return String(key).startsWith('tse/us-'); }
 async function ssgKeepCommon(name, rows){
-  let local=[]; try{ local=(await ssgKvDump(name)).filter(r=>ssgCommonRow(name, r.key)); }catch(e){ return rows; }
+  let local=[]; try{ local=(await ssgKvDump(name)).filter(r=>ssgCommonRow(name, r.key) || (name==='kessan-viz-audio' && ssgIsUsAudio(r.key))); }catch(e){ return rows; }
   if(!local.length) return rows;
   if(name==='ssg-bgm'){ const idx=rows.find(r=>r.key===SSG_BGM_IDX); if(idx && Array.isArray(idx.value) && idx.value.length) return rows; return rows.filter(r=>!ssgCommonRow(name, r.key)).concat(local); }
   const have=new Set(rows.map(r=>r.key)); return rows.concat(local.filter(r=>!have.has(r.key)));
@@ -3682,6 +3698,7 @@ async function ssgSyncCollect(){
     idb[name]=[];
     let rows=[]; try{ rows=await ssgKvDump(name); }catch(e){ continue; }
     for(const r of rows){
+      if(name==='kessan-viz-audio' && ssgIsUsAudio(r.key)) continue;   // 米国版の読み上げは東証版の回に入れない
       const sig=JSON.stringify(await ssgSig(r.value, name==='ssg-images'));
       const part=await ssgHexStr(name+'\n'+JSON.stringify(r.key)+'\n'+sig);
       idb[name].push({ key:r.key, part });
@@ -3862,7 +3879,7 @@ function ssgSyncBoot(){
 
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = 'b4ca8cb1e2';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '46830bbacd';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }

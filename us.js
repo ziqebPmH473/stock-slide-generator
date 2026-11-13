@@ -54,6 +54,7 @@ function usRestore(){
 function usReset(){
   if(!confirm('米国版の作業（取得データ・レポート・台本・投稿文）を消して最初からにします。よろしいですか？')) return;
   US = { data: null, report: '', parsed: null, script: '', snsThumb: '', snsX: '', step: '1' };
+  try{ localStorage.removeItem('ssgus_video'); }catch(e){}
   usPersist(); usRenderAll(); usStep('1');
 }
 
@@ -64,6 +65,8 @@ function usStep(k){
   document.querySelectorAll('#usPills .astep-pill').forEach(p => p.classList.toggle('active', p.dataset.k === k));
   window.scrollTo(0, 0);
   if(k === 'v') usRenderVideo();
+  // ③動画・④SNS（書き出しのボタンは部品が置く）を開いたら、前に作った動画のデータがあれば読み込む（AI・読み上げは呼ばない）
+  if((k === 'v' || k === 'n') && typeof usVidOpen === 'function'){ try{ usVidOpen(); }catch(e){ console.warn(e); } }
   usPersist();
 }
 function usStatus(id, msg, cls){
@@ -484,9 +487,11 @@ async function usRunAll(btn){
   const o = btn.textContent; btn.disabled = true;
   usStep('v');
   try{
-    btn.textContent = '生成中…(1/2)'; await usGenScript();
-    btn.textContent = '生成中…(2/2)'; await usGenSns();
+    btn.textContent = '生成中…(1/3)'; await usGenScript();
+    btn.textContent = '生成中…(2/3)'; await usGenSns();
     usRenderVideo();
+    // 動画のデータ → 冒頭の一言とまとめ（AI）。東証版の「ファクトチェック完了」と同じ流れ
+    btn.textContent = '生成中…(3/3)'; await usVidBuild(null, true); await usVidScreenAi(null);
     btn.textContent = '✅ 完了';
   }catch(e){ btn.textContent = '❌ ' + e.message; usStatus('usScriptStatus', '❌ ' + e.message, 'error'); }
   finally{ btn.disabled = false; setTimeout(() => { btn.textContent = o; }, 2500); }
@@ -575,3 +580,185 @@ function usInit(){
   usStep(US.step || '1');
   if(US.script) usStatus('usScriptStatus', `${usScriptChars()}文字（約${Math.round(usScriptChars() / 7)}秒）`);
 }
+
+// ---------- ③ 動画：動画の部品（KessanViz.tse）で米国の場面を描く（2026-11-14）----------
+// 東証の部品（プレビュー・場面ごとの読み上げ・MP4 の書き出し・BGM）をそのまま使い、データに market:"us" を付けて米国の場面の並びにする。
+// 保存は ssgus_video（東証の ssg_video とは別）。音声は部品の IndexedDB に namespace「us-日付」で置く。
+const US_VID_KEY = 'ssgus_video';
+let usVidHandle = null;
+function usVidLoad(){ try{ return JSON.parse(localStorage.getItem(US_VID_KEY) || 'null'); }catch(e){ return null; } }
+function usVidSave(o){ try{ localStorage.setItem(US_VID_KEY, JSON.stringify(o)); }catch(e){ console.warn('米国版の動画の保存に失敗', e); } }
+function usVidStatus(msg, cls){ usStatus('usVidStatus', msg, cls); }
+
+// 台本の区切り → 動画の場面
+const US_NAR_MAP = { cover: 'オープニング', index: '米国指数', usOthers: 'その他の指数', usJapan: '日本への影響', usAssets: '金利・資産', news: 'ニュース', usStocks: '個別株', usEarnings1: '決算', summary: 'まとめ' };
+function usNarration(){
+  const sec = usScriptSections(), out = {};
+  for(const [id, tag] of Object.entries(US_NAR_MAP)){ const v = sec[tag]; if(v) out[id] = { text: v, seconds: null, src: v }; }
+  return out;
+}
+
+// 場面のデータ（usVideoData）→ 動画の部品の TseData
+function usTseData(){
+  const v = usVideoData(); if(!v) return null;
+  const s = v.scenes;
+  const chart = (r) => ({ name: r.name, close: r.value, change: r.change || 0, pct: r.pct || 0, points: (r.history || []).map(p => ({ date: p.date, close: p.close })) });
+  const q = (r, o = {}) => r ? Object.assign({ name: r.name, value: r.value, change: r.change, pct: r.pct, decimals: 2 }, o) : null;
+  const by = (arr, key) => arr.find(r => r.key === key);
+  const f = s.japan.futures;
+  const japan = [];
+  if(f && f.value != null){
+    const d = Math.round(usN(f.vsNk225) || 0);
+    japan.push({ name: `日経平均先物（${f.source}）`, value: f.value, unit: '円', decimals: 0, change: f.vsNk225 == null ? null : d,
+      changeLabel: '日経平均比', changeText: f.vsNk225 == null ? undefined : `${d > 0 ? '+' : d < 0 ? '-' : '±'}${Math.abs(d).toLocaleString('en-US')}円`,
+      note: `${f.time || ''}時点・日経平均の前日終値 ${usFmt(f.nk225Close, 0)}円` });
+  }
+  const jpy = by(s.japan.items, 'usdjpy'); if(jpy) japan.push(q(jpy, { unit: '円', decimals: 2 }));
+  const t10 = by(s.assets.items, 'us10y');
+  const assets = [
+    t10 && q(t10, { unit: '%', decimals: 3, changeText: `${usSign(t10.changeBp, 1)}bp` }),
+    q(by(s.assets.items, 'gold'), { unit: 'ドル', decimals: 1 }),
+    q(by(s.assets.items, 'btc'), { unit: 'ドル', decimals: 0 }),
+    q(by(s.assets.items, 'wti'), { unit: 'ドル', decimals: 2 }),
+  ].filter(Boolean);
+  const after = usEarnRows().filter(r => r.picked && r.afterTime).map(r => r.afterTime)[0] || null;
+  return {
+    market: 'us', brand: '米国マーケット振り返り', date: v.date, headline: '',
+    charts: s.indices.items.map(chart), others: [],
+    contrib: { plus: [], minus: [] }, sectors: { up: [], down: [] }, rise: [], fall: [], trading: [],
+    news: s.news.items.map(n => ({ title: n.title, body: n.detail })), news_image: null, summary: null, thumbnail: null,
+    us: {
+      others: s.otherIndices.items.map(r => q(r)), japan, assets,
+      stocks: s.stocks.items.map(i => ({ symbol: i.symbol, name: i.name, pct: i.pct, headline: i.headline, detail: i.detail })),
+      earnings: s.earnings.pages.map(p => p.map(e => ({ symbol: e.symbol, name: e.name, timing: e.timing, dayPct: e.dayPct, afterPct: e.session === 'afterhours' ? e.afterPct : null, revenue: e.revenue || null, eps: e.eps || null, guidance: e.guidance || null, comment: e.comment || '' }))),
+      afterAsOf: after,
+    },
+  };
+}
+
+// 画面の文（冒頭の一言・まとめ）。東証版の VID_SCREEN_PROMPT と同じ決まり（銘柄の添え物は無し）
+const US_SCREEN_PROMPT = `以下の資料と台本をもとに、この日の米国株式市場を振り返る動画の画面に出す文を作ってください。
+・headline：動画の最初に大きく出す、この日の市場をひと言で表す文。25文字以内。台本のオープニングと同じ内容にしてください。
+・feature：最後の「まとめ」に出す、この日のマーケットの特長がわかる1文。40文字以内。
+・points：まとめに出す注目点を3つ。title は何が起きたかがわかる見出しで15文字以内、body は40文字以内。全ての情報を書かず、注目点だけを選んでください（日本市場への影響を1つ入れてよい）。
+・closing：まとめの図の最後に出す、この日の相場の流れをひと言で表す1文。30文字以内。
+・数字と銘柄名は資料と台本のとおりに書いてください。銘柄名はカタカナの社名にしてください。
+・次の形の JSON だけを出力してください。
+{"headline":"","feature":"","points":[{"title":"","body":""}],"closing":""}`;
+async function usScreenText(){
+  const resources = usResources().concat([{ label: '台本', text: usScriptBody() }]);
+  const res = await aiFetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: US_SCREEN_PROMPT, resources, temperature: 0.3, models: autoModelChain('low'), json: true }) });
+  const d = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
+  if(!d.ok) throw new Error(d.error || '画面の文を作れませんでした');
+  const m = String(d.text || '').match(/\{[\s\S]*\}/); if(!m) throw new Error('画面の文の形が読めませんでした');
+  const o = JSON.parse(m[0].replace(/,\s*([}\]])/g, '$1'));
+  return { headline: String(o.headline || '').trim(), summary: { feature: String(o.feature || '').trim(), closing: String(o.closing || '').trim() || null, points: (Array.isArray(o.points) ? o.points : []).slice(0, 3).map(x => ({ title: String(x.title || '').trim(), body: String(x.body || '').trim() })).filter(x => x.title) } };
+}
+
+// 動画のデータを作る（AI は呼ばない）。台本のその区切りが前と同じなら、前の文と音声の長さを引き継ぐ（東証版の vidBuild と同じ）
+async function usVidBuild(btn, quiet){
+  if(!US.data){ usVidStatus('先に①データ取得をしてください', 'error'); return false; }
+  if(btn) btn.disabled = true;
+  try{
+    const data = usTseData();
+    const prev = usVidLoad() || {};
+    if(prev.data && prev.data.date === data.date){ data.headline = prev.data.headline || ''; data.summary = prev.data.summary || null; }
+    if(!data.headline) data.headline = (usScriptSections()['オープニング'] || '').split(/[。\n]/)[0];
+    let narration = usNarration();
+    const prevNar = (prev.settings && prev.settings.narration) || {};
+    if(!Object.keys(narration).length && Object.keys(prevNar).length) narration = prevNar;
+    for(const [id, v] of Object.entries(narration)){
+      const p0 = prevNar[id]; if(!p0) continue;
+      if(String(p0.src || '').trim() === String(v.src || '').trim()) narration[id] = { text: p0.text, seconds: p0.seconds ?? null, src: v.src };
+    }
+    const settings = Object.assign({}, prev.settings || {}, { narration });
+    usVidSave(Object.assign({}, prev, { data, settings, builtAt: new Date().toISOString() }));
+    await usVidMount(true);
+    if(!quiet) usVidStatus('✅ 動画のデータを作りました' + (data.summary ? '' : '（まとめはまだありません。「一言・まとめを AI で作る」で作れます）'), 'ok');
+    return true;
+  }catch(e){ usVidStatus('❌ ' + e.message, 'error'); return false; }
+  finally{ if(btn) btn.disabled = false; }
+}
+async function usVidScreenAi(btn){
+  const o = usVidLoad();
+  if(!o || !o.data){ if(!(await usVidBuild(null, true))) return; }
+  if(btn) btn.disabled = true;
+  try{
+    usVidStatus('冒頭の一言とまとめを作成中…（AI）');
+    const sc = await usScreenText();
+    const cur = usVidLoad();
+    if(sc.headline) cur.data.headline = sc.headline;
+    cur.data.summary = sc.summary;
+    usVidSave(cur);
+    await usVidMount(true);
+    usVidStatus('✅ 一言・まとめを作りました', 'ok');
+  }catch(e){ usVidStatus('❌ ' + e.message, 'error'); }
+  finally{ if(btn) btn.disabled = false; }
+}
+
+// サムネの文言：④のサムネ案の「最有力」の行（上段／中段／下段）を「：」区切りにして初期値にする
+function usThumbDefault(){
+  const t = String(US.snsThumb || '');
+  const best = (t.match(/最有力[：:]\s*([①②③])/) || [])[1] || '①';
+  const line = t.split(/\r?\n/).find(l => l.trim().startsWith(best)) || '';
+  return line.replace(/^\s*[①②③]\s*/, '').split(/[／/]/).map(x => x.trim()).filter(Boolean).slice(0, 3).join('：');
+}
+function usThumbText(){
+  const el = document.getElementById('usThumbText');
+  const o = usVidLoad() || {};
+  if(el && !el.value.trim() && !o.thumbEdited) el.value = usThumbDefault();
+  return el ? el.value.trim() : '';
+}
+function usThumbChanged(){
+  const o = usVidLoad() || {};
+  o.thumbText = (document.getElementById('usThumbText') || {}).value || ''; o.thumbEdited = true;
+  usVidSave(o);
+  if(usVidHandle) usVidMount(true).catch(e => usVidStatus('❌ ' + e.message, 'error'));
+}
+async function usThumbImage(text){
+  if(!text || typeof slideThumb !== 'function') return null;
+  const box = document.getElementById('renderTarget'); if(!box) return null;
+  box.innerHTML = slideThumb(text);
+  await new Promise(r => setTimeout(r, 200));
+  try{
+    const c = await html2canvas(box.querySelector('.slide'), { width: SLIDE_W, height: SLIDE_H, scale: 1920 / SLIDE_W, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false });
+    return c.toDataURL('image/jpeg', 0.9);
+  }catch(e){ console.warn('米国版のサムネの画像化に失敗', e); return null; }
+  finally{ box.innerHTML = ''; }
+}
+
+// 東証版の vidMount と同じ順番待ち（サムネを画像にする renderTarget を同時に使わない）を通して描く
+function usVidMount(force){ return (typeof vidQueue === 'function' ? vidQueue : (fn => fn()))(() => usVidMountNow(force)); }
+async function usVidMountNow(force){
+  const saved = usVidLoad();
+  const el = document.getElementById('usThumbText');
+  if(el && saved && saved.thumbText != null && !el.value) el.value = saved.thumbText;
+  if(!saved || !saved.data) return;
+  if(usVidHandle && !force) return;
+  const KV = await vidLoadLib();
+  const data = Object.assign({}, saved.data, { thumbnail: await usThumbImage(usThumbText()), thumbnail_portrait: null });
+  const voice = () => (document.getElementById('autoTtsVoice') || {}).value || 'Erinome';
+  const model = () => (document.getElementById('autoTtsModel') || {}).value || undefined;
+  const props = {
+    data, settings: saved.settings || null, namespace: 'us-' + data.date,
+    controlsEl: document.getElementById('usVidControls'),
+    tts: (t) => KV.tse.fetchTts('/api/tts', voice(), model())(t),
+    transcribe: async (blob) => {
+      const res = await fetch('/api/transcribe?lang=ja', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/wav' }, body: blob });
+      let d = {}; try{ d = await res.json(); }catch(e){}
+      if(!res.ok || !d.ok) throw new Error(d.error || ('文字起こしに失敗しました（HTTP ' + res.status + '）'));
+      return { words: d.words || [] };
+    },
+    onChange: (st) => { const o = usVidLoad() || {}; o.settings = st; usVidSave(o); },
+    importBgm: typeof ssgBgmImport === 'function' ? ssgBgmImport : null,
+    exportEl: document.getElementById('usVidExport'),
+    exportElPortrait: document.getElementById('usVidExportV'),
+    exportButton: { className: 'btn-sm', labels: ['🎬 横動画', '🎬 縦動画'] },
+    fileName: `usmarket_${data.date.replace(/-/g, '')}.mp4`,
+  };
+  document.getElementById('usVidControls').style.display = '';
+  const hint = document.getElementById('usVidExportHint'); if(hint) hint.style.display = 'none';
+  if(usVidHandle){ usVidHandle.update(props); return; }
+  usVidHandle = KV.tse.mount(document.getElementById('usVidPreview'), props);
+}
+function usVidOpen(){ usVidMount(!!usVidHandle).catch(e => usVidStatus('❌ ' + e.message, 'error')); }
