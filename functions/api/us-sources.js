@@ -383,10 +383,31 @@ async function partMovers(minCap) {
   return { ok: Object.values(out).some((a) => a.length), asOf: asOf ? jstLabel(asOf) : "", minCap, ...out, errors };
 }
 
+// ---------- 日本語の社名（part=names&symbols=CSCO,NBIS…）----------
+// 株探（米国株）の銘柄ページの og:title「シスコ・システムズ (Cisco Systems, Inc.)【CSCO】」から読む。1回の呼び出しで40銘柄まで
+async function partNames(symbols) {
+  const list = [...new Set(symbols)].slice(0, 40);
+  const names = {};
+  await Promise.all(list.map(async (sym) => {
+    try {
+      const r = await fetch(`https://us.kabutan.jp/stocks/${encodeURIComponent(sym.replace(/-/g, "."))}`, { headers: { "User-Agent": UA, "Accept-Language": "ja" } });
+      if (!r.ok) return;
+      const m = (await r.text()).match(/property=['"]og:title['"]\s+content=["']([^"']+?)\s*[（(][^【]*【/);
+      const ja = m ? m[1].replace(/&amp;/g, "&").trim() : "";
+      if (ja) names[sym] = ja;
+    } catch (e) {}
+  }));
+  return { ok: true, names, missing: list.filter((s) => !names[s]) };
+}
+
 export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
   const sp = url.searchParams;
   const part = sp.get("part") || "all";
+  if (part === "names") {
+    const symbols = (sp.get("symbols") || "").split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter((s) => /^[A-Z0-9.\-]{1,10}$/.test(s));
+    return json({ part, ...(await partNames(symbols)) });
+  }
   const wanted = /^\d{4}-\d{2}-\d{2}$/.test(sp.get("date") || "") ? sp.get("date") : "";
   const fnum = (k, d) => (sp.get(k) !== null && isFinite(parseFloat(sp.get(k))) ? parseFloat(sp.get(k)) : d);
   const out = { fetchedAt: new Date().toISOString(), part };

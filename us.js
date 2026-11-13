@@ -96,6 +96,23 @@ function usHourJa(r){
   return '場中';
 }
 
+// ---------- 日本語の社名（株探の米国株から取る。2026-11-14 すみぽん「日本語表記にしてくれないとわからない」）----------
+// 一度取った名前はブラウザに残す（ssgus_names）。取れなかった銘柄は AI の nameJa、それも無ければ英語名
+const US_NAMES_KEY = 'ssgus_names';
+let US_NAMES = (() => { try{ return JSON.parse(localStorage.getItem(US_NAMES_KEY) || '{}') || {}; }catch(e){ return {}; } })();
+function usJa(sym, fallback){ return US_NAMES[String(sym || '').toUpperCase()] || fallback || ''; }
+async function usFetchNames(){
+  const d = US.data; if(!d) return;
+  const v = d.movers || {};
+  const all = [...((d.earnings && d.earnings.rows) || []).map(r => r.symbol), ...(v.gainers || []).slice(0, 15).map(q => q.symbol), ...(v.losers || []).slice(0, 15).map(q => q.symbol), ...(v.actives || []).slice(0, 15).map(q => q.symbol)];
+  const need = [...new Set(all.map(s => String(s || '').toUpperCase()))].filter(s => s && !US_NAMES[s]);
+  if(!need.length) return;
+  const chunks = []; for(let i = 0; i < need.length; i += 40) chunks.push(need.slice(i, i + 40));
+  const res = await Promise.all(chunks.map(c => fetch('/api/us-sources?part=names&symbols=' + encodeURIComponent(c.join(',')), { cache: 'no-store' }).then(r => r.json()).catch(() => ({}))));
+  for(const r of res) Object.assign(US_NAMES, (r && r.names) || {});
+  try{ localStorage.setItem(US_NAMES_KEY, JSON.stringify(US_NAMES)); }catch(e){}
+}
+
 // ---------- 天気（サーバーの weatherOf と同じ決め方。AI が補った実績でも同じ計算をする）----------
 function usWeather(act, est, kind, th){
   act = usN(act); est = usN(est);
@@ -133,8 +150,10 @@ async function usFetch(btn){
     const err = [m, e, v].filter(x => !x.ok).map(x => x.error).filter(Boolean);
     if(!m.markets && !e.earnings) throw new Error(err.join(' / ') || '取得できませんでした');
     US.data = { fetchedAt: new Date().toISOString(), targetDate: m.targetDate || e.targetDate, prevDate: m.prevDate || e.prevDate, markets: m.markets || null, earnings: e.earnings || null, movers: v.movers || null };
-    // 決算の「載せる」は、取り直したら API の選び方に戻す
     usPersist(); usRenderAll();
+    usStatus('usFetchStatus', '日本語の社名を取得中…（株探）');
+    await usFetchNames().catch(() => {});
+    usRenderAll();
     const warn = [...err, ...((m.markets || {}).errors || []), ...((e.earnings || {}).errors || []), ...((v.movers || {}).errors || [])];
     usStatus('usFetchStatus', (warn.length ? '⚠ ' + warn.join(' / ') : '✅ 取得しました') + `（対象日 ${usDateJa(US.data.targetDate)}）`, warn.length ? '' : 'ok');
   }catch(err){
@@ -176,8 +195,17 @@ function usRenderMarkets(){
 function usEarnRows(useAi = true){
   const e = US.data && US.data.earnings; if(!e || !e.rows) return [];
   const th = usSettings();
-  const ai = {};
-  if(useAi) for(const a of ((US.parsed && US.parsed.earnings) || [])) if(a && a.symbol) ai[String(a.symbol).toUpperCase()] = a;
+  const ai = {}, rank = {};
+  // 決算一覧に載せる銘柄は AI が選ぶ（2026-11-14 すみぽん）。AI の earnings の並び＝載せる順。候補に無い銘柄と、載せる数を超えた分は使わない
+  if(useAi){
+    const have = new Set(e.rows.map(r => r.symbol));
+    for(const a of ((US.parsed && US.parsed.earnings) || [])){
+      const sym = a && a.symbol ? String(a.symbol).toUpperCase().trim() : '';
+      if(!sym || !have.has(sym) || ai[sym]) continue;
+      ai[sym] = a;
+      if(Object.keys(rank).length < usMaxEarn()) rank[sym] = Object.keys(rank).length;
+    }
+  }
   return e.rows.map(r => {
     const a = ai[r.symbol] || {};
     const eps = Object.assign({}, r.eps), rev = Object.assign({}, r.revenue);
@@ -188,24 +216,29 @@ function usEarnRows(useAi = true){
     Object.assign(rev, usWeather(rev.actual, rev.estimate, 'rev', th));
     const g = String(a.guidance || '').trim();
     return Object.assign({}, r, {
-      eps, revenue: rev, nameJa: a.nameJa || '', comment: a.comment || '',
+      eps, revenue: rev, nameJa: usJa(r.symbol, a.nameJa || ''), comment: a.comment || '',
       guidance: US_W_ICON[g] ? g : null, guidanceSource: a.guidanceSource || '',
       aiFilled: filled, actualSource: filled.length ? (a.actualSource || '') : '', epsBasis: a.epsBasis || '',
+      picked: rank[r.symbol] !== undefined, aiRank: rank[r.symbol] ?? null,
     });
   });
 }
+// 決算一覧に載せる銘柄（AI が選んだもの）を、AI が並べた順に
+function usPickedEarn(){ return usEarnRows().filter(r => r.picked).sort((a, b) => a.aiRank - b.aiRank); }
+// 決算一覧に載せる数（⚙設定の「載せる数」。1ページ8銘柄×2まで）
+function usMaxEarn(){ return Math.max(1, Math.min(US_EARN_PER_PAGE * 2, Math.round(usSettings().max) || US_EARN_PER_PAGE * 2)); }
 
 function usRenderEarnings(){
   const el = document.getElementById('usEarnings'); if(!el) return;
   const e = US.data && US.data.earnings;
   if(!e){ el.innerHTML = ''; return; }
-  const rows = usEarnRows();
-  const head = `<tr><th>載せる</th><th>銘柄</th><th>時価総額</th><th>発表</th><th>当日</th><th>時間外</th><th>EPS（予想→実績）</th><th>売上（予想→実績）</th><th>ガイダンス</th><th>コメント（AI）</th></tr>`;
+  const rows = usEarnRows().sort((a, b) => (a.picked === b.picked ? (a.aiRank ?? 0) - (b.aiRank ?? 0) : a.picked ? -1 : 1));
+  const head = `<tr><th title="AI が選んだ順（②にレポートを貼ると出ます）">載せる</th><th>銘柄</th><th>時価総額</th><th>発表</th><th>当日</th><th>時間外</th><th>EPS（予想→実績）</th><th>売上（予想→実績）</th><th>ガイダンス</th><th>コメント（AI）</th></tr>`;
   const body = rows.map(r => {
     const fill = (k) => r.aiFilled.includes(k) ? '<span class="us-ai" title="AI が決算発表から補った実績">AI</span>' : '';
     return `<tr class="${r.picked ? '' : 'us-off'}">
-      <td><input type="checkbox" ${r.picked ? 'checked' : ''} onchange="usTogglePick('${r.symbol}', this.checked)"></td>
-      <td><b>${autoEsc(r.symbol)}</b>${r.must ? ' <span class="us-must">必ず</span>' : ''}<br><span class="mut">${autoEsc(r.nameJa || r.name)}</span></td>
+      <td class="num">${r.picked ? (r.aiRank + 1) : '－'}</td>
+      <td><b>${autoEsc(r.symbol)}</b>${r.must ? ' <span class="us-must">必ず</span>' : ''}<br>${autoEsc(r.nameJa || r.name)}</td>
       <td class="num">${usCap(r.mcap)}</td>
       <td>${usHourJa(r)}<br><span class="mut">${autoEsc(r.reportDate || '')}</span></td>
       <td class="num ${usCls(r.dayPct)}">${usPct(r.dayPct)}</td>
@@ -216,22 +249,16 @@ function usRenderEarnings(){
       <td class="us-cmt">${autoEsc(r.comment)}</td></tr>`;
   }).join('');
   const picked = rows.filter(r => r.picked).length;
-  const note = [`決算 ${e.totalReports || 0} 件のうち、条件に合う ${rows.length} 件（載せる ${picked} 件・最大 ${US_EARN_PER_PAGE * 2}）`];
+  const note = [`決算 ${e.totalReports || 0} 件のうち、候補 ${rows.length} 件（時価総額 ${Math.round(usSettings().mcap * 10)}億ドル以上と、必ず載せる銘柄）。` + (US.parsed ? `AI が選んだのは ${picked} 件（最大 ${usMaxEarn()}）` : '載せる銘柄は AI が選びます（AI収集プロンプト → ②に貼付）')];
   if(!e.finnhub) note.push('⚠ Finnhub が使えないため、売上と EPS の実績・寄り前／引け後が入っていません');
   el.innerHTML = `<div class="mut" style="margin:4px 0;">${note.join('<br>')}</div><div class="us-scroll"><table class="us-tbl">${head}${body}</table></div>`;
-}
-function usTogglePick(sym, on){
-  const e = US.data && US.data.earnings; if(!e) return;
-  const r = e.rows.find(x => x.symbol === sym); if(!r) return;
-  if(on && e.rows.filter(x => x.picked).length >= US_EARN_PER_PAGE * 2){ alert(`載せられるのは ${US_EARN_PER_PAGE * 2} 銘柄までです`); usRenderEarnings(); return; }
-  r.picked = on; usPersist(); usRenderEarnings();
 }
 
 function usRenderMovers(){
   const el = document.getElementById('usMovers'); if(!el) return;
   const v = US.data && US.data.movers;
   if(!v){ el.innerHTML = ''; return; }
-  const list = (k, t) => `<div><b>${t}</b>${(v[k] || []).slice(0, 15).map(q => `<div class="us-mv"><span>${autoEsc(q.symbol)}</span><span class="mut">${autoEsc((q.name || '').slice(0, 22))}</span><span class="num ${usCls(q.pct)}">${usPct(q.pct)}</span></div>`).join('')}</div>`;
+  const list = (k, t) => `<div><b>${t}</b>${(v[k] || []).slice(0, 15).map(q => `<div class="us-mv"><span>${autoEsc(q.symbol)}</span><span class="mut">${autoEsc((usJa(q.symbol) || q.name || '').slice(0, 22))}</span><span class="num ${usCls(q.pct)}">${usPct(q.pct)}</span></div>`).join('')}</div>`;
   el.innerHTML = `<div class="mut" style="margin:4px 0;">時価総額 ${Math.round((v.minCap || 0) / 1e8)}億ドル以上・${autoEsc(v.asOf || '')}時点（場面には出さず、AI が個別株を選ぶ材料にする）</div><div class="us-mvs">${list('gainers', '値上がり')}${list('losers', '値下がり')}${list('actives', '売買が多い')}</div>`;
 }
 
@@ -251,20 +278,21 @@ function usDataText(opt = {}){
     const f = m.nikkeiFutures;
     if(f) L.push(`日経平均先物（${f.source}）：${usFmt(f.value, 0)}円（${f.time}時点）。日経平均の前日終値 ${usFmt(f.nk225Close, 0)}円より ${usSign(f.vsNk225, 0)}円`);
   }
-  const rows = usEarnRows(!!opt.withAi).filter(r => opt.allEarnings || r.picked);
+  // 収集プロンプト（AI が選ぶ前）には候補すべて、台本など（選んだあと）には AI が選んだ銘柄を選んだ順に
+  const rows = opt.withAi ? usPickedEarn() : usEarnRows(false);
   if(rows.length){
-    L.push('\n【決算銘柄】（ツールが取得。値動きは％、EPS はドル、売上はドル）');
+    L.push(opt.withAi ? '\n【決算一覧に載せる銘柄】（載せる順。値動きは％、EPS はドル、売上はドル）' : '\n【決算銘柄（候補）】（ツールが取得。時価総額の大きい順。値動きは％、EPS はドル、売上はドル）');
     for(const r of rows){
       const eps = `EPS 予想 ${usFmt(r.eps.estimate)}・実績 ${r.eps.actual === null ? '実績なし' : usFmt(r.eps.actual)}${r.eps.weather ? '（' + r.eps.weather + '）' : ''}`;
       const rev = `売上 予想 ${r.revenue.estimate === null ? '－' : Math.round(r.revenue.estimate)}・実績 ${r.revenue.actual === null ? '実績なし' : Math.round(r.revenue.actual)}${r.revenue.weather ? '（' + r.revenue.weather + '）' : ''}`;
       const mv = r.session === 'afterhours' ? `当日 ${usPct(r.dayPct)}・時間外 ${usPct(r.afterPct)}${r.afterTime ? '（日本時間 ' + r.afterTime + '時点）' : ''}` : `当日 ${usPct(r.dayPct)}`;
-      L.push(`${r.symbol}（${r.nameJa || r.name}、時価総額 ${usCap(r.mcap)}）：${usHourJa(r)}の決算（${r.reportDate}）。${mv}。${eps}。${rev}${opt.withAi && r.guidance ? `。ガイダンス ${r.guidance}` : ''}${opt.withAi && r.comment ? `。コメント：${r.comment}` : ''}`);
+      L.push(`${r.symbol}${!opt.withAi && r.must ? '【必ず載せる】' : ''}（${r.nameJa ? r.nameJa + '／' : ''}${r.name}、時価総額 ${usCap(r.mcap)}）：${usHourJa(r)}の決算（${r.reportDate}）。${mv}。${eps}。${rev}${opt.withAi && r.guidance ? `。ガイダンス ${r.guidance}` : ''}${opt.withAi && r.comment ? `。コメント：${r.comment}` : ''}`);
     }
   }
   const v = d.movers;
   if(v && !opt.noMovers){
     L.push(`\n【変動率の高い銘柄（候補）】（時価総額 ${Math.round((v.minCap || 0) / 1e8)}億ドル以上。${v.asOf}時点）`);
-    const one = (q) => `${q.symbol}（${q.name}）${usPct(q.pct)}`;
+    const one = (q) => `${q.symbol}（${usJa(q.symbol) ? usJa(q.symbol) + '／' : ''}${q.name}）${usPct(q.pct)}`;
     L.push('値上がり率：' + (v.gainers || []).slice(0, 15).map(one).join('、'));
     L.push('値下がり率：' + (v.losers || []).slice(0, 15).map(one).join('、'));
     L.push('売買の多い銘柄：' + (v.actives || []).slice(0, 10).map(one).join('、'));
@@ -273,9 +301,7 @@ function usDataText(opt = {}){
 }
 
 // ---------- AI 収集プロンプト（ChatGPT などのウェブ検索で調べさせる）----------
-const US_COLLECT_PROMPT = `@iterative-fact-check-and-revise
-
-{{date}}（米国東部時間）の米国株式市場について、以下の１〜４を調べ、最後の形式の JSON で出力してください。
+const US_COLLECT_PROMPT = `{{date}}（米国東部時間）の米国株式市場について、以下の１〜４を調べ、最後の形式の JSON で出力してください。
 ・数字（指数・株価の値動き・決算の予想と実績）は、下の【ツールが取得したデータ】を正しいものとして扱い、調べた数字で書き換えないでください。
 ・ニュースは英語・日本語どちらのソースでも構いません。出力は日本語にしてください。
 
@@ -285,14 +311,20 @@ const US_COLLECT_PROMPT = `@iterative-fact-check-and-revise
 ・title は全角30文字以内、detail は全角90文字以内。source に出典の URL。
 
 ２．個別株の材料（stockNews：最大5銘柄）
-・【変動率の高い銘柄（候補）】と【決算銘柄】の中から、値動きの具体的な理由が確認できた銘柄だけを選ぶ（プレスリリース、決算発表、投資判断や目標株価の変更、M&A、規制・訴訟、業界の重要ニュースなど）。
+・【変動率の高い銘柄（候補）】と【決算銘柄（候補）】の中から、値動きの具体的な理由が確認できた銘柄だけを選ぶ（プレスリリース、決算発表、投資判断や目標株価の変更、M&A、規制・訴訟、業界の重要ニュースなど）。
 ・理由が確認できない銘柄、{{date}}より1週間以上前の材料しかない銘柄は載せない。除外した銘柄には一切触れない。
 ・「市場全体の調整」「理由は不明」などのあいまいな記載は禁止。
 ・時価総額の大きい銘柄・話題性の高い銘柄を優先する。5銘柄に満たなければ、ある分だけでよい。
 ・決算銘柄を選んだ場合も、決算の数字ではなく「なぜ動いたか」を書く。
 ・headline は全角20文字以内、detail は全角40文字以内。source に出典の URL。
 
-３．決算銘柄のコメントとガイダンス（earnings：【決算銘柄】のすべて）
+３．決算一覧に載せる銘柄を選び、コメントとガイダンスを書く（earnings：最大{{max}}銘柄）
+・【決算銘柄（候補）】の中から、動画の決算一覧に載せる銘柄を最大{{max}}銘柄選ぶ。少ない日は、ある分だけでよい。数を埋めるために注目度の低い銘柄を入れない。
+・載せるほどの銘柄が無い日は、earnings を空（[]）にする（動画では決算一覧の場面を飛ばす）。
+・選ぶ基準：日本の個人投資家の関心が高い銘柄を優先する。時価総額が大きい、値動きが大きい（当日の引け後に発表した銘柄は時間外の値動きで見る）、予想との差（サプライズ）やガイダンスが話題になった、業界や市場全体への影響が大きい、のいずれかに当てはまるもの。
+・【必ず載せる】と書いた銘柄は、決算の発表が確認できれば必ず選ぶ。
+・earnings は載せる順に並べる（注目度の高い順。1〜8番目が1ページ目、9番目以降が2ページ目）。選ばなかった銘柄は earnings に入れない。
+・symbol は【決算銘柄（候補）】のティッカーをそのまま書く（候補に無い銘柄は選ばない）。
 ・comment：何が良かった／悪かったかを全角25文字程度で。主な数字（EPS・売上の実績と予想、成長率など）を入れてよい。ガイダンスの上方修正・下方修正があった場合は必ず触れる。
 ・guidance：会社の見通し（次の四半期・通期）を次の4つで判定する。
   晴れ＝上方修正、または見通しが市場予想を上回った
@@ -300,15 +332,15 @@ const US_COLLECT_PROMPT = `@iterative-fact-check-and-revise
   雨＝下方修正、または見通しが市場予想を下回った
   －＝ガイダンスを出していない、または確認できなかった
 ・guidanceSource：判定の根拠にした出典の URL（会社の決算発表・IR を優先）。
-・【決算銘柄】で「実績なし」と書いた銘柄だけ、会社の決算発表（プレスリリース・SEC の 8-K・IR ページ）から実績を拾う。ニュース記事やまとめサイトの数字は使わない。
+・選んだ銘柄のうち、【決算銘柄（候補）】で「実績なし」と書いた銘柄だけ、会社の決算発表（プレスリリース・SEC の 8-K・IR ページ）から実績を拾う。ニュース記事やまとめサイトの数字は使わない。
   - EPS は調整後（Non-GAAP）を使う。会社が調整後を出していなければ GAAP を使い、epsBasis に "GAAP" と書く。
   - 売上はドル単位の数値で書く（例：185億2000万ドルなら 18520000000）。
   - actualSource に出典の URL を必ず付ける。拾えなければ null のまま（推測で埋めない）。
   - 実績が入っている銘柄は epsActual・revenueActual を null のままにする。
-・決算の発表が確認できない（延期など）銘柄は、comment に「決算未確認」と書く。
+・決算の発表が確認できない（延期など）銘柄は選ばない。
 
 ４．銘柄名
-・nameJa には、日本で一般的なカタカナの社名を書く（例：エヌビディア、アップル、シスコシステムズ）。
+・nameJa には、【ツールが取得したデータ】に日本語の社名（「／」の前）があればそのまま書く。無い銘柄だけ、日本で一般的なカタカナの社名を書く（例：エヌビディア、アップル）。
 
 【出力】次の形の JSON だけを出力してください。
 {
@@ -322,7 +354,7 @@ const US_COLLECT_PROMPT = `@iterative-fact-check-and-revise
 
 function usCollectPromptText(){
   if(!US.data){ alert('先に「データ取得」を押してください'); return ''; }
-  return US_COLLECT_PROMPT.replace(/\{\{date\}\}/g, usDateJa(US.data.targetDate)).replace('{{data}}', usDataText()) + (typeof AP_CODEBLOCK_NOTE === 'string' ? AP_CODEBLOCK_NOTE : '');
+  return US_COLLECT_PROMPT.replace(/\{\{date\}\}/g, usDateJa(US.data.targetDate)).replace(/\{\{max\}\}/g, usMaxEarn()).replace('{{data}}', usDataText()) + (typeof AP_CODEBLOCK_NOTE === 'string' ? AP_CODEBLOCK_NOTE : '');
 }
 function usCopyCollect(btn){ const t = usCollectPromptText(); if(t){ autoClip(t, btn); usStep('2'); } }
 
@@ -355,11 +387,19 @@ function usRenderReport(){
   if(!p){ el.innerHTML = '<div class="us-err">❌ JSON として読めません。AI の回答の JSON 部分をそのまま貼ってください。</div>'; return; }
   const link = (u) => /^https?:\/\//.test(String(u || '')) ? ` <a href="${autoEsc(u)}" target="_blank" rel="noopener" class="mut">出典</a>` : '';
   const mn = p.marketNews.map(n => `<li><b>${autoEsc(n.title)}</b>${link(n.source)}<br><span class="mut">${autoEsc(n.detail)}</span></li>`).join('');
-  const sn = p.stockNews.slice(0, 5).map(n => `<li><b>${autoEsc(n.nameJa || n.symbol)}</b>（${autoEsc(n.symbol)}）${autoEsc(n.headline)}${link(n.source)}<br><span class="mut">${autoEsc(n.detail)}</span></li>`).join('');
-  const rows = usEarnRows().filter(r => r.picked);
+  const sn = p.stockNews.slice(0, 5).map(n => `<li><b>${autoEsc(usJa(n.symbol, n.nameJa) || n.symbol)}</b>（${autoEsc(n.symbol)}）${autoEsc(n.headline)}${link(n.source)}<br><span class="mut">${autoEsc(n.detail)}</span></li>`).join('');
+  const rows = usPickedEarn();
   const ai = rows.filter(r => r.aiFilled.length);
   const miss = rows.filter(r => r.eps.actual === null && r.revenue.actual === null);
-  const notes = [];
+  // AI が選ばなかった「必ず載せる」銘柄と、候補に無いため使わなかった銘柄を知らせる
+  const cand = new Set(((US.data && US.data.earnings && US.data.earnings.rows) || []).map(r => r.symbol));
+  const unknown = p.earnings.map(a => String((a && a.symbol) || '').toUpperCase().trim()).filter(x => x && !cand.has(x));
+  const mustOut = usEarnRows().filter(r => r.must && !r.picked).map(r => r.symbol);
+  const over = p.earnings.length - rows.length - unknown.length;
+  const notes = [`決算一覧に載せる銘柄（AI が選んだ順）：${rows.length ? rows.map(r => r.symbol).join('・') : 'なし（決算一覧の場面は出しません）'}`];
+  if(mustOut.length) notes.push(`「必ず載せる」銘柄なのに AI が選ばなかったもの：${mustOut.join('・')}（決算が確認できなかった可能性。必要ならファクトチェックで指摘してください）`);
+  if(unknown.length) notes.push(`候補に無いので使わない銘柄：${unknown.join('・')}`);
+  if(over > 0) notes.push(`載せる数（${usMaxEarn()}）を超えた ${over} 件は使いません`);
   if(p.stockNews.length > 5) notes.push(`個別株が ${p.stockNews.length} 件あります（先頭の5件を使います）`);
   if(ai.length) notes.push('AI が補った実績：' + ai.map(r => `${r.symbol}（${r.aiFilled.join('・')}・${r.actualSource ? `<a href="${autoEsc(r.actualSource)}" target="_blank" rel="noopener">出典</a>` : '出典なし'}）`).join('、'));
   if(miss.length) notes.push('実績が無い銘柄（天気は「－」）：' + miss.map(r => r.symbol).join('、'));
@@ -370,7 +410,7 @@ function usRenderReport(){
     <div class="mut">決算のコメント・ガイダンスは ①の決算一覧に重ねて出しています（AI が補った実績には「AI」の印）。</div></div>`;
 }
 function usCopyFactCheck(btn){
-  const base = usCollectPromptText().replace(/^@iterative-fact-check-and-revise\s*/, '').replace(typeof AP_CODEBLOCK_NOTE === 'string' ? AP_CODEBLOCK_NOTE : '', '');
+  const base = usCollectPromptText().replace(typeof AP_CODEBLOCK_NOTE === 'string' ? AP_CODEBLOCK_NOTE : '', '');
   if(!base) return;
   const report = ((document.getElementById('usReport') || {}).value || '').trim();
   autoClip(`以下のレポートは、以下の指示でAIが生成したものです。\nレポートのファクトチェックを行い、誤っている個所と指示に沿っていない箇所のみを指摘してください。\n指摘は件数が多くても構わないので、すべて指摘してください。\n指摘がある場合には、指摘箇所、指摘内容、修正後内容を記載してください。\nレイアウトや出力形式に関する指摘は不要です。\n\n--指示--\n${base}\n\n--レポート--\n\n${report}`, btn);
@@ -382,7 +422,7 @@ function usReportText(){
   const L = ['【市場全体のニュース】'];
   p.marketNews.forEach((n, i) => L.push(`${i + 1}. ${n.title}：${n.detail}`));
   L.push('\n【個別株の材料】');
-  p.stockNews.slice(0, 5).forEach(n => L.push(`${n.nameJa || n.symbol}（${n.symbol}）：${n.headline}。${n.detail}`));
+  p.stockNews.slice(0, 5).forEach(n => L.push(`${usJa(n.symbol, n.nameJa) || n.symbol}（${n.symbol}）：${n.headline}。${n.detail}`));
   return L.join('\n');
 }
 function usResources(){
@@ -393,7 +433,7 @@ function usResources(){
 }
 function usScriptPrompt(){
   const C = (typeof AP_COMMON === 'object' && AP_COMMON) || {};
-  const ah = usEarnRows().filter(r => r.picked && r.session === 'afterhours' && r.afterTime).map(r => r.afterTime)[0];
+  const ah = usPickedEarn().filter(r => r.session === 'afterhours' && r.afterTime).map(r => r.afterTime)[0];
   return `${usDateJa(US.data.targetDate)}の米国株式市場を振り返る動画の台本を、2分前後（900〜1,100文字）で、以下の構成で作成してください。
 ・日本の個人投資家が、日本時間の朝に見る動画です。
 ・個人的な感想は添えず、事実を伝えることに専念してください。
@@ -526,7 +566,7 @@ function usVideoData(){
   const pick = (keys) => keys.map(k => m.find(r => r.key === k)).filter(Boolean).map(r => ({ key: r.key, name: r.name, value: r.value, change: r.change, pct: r.pct, changeBp: r.changeBp, unit: r.unit, source: r.source, history: r.history }));
   const sec = usScriptSections();
   const p = US.parsed || { marketNews: [], stockNews: [] };
-  const earn = usEarnRows().filter(r => r.picked).map(r => ({
+  const earn = usPickedEarn().map(r => ({
     symbol: r.symbol, name: r.nameJa || r.name, timing: usHourJa(r), session: r.session,
     dayPct: r.dayPct, afterPct: r.afterPct, afterTime: r.afterTime,
     revenue: r.revenue.weather, eps: r.eps.weather, guidance: r.guidance, comment: r.comment,
@@ -542,7 +582,7 @@ function usVideoData(){
       japan: { futures: d.markets && d.markets.nikkeiFutures, items: pick(['usdjpy']), narration: sec['日本への影響'] || '' },
       assets: { items: pick(['us10y', 'gold', 'btc', 'wti']), narration: sec['金利・資産'] || '' },
       news: { items: p.marketNews.slice(0, 5).map(n => ({ title: n.title, detail: n.detail })), narration: sec['ニュース'] || '' },
-      stocks: { items: p.stockNews.slice(0, 5).map(n => { const er = earn.find(e => e.symbol === String(n.symbol || '').toUpperCase()); const mv = (d.movers ? [...(d.movers.gainers || []), ...(d.movers.losers || []), ...(d.movers.actives || [])] : []).find(q => q.symbol === String(n.symbol || '').toUpperCase()); return { symbol: n.symbol, name: n.nameJa || n.symbol, pct: er ? (er.session === 'afterhours' ? er.afterPct : er.dayPct) : (mv ? mv.pct : null), headline: n.headline, detail: n.detail }; }), narration: sec['個別株'] || '' },
+      stocks: { items: p.stockNews.slice(0, 5).map(n => { const er = earn.find(e => e.symbol === String(n.symbol || '').toUpperCase()); const mv = (d.movers ? [...(d.movers.gainers || []), ...(d.movers.losers || []), ...(d.movers.actives || [])] : []).find(q => q.symbol === String(n.symbol || '').toUpperCase()); return { symbol: n.symbol, name: usJa(n.symbol, n.nameJa) || n.symbol, pct: er ? (er.session === 'afterhours' ? er.afterPct : er.dayPct) : (mv ? mv.pct : null), headline: n.headline, detail: n.detail }; }), narration: sec['個別株'] || '' },
       earnings: { pages, narration: sec['決算'] || '' },
     },
     opening: sec['オープニング'] || '', summary: sec['まとめ'] || '',
@@ -621,7 +661,7 @@ function usTseData(){
     q(by(s.assets.items, 'btc'), { unit: 'ドル', decimals: 0 }),
     q(by(s.assets.items, 'wti'), { unit: 'ドル', decimals: 2 }),
   ].filter(Boolean);
-  const after = usEarnRows().filter(r => r.picked && r.afterTime).map(r => r.afterTime)[0] || null;
+  const after = usPickedEarn().filter(r => r.afterTime).map(r => r.afterTime)[0] || null;
   return {
     market: 'us', brand: '米国マーケット振り返り', date: v.date, headline: '',
     charts: s.indices.items.map(chart), others: [],
