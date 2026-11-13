@@ -2,6 +2,7 @@
 // /api/admin（2026-11-13）：アカウントの制限の設定と、使った回数・記録を見る（管理画面 admin.html 用）
 //   GET  /api/admin                … 自分・管理者・設定・今日の各アカウントの回数・記録のある日付
 //   GET  /api/admin?log=YYYY-MM-DD … その日の記録（新しい順、最大500件）
+//   GET  /api/admin?me=1           … 自分が管理者かどうかだけ（{ ok, admin }。誰でも呼べる。設定タブに管理画面への入口を出すかどうかを決める）
 //   PUT  /api/admin                … 設定を保存（本文は { users: {メール: {...}}, default: {...} }）
 // 開けるのは環境変数 ADMIN_EMAILS に入っている人と、ローカルだけ。
 // ============================================================
@@ -24,6 +25,10 @@ function guard(context) {
 }
 
 export async function onRequestGet(context) {
+  if (new URL(context.request.url).searchParams.get("me")) {
+    const { request, env } = context;
+    return json({ ok: true, admin: !!env.STATE && canAdmin(env, userOf(request)) });
+  }
   const g = guard(context);
   if (g.res) return g.res;
   const { env, request } = context;

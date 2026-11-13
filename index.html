@@ -557,10 +557,11 @@ Appier G|4180|818|+96|+13.30%
       <div id="ssgSyncList" style="margin-top:4px;"></div>
       <p style="margin-bottom:0;">作業は営業日（基準日の営業日。土日・祝日は直前の営業日）ごとに保存します。たとえば 10/18（日）に作っても 10/16（金）の回として残ります。最初にプロンプトをコピーした時点から自動でサーバーにも保存します（日付が入っただけでは保存しません）。別の端末で開くと、その営業日の保存があれば続きから開きます。営業日が変わって保存が無ければ、新しく始まります。サーバーには直近10営業日分が残り、「開く」で前の回に戻せます。基準日を変えたときは、次にプロンプトをコピーした時点から、その営業日の回として保存します。</p>
     </div>
-    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+    <!-- 管理画面への入口は管理者にだけ出す（/api/admin?me=1 で確かめてから表示。2026-11-14） -->
+    <div class="admin-only" style="display:none;border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
       <div class="auto-row"><strong style="font-size:12px;color:var(--text);">アカウント管理</strong>
-        <a class="btn-sm" href="/admin" target="_blank" rel="noopener" style="text-decoration:none;">👤 開く</a></div>
-      <p style="margin-bottom:0;">アカウントごとに、使える機能・1日の回数・時間帯を決め、今日の回数と操作の記録を見ます（管理者だけ開けます）。</p>
+        <a class="btn-sm" href="/admin" target="_blank" rel="noopener" style="text-decoration:none;">👤 管理画面を開く</a></div>
+      <p style="margin-bottom:0;">アカウントごとに、使える機能・1日の回数・時間帯を決め、今日の回数と操作の記録を見ます（この欄は管理者にだけ出ます）。</p>
     </div>
     <div class="auto-row" style="margin-top:8px;">
       <button class="btn-sm" id="autoTestBtn" data-btn="AI接続テスト" onclick="autoTestGemini()">🔌 AI接続テスト</button>
@@ -984,7 +985,8 @@ Appier G|4180|818|+96|+13.30%
     <p>予想との差がこの幅の間なら曇り。EPS の予想が ±0.10ドル未満のときは、上回ったか下回ったかだけで決めます。幅はたたき台で、実データを見て直します（変えるとすぐ表に反映）。</p>
     <div class="auto-row"><strong>固定ハッシュタグ</strong><input id="usSet_hashtags" type="text" onchange="usSaveSettings()" style="flex:1;min-width:180px;" placeholder="例：#米国株"></div>
     <p>X投稿文の末尾に付けます。テキストモデルは東証版の ⚙設定 と同じものを使います。</p>
-    <div class="auto-row" style="margin-top:6px;"><button class="btn-sm" onclick="usReset()">🗑 米国版の作業を消す</button></div>
+    <div class="auto-row" style="margin-top:6px;"><button class="btn-sm" onclick="usReset()">🗑 米国版の作業を消す</button>
+      <a class="btn-sm admin-only" href="/admin" target="_blank" rel="noopener" style="display:none;text-decoration:none;">👤 管理画面を開く</a></div>
   </div>
 
   <div class="card us-step" data-step="1">
@@ -4222,6 +4224,8 @@ autoInitDict();
 setTimeout(()=>{ thumbLoadMoves(); }, 0);
 try{ const k=localStorage.getItem(SSG_PREFIX+'restoreStep'); if(k){ localStorage.removeItem(SSG_PREFIX+'restoreStep'); window.__autoStepK=k; } }catch(e){}   // 「取込」の直後は、出力したときに開いていた工程へ
 switchTab('full');   // 初期表示を全自動版にする
+// 管理者なら、⚙設定に管理画面への入口を出す（管理者でない人には見せない）
+fetch('/api/admin?me=1',{cache:'no-store'}).then(r=>r.json()).then(d=>{ if(d&&d.admin) document.querySelectorAll('.admin-only').forEach(el=>{ el.style.display=''; }); }).catch(()=>{});
 ssgSyncBoot();   // サーバーに今日の作業があれば、それに置き換える（別の端末で続きから）
 // ==================== 週間まとめ（画像。上のタブ「週間まとめ」。2026-11-11）====================
 // ・サーバーに保存してある各日の作業から、動画のデータ（ssg_video の data）だけを読む（画像・音声は読まない。いまの作業は置き換えない）。
