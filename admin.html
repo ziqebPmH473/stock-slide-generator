@@ -35,6 +35,7 @@ th { color:var(--muted); font-weight:600; }
 .scroll { overflow-x:auto; }
 #logTable { min-width:720px; }
 #logTable td:nth-child(1), #logTable td:nth-child(4) { white-space:nowrap; }
+.lim td:nth-child(2) { white-space:nowrap; }
 .usedby { font-size:11px; color:var(--muted); line-height:1.5; margin-top:2px; max-width:360px; }
 .btns { margin-top:8px; font-size:13px; } .btns summary { cursor:pointer; color:var(--muted); margin-bottom:4px; }
 .note { font-size:12px; color:var(--muted); line-height:1.6; margin-top:6px; }
@@ -52,10 +53,10 @@ th { color:var(--muted); font-weight:600; }
     <button class="btn-sm" onclick="addAcct()">＋ アカウントを追加</button>
   </div>
   <p class="note">
-    ・上限は「機能」（サーバーに頼む仕事の種類）ごとの1日の回数です（空欄は無制限、0 は使えない）。日本時間の0時に戻ります。各機能の下に、全自動版のどのボタンで使うかを書いています。<br>
-    ・ボタン1回＝1回と数えます（動画の読み上げのように、1回押すと何度も呼ぶものも1回）。どのボタンで何回使ったかは各アカウントの「今日のボタン別の回数」と、下の操作の記録で見られます。上限に達していても、始まった操作は最後まで通します。<br>
-    ・ボタンを押さずに自動で動いたもの（画面を通さない呼び出しを含む）は「（ボタンなし・自動）」になり、3分以内に続いたものを1回にまとめます。<br>
-    ・「AI を直接呼ぶ」をオンにすると、画面に AI のキーを渡します（考える時間の長いモデルが切られにくい）。その代わり、そのアカウントの文章の AI は数えられず、上限も効きません。<br>
+    ・上限は<b>ボタンごと</b>の1日の回数です（空欄は無制限、0 は使えない）。日本時間の0時に戻ります。「使う」を外したボタンは押しても止まります。<br>
+    ・1回押すと中で何度も呼ぶボタン（「動画：音声を再生成（全場面）」は場面ごとに音声を作るなど）も、押した1回を1回と数えます。「今日」の下に、中で使った呼び出しの回数（AI・音声・文字起こし・取得）を出します。上限に達していても、始まった操作は最後まで通します。<br>
+    ・ボタンを押さずに自動で動いたものは「（ボタンなし・自動）」になり、3分以内に続いたものを1回にまとめます。<br>
+    ・「AI を直接呼ぶ」をオンにすると、画面に AI のキーを渡します（考える時間の長いモデルが切られにくい）。その代わり、そのアカウントの AI の呼び出しはサーバーを通らないので、AI だけを使うボタン（台本の再生成など）は数えられず、上限も効きません。<br>
     ・管理者（環境変数 ADMIN_EMAILS）は制限を受けません。ここに無いアカウントは「その他のアカウント」の設定になります。<br>
     ・Cloudflare のログインを通れるかどうかは、ここではなく Cloudflare Zero Trust の Access のポリシーで決まります。
   </p>
@@ -82,14 +83,29 @@ th { color:var(--muted); font-weight:600; }
 let S = null;      // GET /api/admin の答え
 let CFG = null;    // 編集中の設定
 let LOGS = [];
-// 機能ごとに、全自動版のどのボタンで使うか（上限は「機能」ごと。ボタンの名前は「今日のボタン別の回数」と記録に出る）
-const USED_BY = {
-  ai: '②「ファクトチェック完了」（台本・まとめ・サムネ案・X投稿文をまとめて作る）、③「🔁 再生成」、③「一言・まとめを AI で作る」、①「🤖 AI分析」、⚙「🔌 AI接続テスト」',
-  tts: '③動画の「読み上げを入れる」',
-  image: '全自動版には無い（自動版の「🖼 画像をAI生成」だけ）',
-  transcribe: '③動画の「読み上げを入れる」の中で自動（1本の読み上げを場面ごとに切る）。ボタンは無い',
-  fetch: '①「🔄 データ取得」。ほかに自動で：サムネの値動き（ページを開いたとき・🔄）、③動画の指数のチャート（動画のデータを作るとき）',
-};
+// 上限を付けるボタンの一覧（名前は画面の data-btn と同じ。2026-11-14 すみぽん「ボタンの名前にしろ」）
+// 表にはこの順で出す。ここに無い名前も、使われたら下に足して出す。
+const NO_BUTTON = '（ボタンなし・自動）';
+const BUTTONS = [
+  ['① データ取得',                 '全自動版 ①', '野村・株探・日経から相場のデータを取る'],
+  ['① AI分析',                     '全自動版 ①', '取ったページを AI が読み直す（データ取得がずれたとき）'],
+  ['② ファクトチェック完了',       '全自動版 ②', 'AI で台本・スライド文章・サムネ案・X投稿文をまとめて作り、続けて動画のデータ（指数のチャート・一言・まとめ）を作る'],
+  ['② ChatGPT完了（次へ）',        '全自動版 ②', 'ChatGPT で作った文を取り込み、動画のデータ（指数のチャート・一言・まとめ）を作る'],
+  ['台本の再生成',                 '全自動版 ③動画', 'AI で台本を作り直す'],
+  ['サムネ案の再生成',             '全自動版 ③動画', 'AI でサムネ案・X投稿文を作り直す'],
+  ['動画のデータを作る',           '全自動版 ③動画', '動画の場面のデータを作り直す（指数のチャートを取る）'],
+  ['一言・まとめを AI で作る',     '全自動版 ③動画', '動画の冒頭の一言とまとめを AI で作る'],
+  ['動画：場面の音声を作る',       '全自動版 ③動画（場面ごと）', '1つの場面の読み上げを作る（「🔊 音声を作る」「🔊 作り直す」）'],
+  ['動画：音声を再生成（全場面）', '全自動版 ③動画', 'すべての場面の読み上げを作り直す'],
+  ['サムネの値動きを取り直す',     '全自動版 ③動画（サムネ案の 🔄）', '7営業日の値動きを取り直す'],
+  ['スライド文章の再生成',         '⚙設定・自動版 ④', 'AI でスライド文章（動画のデータの元）を作り直す'],
+  ['全情報の再生成',               '⚙設定', 'AI で画像・サムネ用の全情報を作り直す'],
+  ['AI接続テスト',                 '⚙設定', 'AI につながるか試す'],
+  ['音声を生成（自動版）',         '自動版 ③', '自動版の音声生成（全自動版には無い）'],
+  ['画像をAI生成（自動版）',       '自動版', '自動版の画像生成（全自動版には無い）'],
+  [NO_BUTTON,                       'ー', 'ボタンを押さずに自動で動いたもの（ページを開いたときのサムネの値動きなど）。止めると画面が動かなくなることがあるので、ふつうは上限を付けない'],
+];
+const CAT_SHORT = { ai:'AI', tts:'音声', image:'画像', transcribe:'文字起こし', fetch:'取得', save:'保存' };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const $ = id => document.getElementById(id);
 
@@ -113,19 +129,34 @@ function emails(){
   return [...set].sort();
 }
 
+// 表に出すボタンの名前：一覧＋設定や今日の回数にだけある名前
+function buttonNames(p, u){
+  const names = BUTTONS.map(b=>b[0]);
+  const extra = new Set([...Object.keys((p&&p.limits)||{}), ...((p&&p.disabled)||[]), ...Object.keys((u&&u.btn)||{})]);
+  for(const n of names) extra.delete(n);
+  return [...names.slice(0,-1), ...[...extra].sort(), NO_BUTTON];
+}
+// 今日、そのボタンの中で使った機能（呼び出しの回数）
+function catsText(b){
+  return Object.entries((b&&b.cats)||{}).map(([c,n])=>`${CAT_SHORT[c]||c} ${n}`).join('・');
+}
+
 function acctHtml(key, p, title, isDefault){
   const u = isDefault ? null : (S.usage[key] || {});
   const hourOpts = (sel) => '<option value="">制限なし</option>' + Array.from({length:25},(_,h)=>`<option value="${h}" ${sel===h?'selected':''}>${h}時</option>`).join('');
-  const rows = S.limitable.map(k => {
-    const lim = p.limits && Number.isInteger(p.limits[k]) ? p.limits[k] : '';
-    const off = (p.disabled||[]).includes(k);
-    const used = u ? (u[k]||0) : '';
-    const cls = (u && lim!=='' ) ? (used>=lim ? 'over' : used>=lim*0.8 ? 'near' : '') : '';
-    const chars = u && u[k+'Calls'] ? `<br><span style="color:var(--muted)">呼び出し${u[k+'Calls']}回${u[k+'Chars']?'・'+u[k+'Chars'].toLocaleString()+'字':''}</span>` : '';
-    return `<tr><td>${esc(S.categories[k])}<div class="usedby">${esc(USED_BY[k]||'')}</div></td>
-      <td><label><input type="checkbox" data-k="${esc(key)}" data-f="use" data-c="${k}" ${off?'':'checked'}>使う</label></td>
-      <td><input type="number" min="0" placeholder="無制限" value="${lim}" data-k="${esc(key)}" data-f="lim" data-c="${k}"></td>
-      ${isDefault ? '' : `<td class="used ${cls}">${used}${lim!==''?' / '+lim:''}${chars}</td>`}</tr>`;
+  const info = Object.fromEntries(BUTTONS.map(b=>[b[0], b]));
+  const rows = buttonNames(p, u).map(name => {
+    const lim = p.limits && Number.isInteger(p.limits[name]) ? p.limits[name] : '';
+    const off = (p.disabled||[]).includes(name);
+    const b = u && u.btn ? u.btn[name] : null;
+    const used = b ? b.n : 0;
+    const cls = (u && lim!=='') ? (used>=lim ? 'over' : used>=lim*0.8 ? 'near' : '') : '';
+    const sub = b ? `<br><span style="color:var(--muted)">呼び出し${b.calls}回（${esc(catsText(b))}）</span>` : '';
+    const inf = info[name];
+    return `<tr><td><b>${esc(name)}</b><div class="usedby">${inf ? esc(inf[1]) + '：' + esc(inf[2]) : '（一覧に無いボタン）'}</div></td>
+      <td><label><input type="checkbox" data-k="${esc(key)}" data-f="use" data-c="${esc(name)}" ${off?'':'checked'}>使う</label></td>
+      <td><input type="number" min="0" placeholder="無制限" value="${lim}" data-k="${esc(key)}" data-f="lim" data-c="${esc(name)}"></td>
+      ${isDefault ? '' : `<td class="used ${cls}">${used}${lim!==''?' / '+lim:''}${sub}</td>`}</tr>`;
   }).join('');
   return `<div class="acct">
     <div class="acct-head"><span class="email">${esc(title)}</span>
@@ -136,29 +167,26 @@ function acctHtml(key, p, title, isDefault){
       <span>使える時間：<select data-k="${esc(key)}" data-f="from">${hourOpts(p.hours?p.hours.from:null)}</select> 〜
       <select data-k="${esc(key)}" data-f="to">${hourOpts(p.hours?p.hours.to:null)}</select></span>
     </div>
-    <div class="scroll"><table class="lim"><tr><th>機能</th><th></th><th>1日の上限</th>${isDefault?'':'<th>今日</th>'}</tr>${rows}</table></div>
-    ${!isDefault && u && u.save ? `<p class="note">今日の保存：${u.save}回</p>` : ''}
-    ${isDefault ? '' : buttonsHtml(u)}
+    <details ${isDefault?'':'open'}><summary class="note" style="cursor:pointer">ボタンごとの「使う」と1日の上限</summary>
+    <div class="scroll"><table class="lim"><tr><th>ボタン</th><th></th><th>1日の上限</th>${isDefault?'':'<th>今日</th>'}</tr>${rows}</table></div></details>
   </div>`;
 }
 
-// 今日のボタン別の回数（どのボタンで何回使ったか）
-function buttonsHtml(u){
-  const list = Object.values((u && u.buttons) || {}).sort((a,b)=> (a.cat<b.cat?-1:a.cat>b.cat?1:b.n-a.n));
-  if(!list.length) return '';
-  return `<details class="btns" open><summary>今日のボタン別の回数</summary><div class="scroll"><table class="lim"><tr><th>ボタン</th><th>機能</th><th>回数</th><th>呼び出し</th></tr>` +
-    list.map(b=>`<tr><td>${esc(b.button)}</td><td>${esc(S.categories[b.cat]||b.cat)}</td><td>${b.n}</td><td>${b.calls}</td></tr>`).join('') + '</table></div></details>';
+// 管理者（制限なし）の今日の回数：使ったボタンだけ
+function freeHtml(e){
+  const btn = (S.usage[e] && S.usage[e].btn) || {};
+  const names = Object.keys(btn).sort();
+  if(!names.length) return `<tr><td>${esc(e)}</td><td colspan="3" style="color:var(--muted)">（ボタン別の記録なし）</td></tr>`;
+  return names.map((n,i)=>`<tr><td>${i?'':esc(e)}</td><td>${esc(n)}</td><td>${btn[n].n}</td><td>${btn[n].calls}（${esc(catsText(btn[n]))}）</td></tr>`).join('');
 }
 function renderAccts(){
   let h = '';
   for(const e of emails()) h += acctHtml(e, CFG.users[e] || CFG.default, e + (CFG.users[e] ? '' : '（未設定：その他のアカウントの設定を使用中）'), false);
   h += acctHtml('__default__', CFG.default, 'その他のアカウント（ここに無い人全員）', true);
-  // 管理者・ローカルの今日の回数（制限なし。見るだけ）
   const free = Object.keys(S.usage).filter(e => e==='local' || S.admins.includes(e));
   if(free.length){
-    h += '<div class="acct"><div class="acct-head"><span class="email">管理者（制限なし）の今日の回数</span></div><div class="scroll"><table class="lim"><tr><th>アカウント</th>' +
-      S.limitable.map(k=>`<th>${esc(S.categories[k])}</th>`).join('') + '<th>保存</th></tr>' +
-      free.map(e=>`<tr><td>${esc(e)}</td>${S.limitable.map(k=>`<td>${S.usage[e][k]||0}</td>`).join('')}<td>${S.usage[e].save||0}</td></tr>`).join('') + '</table></div>' + free.map(e=>buttonsHtml(S.usage[e]) ? `<p class="note">${esc(e)}</p>`+buttonsHtml(S.usage[e]) : '').join('') + '</div>';
+    h += '<div class="acct"><div class="acct-head"><span class="email">管理者（制限なし）の今日の回数</span></div><div class="scroll"><table class="lim"><tr><th>アカウント</th><th>ボタン</th><th>回数</th><th>呼び出し</th></tr>' +
+      free.map(freeHtml).join('') + '</table></div></div>';
   }
   $('accts').innerHTML = h;
   $('accts').querySelectorAll('[data-k]').forEach(el => el.addEventListener('change', onEdit));

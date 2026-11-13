@@ -1,7 +1,7 @@
 // ============================================================
 // /api/〜 の入口（2026-11-13）：アカウントごとの制限と、使った記録
 // ・誰が：Cloudflare Access のメールアドレス（functions/_shared/acl.js の userOf）
-// ・止める：機能を使わせない／時間帯の外／その日の上限に達した → 403・429 と理由を返す（画面にはそのまま出る）
+// ・止める：ボタンごとに、使わせない／その日の上限に達した、またはアカウントの時間帯の外 → 403・429 と理由を返す（画面にはそのまま出る）
 // ・数える：成功したとき（2xx）だけ。ボタン1回＝1回（画面が付ける X-SSG-Press が同じ呼び出しは最初の1回だけ数える。印が無ければ3分以内の続きをまとめる）。ボタン別の回数も残す
 // ・記録：数える機能はすべて、成功・失敗・止めたも含めて1回ずつ残す（管理画面で見る）
 // ・R2（STATE）が紐づいていないときは、今までどおり何もしない
@@ -10,7 +10,7 @@
 //   渡さない人は、画面が自動で /api/analyze（ここを通る）を使う。
 // ============================================================
 import {
-  CATEGORIES, LIMITABLE, json, userOf, isAdmin, categoryOf, loadConfig, policyFor, inHours,
+  LIMITABLE, json, userOf, isAdmin, categoryOf, loadConfig, policyFor, inHours,
   getUsage, addUsage, writeLog, isContinuation, pressOf,
 } from "../_shared/acl.js";
 
@@ -50,27 +50,27 @@ export async function onRequest(context) {
   const t0 = Date.now();
   const detail = await peek(request, cat);
   const { button, press } = pressOf(request);
-  const base = { user: user || "unknown", cat, button: button || "（ボタンなし・自動）", press, path: url.pathname, method: request.method, ...detail };
+  const base = { user: user || "unknown", cat, button, press, path: url.pathname, method: request.method, ...detail };
   const log = (extra) => context.waitUntil(writeLog(env, { ...base, ...extra }).catch(() => {}));
 
+  // 止めるのはボタンの名前ごと（2026-11-14）。保存は止めない（記録だけ）
   if (pol && LIMITABLE.includes(cat)) {
-    const name = CATEGORIES[cat];
-    if (pol.disabled.includes(cat)) {
-      log({ status: 403, result: "止めた：使えない機能" });
-      return json({ ok: false, error: `このアカウントでは「${name}」は使えません（管理者が止めています）`, limited: "disabled" }, 403);
+    if (pol.disabled.includes(button)) {
+      log({ status: 403, result: "止めた：使えないボタン" });
+      return json({ ok: false, error: `このアカウントでは「${button}」は使えません（管理者が止めています）`, limited: "disabled" }, 403);
     }
     if (!inHours(pol.hours)) {
       log({ status: 403, result: "止めた：時間帯の外" });
       return json({ ok: false, error: `このアカウントで使える時間は ${pol.hours.from}時〜${pol.hours.to}時（日本時間）です`, limited: "hours" }, 403);
     }
-    const max = pol.limits[cat];
+    const max = pol.limits[button];
     if (Number.isInteger(max)) {
       const u = await getUsage(env, user);
-      const used = u[cat] || 0;
+      const used = ((u.btn || {})[button] || {}).n || 0;
       // 上限に達していても、すでに始まった操作の続き（同じボタンの1回の押下）は最後まで通す
-      if (used >= max && !isContinuation(u, cat, press)) {
+      if (used >= max && !isContinuation(u, button, press)) {
         log({ status: 429, result: `止めた：上限（${used}/${max}）` });
-        return json({ ok: false, error: `このアカウントの「${name}」は今日の上限（${max}回）に達しました（日本時間の0時に戻ります）`, limited: "count" }, 429);
+        return json({ ok: false, error: `このアカウントの「${button}」は今日の上限（${max}回）に達しました（日本時間の0時に戻ります）`, limited: "count" }, 429);
       }
     }
   }

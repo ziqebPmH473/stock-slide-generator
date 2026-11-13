@@ -14,20 +14,30 @@
 <script>
 // ==================== 操作の記録：押したボタンを /api の呼び出しに付ける（2026-11-14）====================
 // アカウントごとの回数を「ボタン1回＝1回」で数え、どのボタンの操作かを管理画面で見るため。
-// ・ボタンを押してすぐ（1.5秒以内）に /api を呼んだら、そのボタンの操作として始める（X-SSG-Button・X-SSG-Press を付ける）。
+// ・ボタンを押してすぐ（1.5秒以内。確認が出るボタンは OK を押してから）に /api を呼んだら、そのボタンの操作として始める（X-SSG-Button・X-SSG-Press を付ける）。
+// ・ボタンの名前は data-btn（無ければ表示の文字）。管理画面では、この名前ごとに上限を付ける。
 // ・その後の呼び出し（動画の読み上げを場面ごとに呼ぶなど）は、次に別のボタンが操作を始めるまで、同じ操作として付け続ける。
 // ・工程・タブの切り替えなど、押しても /api を呼ばないボタンは操作にならない（続いている操作の名前を上書きしない）。
 // ・ボタンを押さずに動くもの（自動の保存など）は、最初の操作より前なら何も付けない（サーバーが「自動」として扱う）。
 (function(){
   let cand = null, cur = null;
   const SEL = 'button, a.btn-sm, label.btn-sm, label.btn-mini, [role=button], input[type=button], input[type=submit]';
-  const labelOf = el => String(el.getAttribute('aria-label') || el.innerText || el.value || el.title || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  // 動画の部品の中のボタンは、文字が状態で変わるので決まった名前にそろえる
+  const ALIAS = { '🔊 音声を作る': '動画：場面の音声を作る', '🔊 作り直す': '動画：場面の音声を作る', '音声を再生成': '動画：音声を再生成（全場面）' };
+  const labelOf = el => {
+    if (el.dataset && el.dataset.btn) return el.dataset.btn;   // 画面のボタンには data-btn で名前を付けてある（同じ「🔁 再生成」を見分けるため）
+    const t = String(el.getAttribute('aria-label') || el.innerText || el.value || '').replace(/\s+/g, ' ').trim();
+    return (ALIAS[t] || (t.length <= 2 && el.title ? el.title : t) || el.title || '').slice(0, 40);
+  };
   document.addEventListener('click', e => {
     const el = e.target && e.target.closest ? e.target.closest(SEL) : null;
     if (!el) return;
     const label = labelOf(el);
     if (label) cand = { label, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7), t: Date.now() };
   }, true);
+  // 押したあとに確認（confirm）が出るボタンは、OK を押した時点から数える
+  const origConfirm = window.confirm.bind(window);
+  window.confirm = function(m){ const r = origConfirm(m); if (r && cand) cand.t = Date.now(); return r; };
   const orig = window.fetch.bind(window);
   window.fetch = function(input, init){
     try {
@@ -517,13 +527,13 @@ Appier G|4180|818|+96|+13.30%
       <p style="margin-bottom:0;">アカウントごとに、使える機能・1日の回数・時間帯を決め、今日の回数と操作の記録を見ます（管理者だけ開けます）。</p>
     </div>
     <div class="auto-row" style="margin-top:8px;">
-      <button class="btn-sm" id="autoTestBtn" onclick="autoTestGemini()">🔌 AI接続テスト</button>
+      <button class="btn-sm" id="autoTestBtn" data-btn="AI接続テスト" onclick="autoTestGemini()">🔌 AI接続テスト</button>
       <span id="autoTestStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
     <pre id="autoTestResult" style="font-size:12px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;white-space:pre-wrap;display:none;margin-top:4px;"></pre>
     <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
       <div class="auto-row"><strong style="font-size:11px;color:var(--text);">全情報（画像/サムネ用データ）</strong>
-        <button class="btn-sm" id="autoFullInfoBtn" onclick="autoGenerateFullInfo(this)">🔁 再生成</button>
+        <button class="btn-sm" id="autoFullInfoBtn" data-btn="全情報の再生成" onclick="autoGenerateFullInfo(this)">🔁 再生成</button>
         <button class="btn-mini" onclick="autoCopyEl('autoFullInfo',this)">📋</button>
         <span id="autoFullInfoStatus" style="font-size:11px;color:var(--muted);"></span></div>
       <details><summary style="font-size:11px;color:var(--muted);cursor:pointer;">全情報テキストを開く</summary>
@@ -545,8 +555,8 @@ Appier G|4180|818|+96|+13.30%
     <div class="auto-row">
       <label style="font-size:12px;color:var(--muted);">基準日</label>
       <input type="date" id="autoBaseDate" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;">
-      <button class="btn-sm" id="autoFetchBtn" onclick="autoFetchSources()">🔄 データ取得</button>
-      <button class="btn-sm" id="autoAiBackupBtn" onclick="autoRunAiBackup(this)" title="サイト構造変更で自動生成がズレた時、生ページをAIが再解析">🤖 AI分析</button>
+      <button class="btn-sm" id="autoFetchBtn" data-btn="① データ取得" onclick="autoFetchSources()">🔄 データ取得</button>
+      <button class="btn-sm" id="autoAiBackupBtn" data-btn="① AI分析" onclick="autoRunAiBackup(this)" title="サイト構造変更で自動生成がズレた時、生ページをAIが再解析">🤖 AI分析</button>
       <span id="autoDateInfo" style="font-size:11px;color:var(--muted);"></span>
       <span id="autoBackupStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
@@ -593,7 +603,7 @@ Appier G|4180|818|+96|+13.30%
       <button class="btn-copy" onclick="autoCopyFactCheckFix(this)">🔧 修正</button>
     </div>
     <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
-      <button class="btn" id="autoRunAllBtn" onclick="autoRunAll(this)">ファクトチェック完了</button>
+      <button class="btn" id="autoRunAllBtn" data-btn="② ファクトチェック完了" onclick="autoRunAll(this)">ファクトチェック完了</button>
     </div>
     <!-- ChatGPT手動ルート：APIが遅い/混んでいるとき、同じ4つの生成を ChatGPT に貼って回答を戻す -->
     <details id="autoManualWrap" style="margin-top:8px;">
@@ -609,7 +619,7 @@ Appier G|4180|818|+96|+13.30%
         <button class="btn-copy" onclick="autoManualCopy('slide',this)">📋 ④スライド文章</button><button class="btn-sm" onclick="autoManualPaste('slide',this)">📥 貼付</button>
       </div>
       <div id="autoManualStatus" style="font-size:11px;color:var(--muted);min-height:16px;margin:4px 0;"></div>
-      <button class="btn" id="autoManualFinishBtn" onclick="autoManualFinish(this)">ChatGPT完了（次へ）</button>
+      <button class="btn" id="autoManualFinishBtn" data-btn="② ChatGPT完了（次へ）" onclick="autoManualFinish(this)">ChatGPT完了（次へ）</button>
     </details>
   </div>
 
@@ -630,7 +640,7 @@ Appier G|4180|818|+96|+13.30%
       <button class="btn-copy" onclick="autoCopyImagePrompt(this)">📋 ニュース画像</button>
       <button class="btn-copy auto-only" onclick="autoCopySummaryImagePrompt(this)">📋 まとめ画像</button>
       <button class="btn-copy auto-only" onclick="autoCopySnsXPrompt(this)">📋 サムネ/X</button>
-      <button class="btn-sm auto-only" id="autoImgBtn" onclick="autoGenerateImage(this)">🖼 画像をAI生成</button>
+      <button class="btn-sm auto-only" id="autoImgBtn" data-btn="画像をAI生成（自動版）" onclick="autoGenerateImage(this)">🖼 画像をAI生成</button>
     </div>
     <div id="autoImgStatus" style="font-size:12px;color:var(--muted);min-height:16px;"></div>
     <pre id="autoImgPromptView" style="display:none;"></pre>
@@ -640,7 +650,7 @@ Appier G|4180|818|+96|+13.30%
     <div class="a2" id="blkThumbText" style="margin-top:8px;">
       <div>
         <div class="auto-row"><strong style="font-size:11px;color:var(--text);">サムネ案</strong>
-          <button class="btn-sm" onclick="autoGenerateSns(this)">🔁 再生成</button>
+          <button class="btn-sm" data-btn="サムネ案の再生成" onclick="autoGenerateSns(this)">🔁 再生成</button>
           <button class="btn-mini" onclick="autoCopyEl('autoSnsThumb',this)">📋</button>
           <span id="autoSnsStatus" style="font-size:11px;color:var(--muted);"></span></div>
         <textarea id="autoSnsThumb"></textarea>
@@ -681,7 +691,7 @@ Appier G|4180|818|+96|+13.30%
     <div class="a2" style="margin-top:10px;">
       <div>
         <div class="auto-row"><strong style="font-size:11px;color:var(--text);">スライド文章</strong>
-          <button class="btn-sm" id="autoSlideBtn" onclick="autoGenerateSlideText()">🔁 再生成</button>
+          <button class="btn-sm" id="autoSlideBtn" data-btn="スライド文章の再生成" onclick="autoGenerateSlideText()">🔁 再生成</button>
           <button class="btn-mini" onclick="autoCopyEl('autoSlideText',this)">📋</button>
           <span id="autoSlideStatus" style="font-size:11px;color:var(--muted);"></span></div>
         <textarea id="autoSlideText" oninput="autoSyncSlideText()" style="min-height:300px !important;"></textarea>
@@ -701,7 +711,7 @@ Appier G|4180|818|+96|+13.30%
     <h2>③ 音声生成</h2>
     <div class="auto-row">
       <strong style="font-size:11px;color:var(--text);">台本</strong>
-      <button class="btn-sm" onclick="autoRunScript(this)">🔁 再生成</button>
+      <button class="btn-sm" data-btn="台本の再生成" onclick="autoRunScript(this)">🔁 再生成</button>
       <button class="btn-mini" onclick="autoCopyScript(this)">📋</button>
       <button class="btn-mini" id="autoSplitToggleBtn" title="音声②が空なら中央の改行で2つに分割、入っていれば1つにまとめます" onclick="autoToggleScriptSplit(this)">🔀 2つに分割</button>
       <span id="autoScriptStatus" style="font-size:11px;color:var(--muted)"></span>
@@ -763,7 +773,7 @@ Appier G|4180|818|+96|+13.30%
         </select>
       </div>
     </div>
-    <button class="btn" id="autoTtsBtn" style="margin-top:10px;" onclick="autoGenerateTts(this)">🔊 音声を生成</button>
+    <button class="btn" id="autoTtsBtn" style="margin-top:10px;" data-btn="音声を生成（自動版）" onclick="autoGenerateTts(this)">🔊 音声を生成</button>
     <div id="autoTtsStatus" style="font-size:12px;color:var(--muted);text-align:center;min-height:18px;margin:4px 0;"></div>
   </div>
 
@@ -873,8 +883,8 @@ Appier G|4180|818|+96|+13.30%
           <option value="6">6か月</option>
         </select>
       </label>
-      <button class="btn-sm" id="vidBuildBtn" onclick="vidBuild(this)" title="④のスライド文章・③の台本と、株探の指数の値（6か月分）から動画のデータを作ります。AI は呼びません">🎬 動画のデータを作る</button>
-      <button class="btn" id="vidAiBtn" onclick="vidScreenAi(this)" title="冒頭の一言とまとめ（特長・注目点・締めの1文）を AI で作ります。押すたびに AI を1回呼びます">🤖 一言・まとめを AI で作る</button>
+      <button class="btn-sm" id="vidBuildBtn" data-btn="動画のデータを作る" onclick="vidBuild(this)" title="④のスライド文章・③の台本と、株探の指数の値（6か月分）から動画のデータを作ります。AI は呼びません">🎬 動画のデータを作る</button>
+      <button class="btn" id="vidAiBtn" data-btn="一言・まとめを AI で作る" onclick="vidScreenAi(this)" title="冒頭の一言とまとめ（特長・注目点・締めの1文）を AI で作ります。押すたびに AI を1回呼びます">🤖 一言・まとめを AI で作る</button>
       <span id="vidStatus" style="font-size:11px;color:var(--muted);"></span>
     </div>
     <!-- 台本の生成状況（③音声生成の欄は全自動版では出ないので、ここに写す。使ったモデル・降格もわかる） -->
@@ -1143,7 +1153,7 @@ async function thumbLoadMoves(force){
   const day=ssgBizDay();
   if(!force && day===thumbMovesDay) return;
   thumbMovesDay=day; const seq=++thumbMovesSeq;
-  const reload=' <button class="btn-mini" onclick="thumbLoadMoves(true)" title="値動きを取り直す">🔄</button>';
+  const reload=' <button class="btn-mini" data-btn="サムネの値動きを取り直す" onclick="thumbLoadMoves(true)" title="値動きを取り直す">🔄</button>';
   box.textContent='日経平均の値動きを取得中…';
   try{
     const h=await (await fetch(`/api/index-history?months=1&until=${day}`)).json();
