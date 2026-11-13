@@ -458,7 +458,6 @@ function usRenderReport(){
   if(!p){ el.innerHTML = '<div class="us-err">❌ JSON として読めません。AI の回答の JSON 部分をそのまま貼ってください。</div>'; return; }
   const link = (u) => /^https?:\/\//.test(String(u || '')) ? ` <a href="${autoEsc(u)}" target="_blank" rel="noopener" class="mut">出典</a>` : '';
   const mn = p.marketNews.map(n => `<li><b>${autoEsc(n.title)}</b>${link(n.source)}<br><span class="mut">${autoEsc(n.detail)}</span></li>`).join('');
-  const sn = p.stockNews.slice(0, 5).map(n => `<li><b>${autoEsc(usJa(n.symbol, n.nameJa) || n.symbol)}</b>（${autoEsc(n.symbol)}）${autoEsc(n.headline)}${link(n.source)}<br><span class="mut">${autoEsc(n.detail)}</span></li>`).join('');
   const rows = usPickedEarn();
   const ai = rows.filter(r => r.aiFilled.length);
   const miss = rows.filter(r => r.eps.actual === null && r.revenue.actual === null);
@@ -476,11 +475,33 @@ function usRenderReport(){
   if(miss.length) notes.push('実績が無い銘柄（天気は「－」）：' + miss.map(r => r.symbol).join('、'));
   el.innerHTML = `<div class="us-rep">
     ${notes.length ? `<div class="us-warn">${notes.join('<br>')}</div>` : ''}
-    <div class="a2"><div><b>市場全体のニュース（${p.marketNews.length}本）</b><ol>${mn}</ol></div>
-    <div><b>個別株（${Math.min(5, p.stockNews.length)}銘柄）</b><ol>${sn}</ol></div></div>
+    <div><b>市場全体のニュース（${p.marketNews.length}本）</b><ol>${mn}</ol></div>
+    <div style="margin-top:6px;"><b>動画に使う個別株ニュース（${Math.min(5, p.stockNews.length)}銘柄）</b>${p.stockNews.length ? '' : '<span class="mut">　なし（個別株ニュースの場面は出しません）</span>'}</div>
+    ${p.stockNews.length ? `<div class="us-scroll"><table class="us-tbl"><tr><th>順</th><th>銘柄</th><th>変動率</th><th>ニュース</th></tr>${usStockItems().map((it, i) => usStockRowHtml(it, i, p.stockNews[i])).join('')}</table></div>` : ''}
     <div style="margin-top:6px;"><b>動画に使う決算銘柄（${rows.length}銘柄${rows.length > US_EARN_PER_PAGE ? '・2ページ' : ''}）</b>${rows.length ? '' : '<span class="mut">　なし（決算一覧の場面は出しません）</span>'}</div>
-    ${rows.length ? `<div class="us-scroll"><table class="us-tbl"><tr><th>順</th><th>銘柄</th><th>発表</th><th>変動率</th><th>売上</th><th>利益</th><th>ガイダンス</th><th>コメント</th></tr>${rows.map(usEarnRowHtml).join('')}</table></div>` : ''}
-    <div class="mut">売上・利益の天気はツールの計算、ガイダンスとコメントは AI です（AI が補った実績には「AI」の印）。候補の全部は ①の決算一覧にあります。</div></div>`;
+    ${rows.length ? `<div class="us-scroll"><table class="us-tbl"><tr><th>順</th><th>銘柄</th><th>発表</th><th>変動率</th><th>売上</th><th>利益</th><th>見通し</th><th>コメント</th></tr>${rows.map(usEarnRowHtml).join('')}</table></div>` : ''}
+    <div class="mut">売上・利益の天気はツールの計算、見通しとコメントは AI です（AI が補った実績には「AI」の印）。候補の全部は ①の決算一覧にあります。</div></div>`;
+}
+// 動画に使う個別株ニュース（最大5銘柄）。変動率はツールが取った値：決算の候補にあればその値動き（当日の引け後に出した銘柄は時間外）、
+// 無ければ変動率の高い銘柄の一覧の値。どちらにも無ければ空（AI に数字は書かせない）
+function usStockItems(){
+  const d = US.data, p = US.parsed; if(!d || !p) return [];
+  const earnAll = usEarnRows();
+  const movers = d.movers ? [...(d.movers.gainers || []), ...(d.movers.losers || []), ...(d.movers.actives || [])] : [];
+  return p.stockNews.slice(0, 5).map(n => {
+    const sym = String(n.symbol || '').toUpperCase().trim();
+    const er = earnAll.find(e => e.symbol === sym), mv = movers.find(q => q.symbol === sym);
+    const after = !!(er && er.session === 'afterhours' && er.afterPct !== null && er.afterPct !== undefined);
+    return { symbol: sym, name: usJa(sym, n.nameJa) || sym, after, pct: er ? (after ? er.afterPct : er.dayPct) : (mv ? mv.pct : null), headline: n.headline || '', detail: n.detail || '' };
+  });
+}
+// ②に出す、動画に使う個別株ニュースの1行（動画と同じ「銘柄・変動率・ニュース」）
+function usStockRowHtml(it, i, n){
+  const src = n && /^https?:\/\//.test(String(n.source || '')) ? ` <a href="${autoEsc(n.source)}" target="_blank" rel="noopener" class="mut">出典</a>` : '';
+  return `<tr><td class="num">${i + 1}</td>
+    <td><b>${autoEsc(it.name)}</b><br><span class="mut">${autoEsc(it.symbol)}</span></td>
+    <td class="num ${usCls(it.pct)}">${usPct(it.pct)}${it.after ? '<br><span class="mut">（アフター）</span>' : ''}</td>
+    <td><b>${autoEsc(it.headline)}</b>${src}<br><span class="mut">${autoEsc(it.detail)}</span></td></tr>`;
 }
 // ②に出す、動画に使う決算銘柄の1行。変動率は動画と同じく1つ（当日の引け後に出した銘柄は時間外＝アフター）
 function usEarnRowHtml(r){
@@ -694,7 +715,7 @@ function usVideoData(){
       japan: { futures: d.markets && d.markets.nikkeiFutures, items: pick(['usdjpy']), narration: '' },
       assets: { items: pick(['us10y', 'gold', 'btc', 'wti']), narration: sec[US_TAG_ASSETS] || '' },
       news: { items: p.marketNews.slice(0, 5).map(n => ({ title: n.title, detail: n.detail })), narration: sec['ニュース'] || '' },
-      stocks: { items: p.stockNews.slice(0, 5).map(n => { const er = earn.find(e => e.symbol === String(n.symbol || '').toUpperCase()); const mv = (d.movers ? [...(d.movers.gainers || []), ...(d.movers.losers || []), ...(d.movers.actives || [])] : []).find(q => q.symbol === String(n.symbol || '').toUpperCase()); return { symbol: n.symbol, name: usJa(n.symbol, n.nameJa) || n.symbol, after: !!(er && er.session === 'afterhours'), pct: er ? (er.session === 'afterhours' ? er.afterPct : er.dayPct) : (mv ? mv.pct : null), headline: n.headline, detail: n.detail }; }), narration: sec['個別株'] || '' },
+      stocks: { items: usStockItems(), narration: sec['個別株'] || '' },
       earnings: { pages, narration: sec['決算'] || '' },
     },
     opening: sec['オープニング'] || '', summary: sec['まとめ'] || '',
@@ -792,7 +813,7 @@ function usTseData(){
     news: s.news.items.map(n => ({ title: n.title, body: n.detail })), news_image: null, summary: null, thumbnail: null,
     us: {
       others: s.otherIndices.items.map(r => q(r)), japan: [], assets: [...japan, ...assets],   // 日本への影響と金利・資産は1つの場面（usAssets）に出す
-      stocks: s.stocks.items.map(i => ({ symbol: i.symbol, name: i.name, pct: i.pct, headline: i.headline, detail: i.detail })),
+      stocks: s.stocks.items.map(i => ({ symbol: i.symbol, name: i.name, pct: i.pct, after: i.after, headline: i.headline, detail: i.detail })),
       earnings: s.earnings.pages.map(p => p.map(e => ({ symbol: e.symbol, name: e.name, timing: e.timing, dayPct: e.dayPct, afterPct: e.session === 'afterhours' ? e.afterPct : null, revenue: e.revenue || null, eps: e.eps || null, guidance: e.guidance || null, comment: e.comment || '' }))),
       afterAsOf: after,
     },
