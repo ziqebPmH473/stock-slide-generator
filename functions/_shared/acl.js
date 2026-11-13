@@ -75,6 +75,7 @@ export function categoryOf(method, path, url) {
   if (path === "/api/fetch-sources" || path === "/api/index-history" || path === "/api/us-sources") return "fetch";
   // 保存は目録（1日の作業のまとめ）を置いたときだけ記録する（中身の1つずつは数えない）
   if (path === "/api/state" && method === "PUT" && url && !url.searchParams.get("part")) return "save";
+  if (path === "/api/us-state" && method === "PUT" && url && !url.searchParams.get("audio")) return "save";   // 米国版の保存（2026-11-14）
   return "";
 }
 

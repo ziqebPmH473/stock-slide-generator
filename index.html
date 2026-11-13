@@ -997,9 +997,16 @@ Appier G|4180|818|+96|+13.30%
     <h2>⚙ 設定（米国版）</h2>
     <div class="auto-row"><strong>必ず載せる銘柄</strong><input id="usSet_must" type="text" onchange="usSaveSettings()" style="flex:1;min-width:220px;" placeholder="AAPL MSFT …（スペース区切り）"></div>
     <p>決算一覧に、値動きが小さい日でも必ず載せるティッカー（初期値は Mag7）。その日に決算を出していなければ載りません。変えたら①の「データ取得」を押し直してください。</p>
-    <div class="auto-row"><strong>決算の時価総額</strong><input id="usSet_mcap" type="number" step="1" min="0" onchange="usSaveSettings()" style="width:80px;"> 十億ドル以上
-      <strong style="margin-left:12px;">載せる数</strong><input id="usSet_max" type="number" step="1" min="1" max="16" onchange="usSaveSettings()" style="width:60px;"> 銘柄まで（1ページ8銘柄・最大2ページ）</div>
-    <div class="auto-row"><strong>変動率の高い銘柄の時価総額</strong><input id="usSet_moversCap" type="number" step="0.5" min="0" onchange="usSaveSettings()" style="width:70px;"> 十億ドル以上</div>
+    <div class="auto-row"><strong>決算一覧に載せる銘柄</strong>
+      時価総額 <input id="usSet_bigCap" type="number" step="10" min="0" onchange="usSaveSettings()" style="width:70px;"> 十億ドル以上、または値動き ±<input id="usSet_earnMove" type="number" step="0.5" min="0" onchange="usSaveSettings()" style="width:55px;">%以上
+      <strong style="margin-left:12px;">載せる数</strong><input id="usSet_max" type="number" step="1" min="1" max="16" onchange="usSaveSettings()" style="width:60px;"> 銘柄まで</div>
+    <p>値動きは、当日の引け後に決算を出した銘柄は時間外の値動き。必ず載せる銘柄は条件に関係なく載せます。値動きの大きい順に並べ、1ページ8銘柄・最大2ページ。決算の候補にするのは、時価総額が下の「決算の候補」以上の銘柄だけです。</p>
+    <div class="auto-row"><strong>個別株ニュースの候補</strong>
+      時価総額 <input id="usSet_newsCap" type="number" step="1" min="0" onchange="usSaveSettings()" style="width:70px;"> 十億ドル以上、かつ値動き ±<input id="usSet_newsMove" type="number" step="0.5" min="0" onchange="usSaveSettings()" style="width:55px;">%以上</div>
+    <p>決算一覧に載せる銘柄は除きます。この候補の中から、材料が確認できた銘柄だけを AI が最大5銘柄選びます（±10%以上を優先）。</p>
+    <div class="auto-row"><strong>決算の候補</strong><input id="usSet_mcap" type="number" step="1" min="0" onchange="usSaveSettings()" style="width:80px;"> 十億ドル以上
+      <strong style="margin-left:12px;">値動きの一覧の取得</strong><input id="usSet_moversCap" type="number" step="0.5" min="0" onchange="usSaveSettings()" style="width:70px;"> 十億ドル以上</div>
+    <p>どちらもデータを取るときの下限です（変えたら①の「データ取得」を押し直してください）。上の決まりは、取り直さなくてもすぐ反映します。</p>
     <div class="auto-row"><strong>天気の幅（％）</strong>
       EPS 晴れ <input id="usSet_eu" type="number" step="0.5" onchange="usSaveSettings()" style="width:60px;">以上・雨 <input id="usSet_ed" type="number" step="0.5" onchange="usSaveSettings()" style="width:60px;">より下
       ／ 売上 晴れ <input id="usSet_su" type="number" step="0.1" onchange="usSaveSettings()" style="width:60px;">以上・雨 <input id="usSet_sd" type="number" step="0.1" onchange="usSaveSettings()" style="width:60px;">より下</div>
@@ -1009,6 +1016,14 @@ Appier G|4180|818|+96|+13.30%
     <div class="auto-row"><strong>テキストモデル</strong>
       <select id="usModel" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;min-height:32px;"></select></div>
     <p>台本・サムネ案・X投稿文・一言とまとめを作る AI です。東証版の ⚙設定 の「テキストモデル」と同じ1つの設定で、どちらで変えても両方に反映されます。「自動」は推奨モデル＋混雑時の自動降格です。</p>
+    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+      <div class="auto-row"><strong>サーバー保存</strong>
+        <button class="btn-mini" onclick="usSyncList()" title="一覧を取り直す">↻</button>
+        <button class="btn-mini" onclick="usSyncForce()" title="別の端末の保存を、この端末の作業で上書きする">この端末で上書き</button>
+        <span id="usSyncStatus" class="mut"></span></div>
+      <div id="usSyncList" style="margin-top:4px;"></div>
+      <p>米国版の作業（取得データ・レポート・台本・投稿文・動画のデータと読み上げの音声）は、米国の対象日ごとにサーバーへ自動で保存します。別の端末で開くと、いちばん新しい回の続きから開きます。直近30日分が残り、「開く」で前の回に戻せます。</p>
+    </div>
     <div class="auto-row" style="margin-top:6px;"><button class="btn-sm" onclick="usReset()">🗑 米国版の作業を消す</button>
       <a class="btn-sm admin-only" href="/admin" target="_blank" rel="noopener" style="display:none;text-decoration:none;">👤 管理画面を開く</a></div>
   </div>
