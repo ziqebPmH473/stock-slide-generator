@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>アカウント管理</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+:root { --bg:#0f172a; --panel:#1e293b; --border:#334155; --text:#e2e8f0; --muted:#94a3b8; --accent:#3b82f6; --warn:#f59e0b; --ng:#ef4444; --ok:#22c55e; }
+body { background:var(--bg); color:var(--text); font-family:'Helvetica Neue',Arial,'Hiragino Sans',sans-serif; padding:16px; max-width:960px; margin:0 auto; }
+h1 { font-size:20px; margin-bottom:4px; }
+.sub { color:var(--muted); font-size:13px; margin-bottom:16px; line-height:1.6; }
+.card { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:12px; }
+.card h2 { font-size:14px; color:var(--muted); margin-bottom:10px; }
+.acct { border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:10px; background:var(--bg); }
+.acct-head { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
+.acct-head .email { font-weight:700; word-break:break-all; flex:1 1 200px; }
+.tag { font-size:11px; padding:2px 8px; border-radius:10px; background:#1e3a5f; color:var(--text); }
+.tag.admin { background:#14532d; }
+.row { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; font-size:13px; margin:6px 0; }
+label { display:inline-flex; gap:4px; align-items:center; }
+input[type=text], input[type=email], input[type=number], select { background:var(--panel); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:5px 8px; font-size:13px; }
+input[type=number] { width:80px; }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+th, td { border-bottom:1px solid var(--border); padding:6px 4px; text-align:left; vertical-align:top; }
+th { color:var(--muted); font-weight:600; }
+.lim th, .lim td { padding:5px 4px; }
+.used.near { color:var(--warn); font-weight:700; }
+.used.over { color:var(--ng); font-weight:700; }
+.btn { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:10px 20px; font-size:14px; font-weight:600; cursor:pointer; }
+.btn-sm { background:#1e3a5f; border:1px solid var(--border); color:var(--text); border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer; }
+.btn-sm.danger { background:#4c1d1d; }
+#msg { font-size:13px; min-height:18px; margin-top:8px; }
+.ng { color:var(--ng); } .ok { color:var(--ok); }
+.scroll { overflow-x:auto; }
+#logTable { min-width:620px; }
+#logTable td:nth-child(1), #logTable td:nth-child(3) { white-space:nowrap; }
+.note { font-size:12px; color:var(--muted); line-height:1.6; margin-top:6px; }
+</style>
+</head>
+<body>
+<h1>👤 アカウント管理</h1>
+<p class="sub" id="who">読み込み中…</p>
+
+<div class="card">
+  <h2>アカウントごとの設定と今日の回数（日本時間 <span id="today"></span>）</h2>
+  <div id="accts"></div>
+  <div class="row" style="margin-top:4px">
+    <input type="email" id="newEmail" placeholder="追加するメールアドレス" style="flex:1 1 220px">
+    <button class="btn-sm" onclick="addAcct()">＋ アカウントを追加</button>
+  </div>
+  <p class="note">
+    ・上限は1日の回数です（空欄は無制限、0 は使えない）。日本時間の0時に戻ります。音声生成は動画の場面ごとに1回なので、動画1本で10回前後になります。<br>
+    ・「AI を直接呼ぶ」をオンにすると、画面に AI のキーを渡します（考える時間の長いモデルが切られにくい）。その代わり、そのアカウントの文章の AI は数えられず、上限も効きません。<br>
+    ・管理者（環境変数 ADMIN_EMAILS）は制限を受けません。ここに無いアカウントは「その他のアカウント」の設定になります。<br>
+    ・Cloudflare のログインを通れるかどうかは、ここではなく Cloudflare Zero Trust の Access のポリシーで決まります。
+  </p>
+  <div style="margin-top:10px"><button class="btn" onclick="save()">💾 設定を保存</button></div>
+  <div id="msg"></div>
+</div>
+
+<div class="card">
+  <h2>操作の記録</h2>
+  <div class="row">
+    <select id="logDate" onchange="loadLogs()"></select>
+    <select id="logUser" onchange="renderLogs()"><option value="">全員</option></select>
+    <select id="logCat" onchange="renderLogs()"><option value="">全機能</option></select>
+    <button class="btn-sm" onclick="loadLogs()">↻ 更新</button>
+  </div>
+  <div class="scroll"><table id="logTable"></table></div>
+  <p class="note" id="logNote"></p>
+</div>
+
+<p class="note"><a href="/" style="color:var(--accent)">← ツールに戻る</a></p>
+
+<script>
+let S = null;      // GET /api/admin の答え
+let CFG = null;    // 編集中の設定
+let LOGS = [];
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $ = id => document.getElementById(id);
+
+async function load(){
+  const r = await fetch('/api/admin', { cache:'no-store' });
+  const d = await r.json().catch(()=>({ ok:false, error:'HTTP '+r.status }));
+  if(!d.ok){ $('who').innerHTML = `<span class="ng">${esc(d.error)}</span>${d.me?'（ログイン中：'+esc(d.me)+'）':''}`; return; }
+  S = d; CFG = JSON.parse(JSON.stringify(d.config));
+  $('who').textContent = `ログイン中：${d.me}　管理者：${d.admins.join(', ') || '（未設定）'}　記録は ${d.keepDays} 日分残します。`;
+  $('today').textContent = d.today;
+  renderAccts();
+  $('logDate').innerHTML = (d.dates.length ? d.dates : [d.today]).map(x=>`<option>${x}</option>`).join('');
+  $('logCat').innerHTML = '<option value="">全機能</option>' + Object.entries(d.categories).map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join('');
+  loadLogs();
+}
+
+function emails(){
+  // 設定にあるもの＋今日使ったもの（管理者・ローカル以外）
+  const set = new Set(Object.keys(CFG.users));
+  for(const e of Object.keys(S.usage)) if(e!=='local' && e!=='unknown' && !S.admins.includes(e)) set.add(e);
+  return [...set].sort();
+}
+
+function acctHtml(key, p, title, isDefault){
+  const u = isDefault ? null : (S.usage[key] || {});
+  const hourOpts = (sel) => '<option value="">制限なし</option>' + Array.from({length:25},(_,h)=>`<option value="${h}" ${sel===h?'selected':''}>${h}時</option>`).join('');
+  const rows = S.limitable.map(k => {
+    const lim = p.limits && Number.isInteger(p.limits[k]) ? p.limits[k] : '';
+    const off = (p.disabled||[]).includes(k);
+    const used = u ? (u[k]||0) : '';
+    const cls = (u && lim!=='' ) ? (used>=lim ? 'over' : used>=lim*0.8 ? 'near' : '') : '';
+    const chars = u && u[k+'Chars'] ? `<br><span style="color:var(--muted)">${u[k+'Chars'].toLocaleString()}字</span>` : '';
+    return `<tr><td>${esc(S.categories[k])}</td>
+      <td><label><input type="checkbox" data-k="${esc(key)}" data-f="use" data-c="${k}" ${off?'':'checked'}>使う</label></td>
+      <td><input type="number" min="0" placeholder="無制限" value="${lim}" data-k="${esc(key)}" data-f="lim" data-c="${k}"></td>
+      ${isDefault ? '' : `<td class="used ${cls}">${used}${lim!==''?' / '+lim:''}${chars}</td>`}</tr>`;
+  }).join('');
+  return `<div class="acct">
+    <div class="acct-head"><span class="email">${esc(title)}</span>
+      ${isDefault ? '' : `<input type="text" placeholder="名前（例：muse）" value="${esc(p.label||'')}" data-k="${esc(key)}" data-f="label" style="width:140px">
+      <button class="btn-sm danger" onclick="delAcct('${esc(key)}')">削除</button>`}</div>
+    <div class="row">
+      <label><input type="checkbox" data-k="${esc(key)}" data-f="direct" ${p.directAI?'checked':''}>AI を直接呼ぶ（キーを渡す）</label>
+      <span>使える時間：<select data-k="${esc(key)}" data-f="from">${hourOpts(p.hours?p.hours.from:null)}</select> 〜
+      <select data-k="${esc(key)}" data-f="to">${hourOpts(p.hours?p.hours.to:null)}</select></span>
+    </div>
+    <div class="scroll"><table class="lim"><tr><th>機能</th><th></th><th>1日の上限</th>${isDefault?'':'<th>今日</th>'}</tr>${rows}</table></div>
+    ${!isDefault && u && u.save ? `<p class="note">今日の保存：${u.save}回</p>` : ''}
+  </div>`;
+}
+
+function renderAccts(){
+  let h = '';
+  for(const e of emails()) h += acctHtml(e, CFG.users[e] || CFG.default, e + (CFG.users[e] ? '' : '（未設定：その他のアカウントの設定を使用中）'), false);
+  h += acctHtml('__default__', CFG.default, 'その他のアカウント（ここに無い人全員）', true);
+  // 管理者・ローカルの今日の回数（制限なし。見るだけ）
+  const free = Object.keys(S.usage).filter(e => e==='local' || S.admins.includes(e));
+  if(free.length){
+    h += '<div class="acct"><div class="acct-head"><span class="email">管理者（制限なし）の今日の回数</span></div><div class="scroll"><table class="lim"><tr><th>アカウント</th>' +
+      S.limitable.map(k=>`<th>${esc(S.categories[k])}</th>`).join('') + '<th>保存</th></tr>' +
+      free.map(e=>`<tr><td>${esc(e)}</td>${S.limitable.map(k=>`<td>${S.usage[e][k]||0}</td>`).join('')}<td>${S.usage[e].save||0}</td></tr>`).join('') + '</table></div></div>';
+  }
+  $('accts').innerHTML = h;
+  $('accts').querySelectorAll('[data-k]').forEach(el => el.addEventListener('change', onEdit));
+}
+
+function pol(key){
+  if(key==='__default__') return CFG.default;
+  if(!CFG.users[key]) CFG.users[key] = JSON.parse(JSON.stringify(CFG.default));
+  return CFG.users[key];
+}
+function onEdit(ev){
+  const el = ev.target, p = pol(el.dataset.k), f = el.dataset.f, c = el.dataset.c;
+  p.limits = p.limits || {}; p.disabled = p.disabled || [];
+  if(f==='label') p.label = el.value.trim();
+  if(f==='direct') p.directAI = el.checked;
+  if(f==='use'){ p.disabled = p.disabled.filter(x=>x!==c); if(!el.checked) p.disabled.push(c); }
+  if(f==='lim'){ if(el.value==='') delete p.limits[c]; else p.limits[c] = Math.max(0, parseInt(el.value,10)||0); }
+  if(f==='from' || f==='to'){
+    const box = el.closest('.acct');
+    const from = box.querySelector('[data-f=from]').value, to = box.querySelector('[data-f=to]').value;
+    p.hours = (from!=='' && to!=='' && from!==to) ? { from:parseInt(from,10), to:parseInt(to,10) } : null;
+  }
+  $('msg').innerHTML = '<span style="color:var(--warn)">まだ保存していません</span>';
+}
+function addAcct(){
+  const e = $('newEmail').value.trim().toLowerCase();
+  if(!/^[^\s@]+@[^\s@]+$/.test(e)){ $('msg').innerHTML = '<span class="ng">メールアドレスの形が違います</span>'; return; }
+  if(!CFG.users[e]) CFG.users[e] = JSON.parse(JSON.stringify(CFG.default));
+  $('newEmail').value = ''; renderAccts();
+  $('msg').innerHTML = '<span style="color:var(--warn)">まだ保存していません</span>';
+}
+function delAcct(e){
+  if(!confirm(e + ' の設定を消しますか？（その他のアカウントの設定になります）')) return;
+  delete CFG.users[e]; renderAccts();
+  $('msg').innerHTML = '<span style="color:var(--warn)">まだ保存していません</span>';
+}
+async function save(){
+  $('msg').textContent = '保存中…';
+  const r = await fetch('/api/admin', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(CFG) });
+  const d = await r.json().catch(()=>({ ok:false, error:'HTTP '+r.status }));
+  if(!d.ok){ $('msg').innerHTML = `<span class="ng">保存できませんでした：${esc(d.error)}</span>`; return; }
+  CFG = d.config; S.config = JSON.parse(JSON.stringify(d.config)); renderAccts();
+  $('msg').innerHTML = '<span class="ok">✅ 保存しました（すぐに効きます）</span>';
+}
+
+async function loadLogs(){
+  const date = $('logDate').value || S.today;
+  $('logNote').textContent = '読み込み中…';
+  const r = await fetch('/api/admin?log=' + encodeURIComponent(date), { cache:'no-store' });
+  const d = await r.json().catch(()=>({ ok:false }));
+  LOGS = d.ok ? d.logs : [];
+  const users = [...new Set(LOGS.map(x=>x.user))].sort();
+  const cur = $('logUser').value;
+  $('logUser').innerHTML = '<option value="">全員</option>' + users.map(u=>`<option ${u===cur?'selected':''}>${esc(u)}</option>`).join('');
+  renderLogs();
+}
+function renderLogs(){
+  const u = $('logUser').value, c = $('logCat').value;
+  const rows = LOGS.filter(x => (!u || x.user===u) && (!c || x.cat===c));
+  const label = e => (CFG && CFG.users[e] && CFG.users[e].label) ? `${CFG.users[e].label}<br><span style="color:var(--muted)">${esc(e)}</span>` : esc(e);
+  $('logTable').innerHTML = '<tr><th>時刻</th><th>アカウント</th><th>機能</th><th>結果</th><th>モデル</th><th>文字数</th><th>秒</th></tr>' +
+    rows.map(x => `<tr><td>${esc(x.time)}</td><td>${label(x.user)}</td><td>${esc(S.categories[x.cat]||x.cat)}</td>
+      <td class="${/成功/.test(x.result)?'':'ng'}">${esc(x.result)}${x.note?'<br><span style="color:var(--muted)">'+esc(x.note)+'</span>':''}</td>
+      <td>${esc(x.usedModel||x.model||'')}${x.voice?'<br>'+esc(x.voice):''}</td><td>${x.chars?Number(x.chars).toLocaleString():''}</td>
+      <td>${x.ms?(x.ms/1000).toFixed(1):''}</td></tr>`).join('');
+  $('logNote').textContent = rows.length ? `${rows.length}件（新しい順。1日最大500件まで表示）` : 'この日の記録はありません';
+}
+load();
+</script>
+</body>
+</html>
