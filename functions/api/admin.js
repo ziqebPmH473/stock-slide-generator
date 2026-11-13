@@ -2,12 +2,13 @@
 // /api/admin（2026-11-13）：アカウントの制限の設定と、使った回数・記録を見る（管理画面 admin.html 用）
 //   GET  /api/admin                … 自分・管理者・設定・今日の各アカウントの回数・記録のある日付
 //   GET  /api/admin?log=YYYY-MM-DD … その日の記録（新しい順、最大500件）
-//   GET  /api/admin?me=1           … 自分が管理者かどうかだけ（{ ok, admin }。誰でも呼べる。設定タブに管理画面への入口を出すかどうかを決める）
+//   GET  /api/admin?me=1           … 自分のこと（誰でも呼べる）：管理画面を開けるか（admin）と、自分にかかっている制限・今日の回数（limits）。
+//                                    設定タブの管理画面への入口と、使えないボタンのグレーアウト（index.html の ssgAcl〜）に使う。制限なしの人は limits が null
 //   PUT  /api/admin                … 設定を保存（本文は { users: {メール: {...}}, default: {...} }）
 // 開けるのは環境変数 ADMIN_EMAILS に入っている人と、ローカルだけ。
 // ============================================================
 import {
-  CATEGORIES, LIMITABLE, KEEP_LOG_DAYS, json, userOf, adminList, canAdmin, loadConfig, cleanConfig,
+  CATEGORIES, LIMITABLE, KEEP_LOG_DAYS, json, userOf, adminList, canAdmin, isAdmin, loadConfig, cleanConfig, policyFor, inHours, getUsage,
   jstDate, readLogs, logDates, cleanupOld,
 } from "../_shared/acl.js";
 
@@ -27,7 +28,17 @@ function guard(context) {
 export async function onRequestGet(context) {
   if (new URL(context.request.url).searchParams.get("me")) {
     const { request, env } = context;
-    return json({ ok: true, admin: !!env.STATE && canAdmin(env, userOf(request)) });
+    const user = userOf(request);
+    const out = { ok: true, admin: !!env.STATE && canAdmin(env, user), limits: null };
+    // 制限がかかるのは、R2 があって、管理者でない人だけ（/api/_middleware.js と同じ決まり）
+    if (env.STATE && !isAdmin(env, user)) {
+      const pol = policyFor(await loadConfig(env), user);
+      const u = await getUsage(env, user);
+      const used = {};
+      for (const [name, b] of Object.entries(u.btn || {})) used[name] = (b && b.n) || 0;
+      out.limits = { disabled: pol.disabled || [], limits: pol.limits || {}, used, hours: pol.hours || null, inHours: inHours(pol.hours) };
+    }
+    return json(out);
   }
   const g = guard(context);
   if (g.res) return g.res;

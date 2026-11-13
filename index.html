@@ -30,6 +30,8 @@
     const t = String(el.getAttribute('aria-label') || el.innerText || el.value || '').replace(/\s+/g, ' ').trim();
     return (ALIAS[t] || (t.length <= 2 && el.title ? el.title : t) || el.title || '').slice(0, 40);
   };
+  // 使えないボタンのグレーアウト（下の ssgAcl〜）が、同じ名前の決め方を使う
+  window.ssgBtn = { SEL, ALIAS, labelOf };
   document.addEventListener('click', e => {
     const el = e.target && e.target.closest ? e.target.closest(SEL) : null;
     if (!el) return;
@@ -55,7 +57,13 @@
         }
       }
     } catch (e) {}
-    return orig(input, init);
+    const p = orig(input, init);
+    // 数える呼び出し（AI・音声・取得など）が終わったら、自分の今日の回数を取り直す（上限に達したボタンをグレーにするため）
+    try {
+      const u2 = new URL(typeof input === 'string' ? input : (input && input.url) || '', location.href);
+      if (u2.origin === location.origin && /^\/api\/(analyze|tts|image|transcribe|fetch-sources|index-history|us-sources)$/.test(u2.pathname) && typeof window.ssgAclKick === 'function') p.then(() => window.ssgAclKick(), () => {});
+    } catch (e) {}
+    return p;
   };
 })();
 </script>
@@ -233,6 +241,8 @@ body.mode-full #vThumbBtn { display:none; }
 /* 上のタブが5つになったので、スマホでは縦に潰さず横にスクロールさせる（2026-11-14） */
 .tab-bar { overflow-x:auto; scrollbar-width:thin; }
 .tab-btn { white-space:nowrap; flex-shrink:0; }
+/* アカウントの制限で使えないボタン（管理者が止めた・今日の上限に達した・時間帯の外）。押せない（ssgAcl〜） */
+[data-acl-off] { opacity:.38 !important; cursor:not-allowed !important; filter:grayscale(1); }
 /* ===== 米国版（#tabUs。us.js）===== */
 #tabUs .card { padding:9px 11px; margin-bottom:0; display:none; }
 #tabUs .card.current { display:block; }
@@ -4227,8 +4237,59 @@ autoInitDict();
 setTimeout(()=>{ thumbLoadMoves(); }, 0);
 try{ const k=localStorage.getItem(SSG_PREFIX+'restoreStep'); if(k){ localStorage.removeItem(SSG_PREFIX+'restoreStep'); window.__autoStepK=k; } }catch(e){}   // 「取込」の直後は、出力したときに開いていた工程へ
 switchTab('full');   // 初期表示を全自動版にする
-// 管理者なら、⚙設定に管理画面への入口を出す（管理者でない人には見せない）
-fetch('/api/admin?me=1',{cache:'no-store'}).then(r=>r.json()).then(d=>{ if(d&&d.admin) document.querySelectorAll('.admin-only').forEach(el=>{ el.style.display=''; }); }).catch(()=>{});
+// ==================== アカウントの制限：使えないボタンをグレーにして押せなくする（2026-11-14）====================
+// ・/api/admin?me=1 が、自分にかかっている制限（止めたボタン・1日の上限・時間帯）と今日の回数を返す。管理者・制限なしの人は limits が null（何もしない）。
+// ・ボタンの名前は、回数を数えるのと同じ決め方（data-btn、無ければ表示の文字。先頭の ssgBtn）。
+// ・グレーにするのは：管理者が止めたボタン／今日の上限に達したボタン／時間帯の外のときは名前の付いたボタン全部。
+// ・押せなくするのは、クリックをここで止めるだけ（ほかの処理が disabled を戻しても効くように、disabled 属性は使わない）。
+//   サーバー側でも止めているので、ここをすり抜けても使えない（今までどおり 403・429 が返る）。
+// ・上限に達していても、始まっている操作の続き（動画の音声を場面ごとに作るなど）はサーバーが最後まで通す。
+// ・管理者なら、⚙設定に管理画面への入口を出す（管理者でない人には見せない）。
+let ssgAcl = null, ssgAclTimer = null;
+function ssgAclReason(label){
+  const L = ssgAcl; if(!L || !label) return '';
+  if((L.disabled||[]).includes(label)) return 'このアカウントでは使えません（管理者が止めています）';
+  const max = (L.limits||{})[label];
+  if(Number.isInteger(max) && ((L.used||{})[label]||0) >= max) return `今日の上限（${max}回）に達しました（日本時間の0時に戻ります）`;
+  if(L.inHours === false && L.hours) return `このアカウントで使える時間は ${L.hours.from}時〜${L.hours.to}時（日本時間）です`;
+  return '';
+}
+// 制限の対象になるボタンか（名前を付けてあるボタンと、動画の部品の中の決まった名前のボタン）
+function ssgAclTarget(el){
+  if(el.dataset && el.dataset.btn) return true;
+  const t = String(el.innerText || '').replace(/\s+/g, ' ').trim();
+  return !!(window.ssgBtn && window.ssgBtn.ALIAS[t]);
+}
+function ssgAclPaint(){
+  if(!window.ssgBtn) return;
+  for(const el of document.querySelectorAll(window.ssgBtn.SEL)){
+    const why = ssgAcl && ssgAclTarget(el) ? ssgAclReason(window.ssgBtn.labelOf(el)) : '';
+    if(why){
+      if(el.getAttribute('data-acl-off') !== why){ if(!el.hasAttribute('data-acl-title')) el.setAttribute('data-acl-title', el.getAttribute('title') || ''); el.setAttribute('data-acl-off', why); el.setAttribute('title', why); }
+    }else if(el.hasAttribute('data-acl-off')){
+      el.removeAttribute('data-acl-off'); const t = el.getAttribute('data-acl-title'); el.removeAttribute('data-acl-title'); if(t) el.setAttribute('title', t); else el.removeAttribute('title');
+    }
+  }
+}
+async function ssgAclRefresh(){
+  try{
+    const d = await (await fetch('/api/admin?me=1', { cache: 'no-store' })).json();
+    if(d && d.admin) document.querySelectorAll('.admin-only').forEach(el => { el.style.display = ''; });
+    ssgAcl = (d && d.limits) || null;
+  }catch(e){}
+  ssgAclPaint();
+}
+// /api を呼び終えたあと（先頭の仕組みから呼ばれる）。続けて何度も呼ばれるので、少し待ってまとめて取り直す
+window.ssgAclKick = function(){ clearTimeout(ssgAclTimer); ssgAclTimer = setTimeout(ssgAclRefresh, 1500); };
+// 押せなくする（ほかのクリックの処理より先に止める）
+document.addEventListener('click', e => {
+  const el = e.target && e.target.closest ? e.target.closest('[data-acl-off]') : null;
+  if(!el) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+}, true);
+ssgAclRefresh();
+setInterval(ssgAclRefresh, 5 * 60 * 1000);   // 時間帯の境目・日付が変わったとき・管理者が設定を変えたときのため
+setInterval(ssgAclPaint, 2000);              // あとから描かれるボタン（動画の部品・タブの切り替え）にも付ける
 ssgSyncBoot();   // サーバーに今日の作業があれば、それに置き換える（別の端末で続きから）
 // ==================== 週間まとめ（画像。上のタブ「週間まとめ」。2026-11-11）====================
 // ・サーバーに保存してある各日の作業から、動画のデータ（ssg_video の data）だけを読む（画像・音声は読まない。いまの作業は置き換えない）。
