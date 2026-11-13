@@ -33,8 +33,9 @@ th { color:var(--muted); font-weight:600; }
 #msg { font-size:13px; min-height:18px; margin-top:8px; }
 .ng { color:var(--ng); } .ok { color:var(--ok); }
 .scroll { overflow-x:auto; }
-#logTable { min-width:620px; }
-#logTable td:nth-child(1), #logTable td:nth-child(3) { white-space:nowrap; }
+#logTable { min-width:720px; }
+#logTable td:nth-child(1), #logTable td:nth-child(4) { white-space:nowrap; }
+.btns { margin-top:8px; font-size:13px; } .btns summary { cursor:pointer; color:var(--muted); margin-bottom:4px; }
 .note { font-size:12px; color:var(--muted); line-height:1.6; margin-top:6px; }
 </style>
 </head>
@@ -51,7 +52,8 @@ th { color:var(--muted); font-weight:600; }
   </div>
   <p class="note">
     ・上限は1日の操作の回数です（空欄は無制限、0 は使えない）。日本時間の0時に戻ります。<br>
-    ・ボタン1回で何度も呼ぶ機能（動画の読み上げは場面ごとに呼ぶなど）は、前の呼び出しから3分以内に続いた呼び出しをまとめて1回と数えます。上限に達していても、始まった操作は最後まで通します。3分以内に別のボタンを押した場合も、続きとして1回にまとまります。<br>
+    ・ボタン1回＝1回と数えます（動画の読み上げのように、1回押すと何度も呼ぶものも1回）。どのボタンで何回使ったかは各アカウントの「今日のボタン別の回数」と、下の操作の記録で見られます。上限に達していても、始まった操作は最後まで通します。<br>
+    ・ボタンを押さずに自動で動いたもの（画面を通さない呼び出しを含む）は「（ボタンなし・自動）」になり、3分以内に続いたものを1回にまとめます。<br>
     ・「AI を直接呼ぶ」をオンにすると、画面に AI のキーを渡します（考える時間の長いモデルが切られにくい）。その代わり、そのアカウントの文章の AI は数えられず、上限も効きません。<br>
     ・管理者（環境変数 ADMIN_EMAILS）は制限を受けません。ここに無いアカウントは「その他のアカウント」の設定になります。<br>
     ・Cloudflare のログインを通れるかどうかは、ここではなく Cloudflare Zero Trust の Access のポリシーで決まります。
@@ -66,6 +68,7 @@ th { color:var(--muted); font-weight:600; }
     <select id="logDate" onchange="loadLogs()"></select>
     <select id="logUser" onchange="renderLogs()"><option value="">全員</option></select>
     <select id="logCat" onchange="renderLogs()"><option value="">全機能</option></select>
+    <select id="logBtn" onchange="renderLogs()"><option value="">全ボタン</option></select>
     <button class="btn-sm" onclick="loadLogs()">↻ 更新</button>
   </div>
   <div class="scroll"><table id="logTable"></table></div>
@@ -126,9 +129,17 @@ function acctHtml(key, p, title, isDefault){
     </div>
     <div class="scroll"><table class="lim"><tr><th>機能</th><th></th><th>1日の上限</th>${isDefault?'':'<th>今日</th>'}</tr>${rows}</table></div>
     ${!isDefault && u && u.save ? `<p class="note">今日の保存：${u.save}回</p>` : ''}
+    ${isDefault ? '' : buttonsHtml(u)}
   </div>`;
 }
 
+// 今日のボタン別の回数（どのボタンで何回使ったか）
+function buttonsHtml(u){
+  const list = Object.values((u && u.buttons) || {}).sort((a,b)=> (a.cat<b.cat?-1:a.cat>b.cat?1:b.n-a.n));
+  if(!list.length) return '';
+  return `<details class="btns" open><summary>今日のボタン別の回数</summary><div class="scroll"><table class="lim"><tr><th>ボタン</th><th>機能</th><th>回数</th><th>呼び出し</th></tr>` +
+    list.map(b=>`<tr><td>${esc(b.button)}</td><td>${esc(S.categories[b.cat]||b.cat)}</td><td>${b.n}</td><td>${b.calls}</td></tr>`).join('') + '</table></div></details>';
+}
 function renderAccts(){
   let h = '';
   for(const e of emails()) h += acctHtml(e, CFG.users[e] || CFG.default, e + (CFG.users[e] ? '' : '（未設定：その他のアカウントの設定を使用中）'), false);
@@ -138,7 +149,7 @@ function renderAccts(){
   if(free.length){
     h += '<div class="acct"><div class="acct-head"><span class="email">管理者（制限なし）の今日の回数</span></div><div class="scroll"><table class="lim"><tr><th>アカウント</th>' +
       S.limitable.map(k=>`<th>${esc(S.categories[k])}</th>`).join('') + '<th>保存</th></tr>' +
-      free.map(e=>`<tr><td>${esc(e)}</td>${S.limitable.map(k=>`<td>${S.usage[e][k]||0}</td>`).join('')}<td>${S.usage[e].save||0}</td></tr>`).join('') + '</table></div></div>';
+      free.map(e=>`<tr><td>${esc(e)}</td>${S.limitable.map(k=>`<td>${S.usage[e][k]||0}</td>`).join('')}<td>${S.usage[e].save||0}</td></tr>`).join('') + '</table></div>' + free.map(e=>buttonsHtml(S.usage[e]) ? `<p class="note">${esc(e)}</p>`+buttonsHtml(S.usage[e]) : '').join('') + '</div>';
   }
   $('accts').innerHTML = h;
   $('accts').querySelectorAll('[data-k]').forEach(el => el.addEventListener('change', onEdit));
@@ -193,14 +204,16 @@ async function loadLogs(){
   const users = [...new Set(LOGS.map(x=>x.user))].sort();
   const cur = $('logUser').value;
   $('logUser').innerHTML = '<option value="">全員</option>' + users.map(u=>`<option ${u===cur?'selected':''}>${esc(u)}</option>`).join('');
+  const btns = [...new Set(LOGS.map(x=>x.button).filter(Boolean))].sort(); const curB = $('logBtn').value;
+  $('logBtn').innerHTML = '<option value="">全ボタン</option>' + btns.map(b=>`<option ${b===curB?'selected':''}>${esc(b)}</option>`).join('');
   renderLogs();
 }
 function renderLogs(){
-  const u = $('logUser').value, c = $('logCat').value;
-  const rows = LOGS.filter(x => (!u || x.user===u) && (!c || x.cat===c));
+  const u = $('logUser').value, c = $('logCat').value, bt = $('logBtn').value;
+  const rows = LOGS.filter(x => (!u || x.user===u) && (!c || x.cat===c) && (!bt || x.button===bt));
   const label = e => (CFG && CFG.users[e] && CFG.users[e].label) ? `${CFG.users[e].label}<br><span style="color:var(--muted)">${esc(e)}</span>` : esc(e);
-  $('logTable').innerHTML = '<tr><th>時刻</th><th>アカウント</th><th>機能</th><th>結果</th><th>モデル</th><th>文字数</th><th>秒</th></tr>' +
-    rows.map(x => `<tr><td>${esc(x.time)}</td><td>${label(x.user)}</td><td>${esc(S.categories[x.cat]||x.cat)}</td>
+  $('logTable').innerHTML = '<tr><th>時刻</th><th>アカウント</th><th>ボタン</th><th>機能</th><th>結果</th><th>モデル</th><th>文字数</th><th>秒</th></tr>' +
+    rows.map(x => `<tr><td>${esc(x.time)}</td><td>${label(x.user)}</td><td>${esc(x.button||'')}</td><td>${esc(S.categories[x.cat]||x.cat)}</td>
       <td class="${/成功/.test(x.result)?'':'ng'}">${esc(x.result)}${x.note?'<br><span style="color:var(--muted)">'+esc(x.note)+'</span>':''}</td>
       <td>${esc(x.usedModel||x.model||'')}${x.voice?'<br>'+esc(x.voice):''}</td><td>${x.chars?Number(x.chars).toLocaleString():''}</td>
       <td>${x.ms?(x.ms/1000).toFixed(1):''}</td></tr>`).join('');

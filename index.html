@@ -11,6 +11,43 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="meigara-dict.js"></script>
+<script>
+// ==================== 操作の記録：押したボタンを /api の呼び出しに付ける（2026-11-14）====================
+// アカウントごとの回数を「ボタン1回＝1回」で数え、どのボタンの操作かを管理画面で見るため。
+// ・ボタンを押してすぐ（1.5秒以内）に /api を呼んだら、そのボタンの操作として始める（X-SSG-Button・X-SSG-Press を付ける）。
+// ・その後の呼び出し（動画の読み上げを場面ごとに呼ぶなど）は、次に別のボタンが操作を始めるまで、同じ操作として付け続ける。
+// ・工程・タブの切り替えなど、押しても /api を呼ばないボタンは操作にならない（続いている操作の名前を上書きしない）。
+// ・ボタンを押さずに動くもの（自動の保存など）は、最初の操作より前なら何も付けない（サーバーが「自動」として扱う）。
+(function(){
+  let cand = null, cur = null;
+  const SEL = 'button, a.btn-sm, label.btn-sm, label.btn-mini, [role=button], input[type=button], input[type=submit]';
+  const labelOf = el => String(el.getAttribute('aria-label') || el.innerText || el.value || el.title || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  document.addEventListener('click', e => {
+    const el = e.target && e.target.closest ? e.target.closest(SEL) : null;
+    if (!el) return;
+    const label = labelOf(el);
+    if (label) cand = { label, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7), t: Date.now() };
+  }, true);
+  const orig = window.fetch.bind(window);
+  window.fetch = function(input, init){
+    try {
+      const url = typeof input === 'string' ? input : (input && input.url) || '';
+      const u = new URL(url, location.href);
+      if (u.origin === location.origin && u.pathname.startsWith('/api/')) {
+        if (cand && Date.now() - cand.t < 1500) { cur = cand; cand = null; }
+        if (cur) {
+          init = Object.assign({}, init || {});
+          const h = new Headers(init.headers || (typeof input !== 'string' && input.headers) || {});
+          h.set('X-SSG-Button', encodeURIComponent(cur.label));
+          h.set('X-SSG-Press', cur.id);
+          init.headers = h;
+        }
+      }
+    } catch (e) {}
+    return orig(input, init);
+  };
+})();
+</script>
 <style>
 /* ===== APP UI ===== */
 :root { --bg:#0f172a; --panel:#1e293b; --border:#334155; --text:#e2e8f0; --muted:#94a3b8; --accent:#3b82f6; }

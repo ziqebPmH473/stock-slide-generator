@@ -140,26 +140,49 @@ export async function getUsage(env, user, date = jstDate()) {
   }
 }
 
-// ボタン1回で何度も呼ぶ機能（動画の読み上げは場面ごとに呼ぶなど）を「1回」と数えるため、
-// 前の呼び出しから GROUP_GAP_MS 以内に続いた呼び出しは、同じ操作の続きとしてまとめる。
+// 回数は「ボタン1回＝1回」で数える（2026-11-14）。
+// ・画面は、押したボタンの名前（X-SSG-Button）と押した1回ごとの印（X-SSG-Press）を /api の呼び出しに付ける（index.html の先頭）。
+//   同じ印の呼び出し（動画の読み上げを場面ごとに呼ぶなど）は、最初の1回だけ数える。
+// ・印が無い呼び出し（ボタンを押さずに自動で動いたもの、画面を通さない呼び出し）は、
+//   前の呼び出しから GROUP_GAP_MS 以内なら同じ操作の続きとしてまとめる。
 export const GROUP_GAP_MS = 3 * 60 * 1000;
+const KEEP_PRESSES = 40;   // 機能ごとに覚えておく、最近の印の数
 
-// いまの呼び出しが、前の操作の続きか（上限に達していても、始まった操作は最後まで通すため）
-export function isContinuation(u, cat, now = Date.now()) {
+// 画面が付けたボタンの名前と印（無ければ空）
+export function pressOf(request) {
+  let button = "";
+  try { button = decodeURIComponent(request.headers.get("X-SSG-Button") || ""); } catch (e) {}
+  button = button.replace(/[\u0000-\u001f]/g, "").trim().slice(0, 40);
+  const press = String(request.headers.get("X-SSG-Press") || "").replace(/[^0-9a-z]/gi, "").slice(0, 24);
+  return { button, press };
+}
+
+// いまの呼び出しが、すでに数えた操作の続きか（上限に達していても、始まった操作は最後まで通すため）
+export function isContinuation(u, cat, press, now = Date.now()) {
+  if (press) return (u[cat + "Presses"] || []).includes(press);
   return !!u[cat + "Last"] && now - u[cat + "Last"] < GROUP_GAP_MS;
 }
 
-// その日の回数を数える。cat＝操作の回数（続きは数えない）、catCalls＝呼び出しの回数、catChars＝文字数、catLast＝最後に呼んだ時刻
+// その日の回数を数える。
+// cat＝操作の回数（続きは数えない）、catCalls＝呼び出しの回数、catChars＝文字数、catLast＝最後に呼んだ時刻、catPresses＝最近の印
+// buttons＝{ "機能|ボタンの名前": { cat, button, n: 操作の回数, calls: 呼び出しの回数 } }
 // （R2 は足し算を一度にできないので、同時に叩かれると1回ぶんずれることがある）
 export async function addUsage(env, user, cat, extra) {
   const date = jstDate();
   const u = await getUsage(env, user, date);
   const now = Date.now();
-  const cont = isContinuation(u, cat, now);
+  const press = (extra && extra.press) || "";
+  const cont = isContinuation(u, cat, press, now);
   if (!cont) u[cat] = (u[cat] || 0) + 1;
   u[cat + "Calls"] = (u[cat + "Calls"] || 0) + 1;
   u[cat + "Last"] = now;
+  if (press && !cont) u[cat + "Presses"] = [...(u[cat + "Presses"] || []), press].slice(-KEEP_PRESSES);
   if (extra && extra.chars) u[cat + "Chars"] = (u[cat + "Chars"] || 0) + extra.chars;
+  const button = (extra && extra.button) || "（ボタンなし・自動）";
+  u.buttons = u.buttons || {};
+  const b = u.buttons[cat + "|" + button] || (u.buttons[cat + "|" + button] = { cat, button, n: 0, calls: 0 });
+  if (!cont) b.n += 1;
+  b.calls += 1;
   await env.STATE.put(usageKey(date, user), JSON.stringify(u), { httpMetadata: { contentType: "application/json" } });
   return cont;
 }
