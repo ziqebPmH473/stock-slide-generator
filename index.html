@@ -1056,7 +1056,7 @@ Appier G|4180|818|+96|+13.30%
       <button class="btn-sm" data-btn="米国版 台本の再生成" onclick="usRegen('script', this)">🔁 再生成</button>
       <button class="btn-mini" onclick="usCopy('usScript', this)">📋</button>
       <span id="usScriptStatus" class="mut"></span></div>
-    <textarea id="usScript" oninput="usScriptChanged()" style="min-height:260px;"></textarea>
+    <textarea id="usScript" oninput="usScriptChanged()" onchange="usScriptApply()" style="min-height:260px;" title="直して欄の外を押すと、上の場面ごとの台本にも反映します"></textarea>
     <div class="auto-row" style="margin-top:8px;"><strong>場面のデータ</strong>
       <button class="btn-mini" onclick="usCopyVideoData(this)" title="動画の部品に渡す形（JSON）をコピー">📋</button></div>
     <div id="usVideoData"></div>
