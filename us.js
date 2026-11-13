@@ -18,7 +18,9 @@ const US_DEFAULT_SET = {
   eu: 3, ed: -1, su: 1, sd: -0.5,   // 天気の幅（％）：EPS の晴れ／雨、売上の晴れ／雨（たたき台）
   hashtags: '#米国株',
 };
-const US_SCRIPT_TAGS = ['オープニング', '米国指数', 'その他の指数', '日本への影響', '金利・資産', 'ニュース', '個別株', '決算', 'まとめ'];
+// 日本への影響と金利・資産は1つの場面・1つの区切りにまとめた（2026-11-14 すみぽん）
+const US_TAG_ASSETS = '日本への影響・金利・資産';
+const US_SCRIPT_TAGS = ['オープニング', '米国指数', 'その他の指数', US_TAG_ASSETS, 'ニュース', '個別株', '決算', 'まとめ'];
 const US_SCENE_LABEL = { 1: '米国3指数', 2: '米国その他の指数', 3: '日本への影響', 4: '金利・資産' };
 const US_EARN_PER_PAGE = 8;
 
@@ -262,6 +264,28 @@ function usRenderMovers(){
   el.innerHTML = `<div class="mut" style="margin:4px 0;">時価総額 ${Math.round((v.minCap || 0) / 1e8)}億ドル以上・${autoEsc(v.asOf || '')}時点（場面には出さず、AI が個別株を選ぶ材料にする）</div><div class="us-mvs">${list('gainers', '値上がり')}${list('losers', '値下がり')}${list('actives', '売買が多い')}</div>`;
 }
 
+// ---------- 数字を読んでよいか（確定／取引中）の決まり（2026-11-14 すみぽん）----------
+// 台本で細かい数字まで読んでよいのは、データを取った時点で取引が止まっていて、動画を見るときも変わらない値だけ。
+//   米国の指数（ダウ・S&P500・ナスダック・SOX・ラッセル2000・VIX）… 対象日の終値なので、いつでも確定
+//   日経平均先物（大阪）… 夜間取引は朝6:00に終わり、日中取引は8:45に始まる。取ったのが 6:00〜8:45 の間、または土曜の6:00〜月曜の8:45 なら確定
+//   ドル円・米10年債・金・原油 … 平日は動き続ける。取ったのが土曜の7:00〜月曜の7:00（週末で止まっている間）なら確定
+//   ビットコイン … 週末も動くので、いつでも取引中
+//   時間外の株価 … 取った時点の値。米国の20時（日本時間 朝9時か10時）まで動くので取引中
+// 時刻はどれも日本時間。祝日は見ていない（祝日で止まっていても「取引中」扱いになるだけで、読み方が控えめになる）
+function usFixed(key, at){
+  if(['dji', 'spx', 'ixic', 'sox', 'rut', 'vix'].includes(key)) return true;
+  if(key === 'btc') return false;
+  const t = new Date(new Date(at || (US.data && US.data.fetchedAt) || Date.now()).getTime() + 9 * 3600 * 1000);
+  const day = t.getUTCDay(), min = t.getUTCHours() * 60 + t.getUTCMinutes();
+  if(key === 'futures') return (min >= 360 && min < 525) || (day === 6 && min >= 360) || day === 0 || (day === 1 && min < 525);
+  return (day === 6 && min >= 420) || day === 0 || (day === 1 && min < 420);   // usdjpy・us10y・gold・wti
+}
+// 取った時刻（日本時間）「11/14 7:02」
+function usFetchedJst(){
+  const t = new Date(new Date((US.data && US.data.fetchedAt) || Date.now()).getTime() + 9 * 3600 * 1000);
+  return `${t.getUTCMonth() + 1}/${t.getUTCDate()} ${t.getUTCHours()}:${String(t.getUTCMinutes()).padStart(2, '0')}`;
+}
+
 // ---------- AI に渡すデータ（文）----------
 function usDataText(opt = {}){
   const d = US.data; if(!d) return '';
@@ -273,10 +297,12 @@ function usDataText(opt = {}){
     for(const r of m.markets){
       if(r.error) continue;
       const chg = r.key === 'us10y' ? `${usSign(r.changeBp, 1)}bp（${usPct(r.pct)}）` : `${usSign(r.change)}（${usPct(r.pct)}）`;
-      L.push(`${r.name}：${usFmt(r.value, r.key === 'us10y' ? 3 : 2)}${r.key === 'us10y' ? '%' : ''} ${chg}${r.source === '日経' ? `（${r.time}時点）` : ''}`);
+      // 台本用（withAi）には、数字を読んでよいか（確定／取引中）の印を付ける
+      const mark = opt.withAi ? (usFixed(r.key) ? '【確定】' : '【取引中】') : '';
+      L.push(`${r.name}：${usFmt(r.value, r.key === 'us10y' ? 3 : 2)}${r.key === 'us10y' ? '%' : ''} ${chg}${r.source === '日経' ? `（${r.time}時点）` : ''}${mark}`);
     }
     const f = m.nikkeiFutures;
-    if(f) L.push(`日経平均先物（${f.source}）：${usFmt(f.value, 0)}円（${f.time}時点）。日経平均の前日終値 ${usFmt(f.nk225Close, 0)}円より ${usSign(f.vsNk225, 0)}円`);
+    if(f) L.push(`日経平均先物（${f.source}）：${usFmt(f.value, 0)}円${opt.withAi ? '' : `（${f.time}時点）`}。日経平均の前日終値 ${usFmt(f.nk225Close, 0)}円より ${usSign(f.vsNk225, 0)}円${opt.withAi ? (usFixed('futures') ? '【確定】' : '【取引中】') : ''}`);
   }
   // 収集プロンプト（AI が選ぶ前）には候補すべて、台本など（選んだあと）には AI が選んだ銘柄を選んだ順に
   const rows = opt.withAi ? usPickedEarn() : usEarnRows(false);
@@ -285,7 +311,8 @@ function usDataText(opt = {}){
     for(const r of rows){
       const eps = `EPS 予想 ${usFmt(r.eps.estimate)}・実績 ${r.eps.actual === null ? '実績なし' : usFmt(r.eps.actual)}${r.eps.weather ? '（' + r.eps.weather + '）' : ''}`;
       const rev = `売上 予想 ${r.revenue.estimate === null ? '－' : Math.round(r.revenue.estimate)}・実績 ${r.revenue.actual === null ? '実績なし' : Math.round(r.revenue.actual)}${r.revenue.weather ? '（' + r.revenue.weather + '）' : ''}`;
-      const mv = r.session === 'afterhours' ? `当日 ${usPct(r.dayPct)}・時間外 ${usPct(r.afterPct)}${r.afterTime ? '（日本時間 ' + r.afterTime + '時点）' : ''}` : `当日 ${usPct(r.dayPct)}`;
+      // 台本用には時刻を渡さない（台本に時刻を入れさせない。時刻は画面の注記に出す）。時間外は取引中の値
+      const mv = r.session === 'afterhours' ? `当日 ${usPct(r.dayPct)}${opt.withAi ? '【確定】' : ''}・時間外 ${usPct(r.afterPct)}${opt.withAi ? '【取引中】' : (r.afterTime ? '（日本時間 ' + r.afterTime + '時点）' : '')}` : `当日 ${usPct(r.dayPct)}${opt.withAi ? '【確定】' : ''}`;
       L.push(`${r.symbol}${!opt.withAi && r.must ? '【必ず載せる】' : ''}（${r.nameJa ? r.nameJa + '／' : ''}${r.name}、時価総額 ${usCap(r.mcap)}）：${usHourJa(r)}の決算（${r.reportDate}）。${mv}。${eps}。${rev}${opt.withAi && r.guidance ? `。ガイダンス ${r.guidance}` : ''}${opt.withAi && r.comment ? `。コメント：${r.comment}` : ''}`);
     }
   }
@@ -308,6 +335,7 @@ const US_COLLECT_PROMPT = `{{date}}（米国東部時間）の米国株式市場
 １．市場全体のニュース（marketNews：3〜5本）
 ・{{date}}の米国株式市場全体に影響したニュース（経済指標、FRB・金利、政策、地政学、主要企業の動きなど）。
 ・{{date}}の米国の取引終了（米国東部時間 16:00）までに出たものに限る。
+・特定の1銘柄だけの材料（決算・個別の値動き）は、ここではなく「２．個別株の材料」に書く。
 ・title は全角30文字以内、detail は全角90文字以内。source に出典の URL。
 
 ２．個別株の材料（stockNews：最大5銘柄）
@@ -316,6 +344,7 @@ const US_COLLECT_PROMPT = `{{date}}（米国東部時間）の米国株式市場
 ・「市場全体の調整」「理由は不明」などのあいまいな記載は禁止。
 ・時価総額の大きい銘柄・話題性の高い銘柄を優先する。5銘柄に満たなければ、ある分だけでよい。
 ・決算銘柄を選んだ場合も、決算の数字ではなく「なぜ動いたか」を書く。
+・「１．市場全体のニュース」と内容を重ねない。同じ出来事・同じ銘柄の話を両方に書かない（特定の銘柄の話は個別株の材料に書き、市場全体のニュースには経済指標・金利・政策など市場全体の話を書く）。
 ・headline は全角20文字以内、detail は全角40文字以内。source に出典の URL。
 
 ３．決算一覧に載せる銘柄を選び、コメントとガイダンスを書く（earnings：最大{{max}}銘柄）
@@ -407,7 +436,25 @@ function usRenderReport(){
     ${notes.length ? `<div class="us-warn">${notes.join('<br>')}</div>` : ''}
     <div class="a2"><div><b>市場全体のニュース（${p.marketNews.length}本）</b><ol>${mn}</ol></div>
     <div><b>個別株（${Math.min(5, p.stockNews.length)}銘柄）</b><ol>${sn}</ol></div></div>
-    <div class="mut">決算のコメント・ガイダンスは ①の決算一覧に重ねて出しています（AI が補った実績には「AI」の印）。</div></div>`;
+    <div style="margin-top:6px;"><b>動画に使う決算銘柄（${rows.length}銘柄${rows.length > US_EARN_PER_PAGE ? '・2ページ' : ''}）</b>${rows.length ? '' : '<span class="mut">　なし（決算一覧の場面は出しません）</span>'}</div>
+    ${rows.length ? `<div class="us-scroll"><table class="us-tbl"><tr><th>順</th><th>銘柄</th><th>発表</th><th>変動率</th><th>売上</th><th>利益</th><th>ガイダンス</th><th>コメント</th></tr>${rows.map(usEarnRowHtml).join('')}</table></div>` : ''}
+    <div class="mut">売上・利益の天気はツールの計算、ガイダンスとコメントは AI です（AI が補った実績には「AI」の印）。候補の全部は ①の決算一覧にあります。</div></div>`;
+}
+// ②に出す、動画に使う決算銘柄の1行。変動率は動画と同じく1つ（当日の引け後に出した銘柄は時間外＝アフター）
+function usEarnRowHtml(r){
+  const after = r.session === 'afterhours' && r.afterPct !== null && r.afterPct !== undefined;
+  const mv = after ? r.afterPct : r.dayPct;
+  const fill = (k) => r.aiFilled.includes(k) ? '<span class="us-ai" title="AI が決算発表から補った実績">AI</span>' : '';
+  const diff = (x) => (x.diffPct !== null && x.diffPct !== undefined ? `<br><span class="mut">予想比 ${usPct(x.diffPct)}</span>` : '');
+  const src = /^https?:\/\//.test(String(r.guidanceSource || '')) ? ` <a href="${autoEsc(r.guidanceSource)}" target="_blank" rel="noopener" class="mut">出典</a>` : '';
+  return `<tr><td class="num">${r.aiRank + 1}</td>
+    <td><b>${autoEsc(r.nameJa || r.name)}</b><br><span class="mut">${autoEsc(r.symbol)}</span></td>
+    <td>${usHourJa(r)}</td>
+    <td class="num ${usCls(mv)}">${usPct(mv)}${after ? '<br><span class="mut">（アフター）</span>' : ''}</td>
+    <td>${usW(r.revenue.weather)}${fill('売上')}${diff(r.revenue)}</td>
+    <td>${usW(r.eps.weather)}${fill('EPS')}${diff(r.eps)}</td>
+    <td>${usW(r.guidance)}${src}</td>
+    <td class="us-cmt">${autoEsc(r.comment)}</td></tr>`;
 }
 function usCopyFactCheck(btn){
   const base = usCollectPromptText().replace(typeof AP_CODEBLOCK_NOTE === 'string' ? AP_CODEBLOCK_NOTE : '', '');
@@ -433,7 +480,6 @@ function usResources(){
 }
 function usScriptPrompt(){
   const C = (typeof AP_COMMON === 'object' && AP_COMMON) || {};
-  const ah = usPickedEarn().filter(r => r.session === 'afterhours' && r.afterTime).map(r => r.afterTime)[0];
   return `${usDateJa(US.data.targetDate)}の米国株式市場を振り返る動画の台本を、2分前後（900〜1,100文字）で、以下の構成で作成してください。
 ・日本の個人投資家が、日本時間の朝に見る動画です。
 ・個人的な感想は添えず、事実を伝えることに専念してください。
@@ -444,12 +490,11 @@ function usScriptPrompt(){
 0.オープニング（その日の米国市場の特徴・注目点を1文でさらっと話し、本題につなげる。結論を先に言ってよい）
 1.米国指数（ダウ・S&P500・ナスダック）
 2.その他の指数（SOX指数・ラッセル2000・VIX指数）
-3.日本への影響（日経平均先物・ドル円。日経平均先物は、日経平均の前日終値より何円高い／安いかを伝え、今日の東京市場の目安にする）
-4.金利・資産（米10年債利回り・金・ビットコイン・原油）
-5.ニュース（市場全体のニュース）
-6.個別株（材料のあった銘柄。全部を読まず、注目の銘柄だけでよい）
-7.決算（注目の2〜3銘柄だけ。売上・利益・ガイダンスの天気がずれている銘柄（例：売上・利益は予想を上回ったのにガイダンスが弱く売られた）を優先する。米国の決算はガイダンスが弱いと売られやすいことに触れてよい）
-8.まとめ
+3.日本への影響・金利・資産（日経平均先物・ドル円・米10年債利回り・金・ビットコイン・原油。画面には全部出るので、全部を読む必要はない。日経平均先物は、日経平均の前日終値より何円高い／安いかを伝えて今日の東京市場の目安にし、ほかは動きの大きかったもの・その日の相場に関わったものだけに触れる。市場全体のニュースの中に、ここの値動きの理由になるもの（金利の上昇・原油高・円安・金やビットコインの動きの理由など）があれば、ここで値動きと一緒に短く説明する。例：「トランプ氏がイランとの交渉を拒否したことで、原油のWTIは2.55％高となりました」）
+4.ニュース（市場全体のニュース。3.で値動きと一緒に説明したニュースは、ここではくり返さない。残りのニュースを説明する）
+5.個別株（材料のあった銘柄。全部を読まず、注目の銘柄だけでよい）
+6.決算（注目の2〜3銘柄だけ。売上・利益・ガイダンスの天気がずれている銘柄（例：売上・利益は予想を上回ったのにガイダンスが弱く売られた）を優先する。米国の決算はガイダンスが弱いと売られやすいことに触れてよい）
+7.まとめ
 【動画の読み上げとして】
 ・指数や決算の数字は動画の画面に出ます。各区切りの最初の文を「〜では」「〜には」のような、何の話かを示す言い方で始めず、指数名や銘柄名から始めてください。
 ・数字は全部を読まず、要点になるものだけにしてください。
@@ -458,7 +503,12 @@ function usScriptPrompt(){
 ・オープニングでは、個別の指数の値動きは言わないでください。
 ・銘柄名はカタカナの社名で言い、ティッカー（英字の略号）は読まないでください。
 ・ドルの金額は「1.25ドル」「185億ドル」のように読める形で書いてください。
-${ah ? `・引け後に決算を出した銘柄の時間外の値動きは「日本時間${ah}時点」の値であることに触れてください。\n` : ''}${C.VoiceNote_Principle || ''}${C.VoiceNote_Basic || ''}${C.VoiceNote_tatoe || ''}
+・時刻は台本に入れないでください（「日本時間8時55分時点」「午前7時時点」などは言わない。時刻は動画の画面に出します）。時間外の値動きは「時間外では4％高」のように、時刻を付けずに言ってください。
+【数字の読み方】
+・資料の各行の末尾に【確定】か【取引中】を付けてあります。
+・【確定】（取引が終わっていて、動画を見るときも変わらない値。米国の指数など）は、終値や値幅などの数字を読んでかまいません。
+・【取引中】（動画を見るときには動いている可能性がある値。為替・金利・金・原油・ビットコイン・時間外の株価など）は、細かい数字（価格・値幅・bp）は読まず、「大きく上がった」「下げた」などの方向と大きさだけにしてください。前日比の％は言ってかまいません。
+${C.VoiceNote_Principle || ''}${C.VoiceNote_Basic || ''}${C.VoiceNote_tatoe || ''}
 【出力の形】
 ・動画の場面に合わせるため、台本の各部分の前に、次のうち当てはまる区切りを1行で書いてください。この行は読み上げません。
 ${US_SCRIPT_TAGS.map(t => '[' + t + ']').join(' ')}`;
@@ -579,10 +629,11 @@ function usVideoData(){
     scenes: {
       indices: { items: pick(['dji', 'spx', 'ixic']), narration: sec['米国指数'] || '' },
       otherIndices: { items: pick(['sox', 'rut', 'vix']), narration: sec['その他の指数'] || '' },
-      japan: { futures: d.markets && d.markets.nikkeiFutures, items: pick(['usdjpy']), narration: sec['日本への影響'] || '' },
-      assets: { items: pick(['us10y', 'gold', 'btc', 'wti']), narration: sec['金利・資産'] || '' },
+      // 動画では japan と assets を1つの場面（日本への影響・金利・資産）に出す。読み上げは assets に持つ
+      japan: { futures: d.markets && d.markets.nikkeiFutures, items: pick(['usdjpy']), narration: '' },
+      assets: { items: pick(['us10y', 'gold', 'btc', 'wti']), narration: sec[US_TAG_ASSETS] || '' },
       news: { items: p.marketNews.slice(0, 5).map(n => ({ title: n.title, detail: n.detail })), narration: sec['ニュース'] || '' },
-      stocks: { items: p.stockNews.slice(0, 5).map(n => { const er = earn.find(e => e.symbol === String(n.symbol || '').toUpperCase()); const mv = (d.movers ? [...(d.movers.gainers || []), ...(d.movers.losers || []), ...(d.movers.actives || [])] : []).find(q => q.symbol === String(n.symbol || '').toUpperCase()); return { symbol: n.symbol, name: usJa(n.symbol, n.nameJa) || n.symbol, pct: er ? (er.session === 'afterhours' ? er.afterPct : er.dayPct) : (mv ? mv.pct : null), headline: n.headline, detail: n.detail }; }), narration: sec['個別株'] || '' },
+      stocks: { items: p.stockNews.slice(0, 5).map(n => { const er = earn.find(e => e.symbol === String(n.symbol || '').toUpperCase()); const mv = (d.movers ? [...(d.movers.gainers || []), ...(d.movers.losers || []), ...(d.movers.actives || [])] : []).find(q => q.symbol === String(n.symbol || '').toUpperCase()); return { symbol: n.symbol, name: usJa(n.symbol, n.nameJa) || n.symbol, after: !!(er && er.session === 'afterhours'), pct: er ? (er.session === 'afterhours' ? er.afterPct : er.dayPct) : (mv ? mv.pct : null), headline: n.headline, detail: n.detail }; }), narration: sec['個別株'] || '' },
       earnings: { pages, narration: sec['決算'] || '' },
     },
     opening: sec['オープニング'] || '', summary: sec['まとめ'] || '',
@@ -601,22 +652,31 @@ function usRenderVideo(){
   ${line('0. サムネ・表紙', v.opening, '（東証版と同じ）')}
   ${line('1. 米国3指数', s.indices.narration, mv(s.indices.items) + '＋チャート')}
   ${line('2. その他の指数', s.otherIndices.narration, mv(s.otherIndices.items))}
-  ${line('3. 日本への影響', s.japan.narration, s.japan.futures ? `日経先物 ${usFmt(s.japan.futures.value, 0)}（日経平均比 ${usSign(s.japan.futures.vsNk225, 0)}）・` + mv(s.japan.items) : mv(s.japan.items))}
-  ${line('4. 金利・資産', s.assets.narration, mv(s.assets.items))}
-  ${line('5. ニュース', s.news.narration, s.news.items.length + '本')}
-  ${line('6. 個別株', s.stocks.narration, s.stocks.items.map(i => autoEsc(i.name)).join('・') || 'なし')}
-  ${line('7. 決算一覧', s.earnings.narration, s.earnings.pages.length ? s.earnings.pages.map((p, i) => `${i + 1}ページ目 ${p.length}銘柄`).join('・') : 'なし（場面ごと出さない）')}
-  ${line('8. まとめ', v.summary, '')}
+  ${line('3. 日本への影響・金利・資産', s.assets.narration, (s.japan.futures ? `日経先物 ${usFmt(s.japan.futures.value, 0)}（日経平均比 ${usSign(s.japan.futures.vsNk225, 0)}）・` : '') + mv([...s.japan.items, ...s.assets.items]))}
+  ${line('4. ニュース', s.news.narration, s.news.items.length + '本')}
+  ${line('5. 個別株', s.stocks.narration, s.stocks.items.map(i => autoEsc(i.name)).join('・') || 'なし')}
+  ${line('6. 決算一覧', s.earnings.narration, s.earnings.pages.length ? s.earnings.pages.map((p, i) => `${i + 1}ページ目 ${p.length}銘柄`).join('・') : 'なし（場面ごと出さない）')}
+  ${line('7. まとめ', v.summary, '')}
   </table>`;
 }
 function usCopyVideoData(btn){ const v = usVideoData(); if(!v){ alert('先に①データ取得をしてください'); return; } autoClip(JSON.stringify(v, null, 2), btn); }
 function usCopy(id, btn){ autoClip((document.getElementById(id) || {}).value || '', btn); }
 
+// ---------- テキストモデル（米国版の⚙設定。中身は東証版の⚙設定の「テキストモデル」と同じ1つの設定）----------
+// 選択肢は東証版の欄（autoModelOverride）から写し、どちらで変えても両方に反映する（保存は東証版の仕組みのまま）
+function usModelInit(){
+  const src = document.getElementById('autoModelOverride'), dst = document.getElementById('usModel');
+  if(!src || !dst) return;
+  dst.innerHTML = src.innerHTML; dst.value = src.value;
+  dst.addEventListener('change', () => { src.value = dst.value; src.dispatchEvent(new Event('change', { bubbles: true })); src.dispatchEvent(new Event('input', { bubbles: true })); });
+  src.addEventListener('change', () => { dst.value = src.value; });
+}
+
 // ---------- 起動 ----------
 let _usReady = false;
 function usInit(){
   if(_usReady) return; _usReady = true;
-  usRestore(); usFillSettings(); usRenderAll();
+  usRestore(); usFillSettings(); usModelInit(); usRenderAll();
   usStep(US.step || '1');
   if(US.script) usStatus('usScriptStatus', `${usScriptChars()}文字（約${Math.round(usScriptChars() / 7)}秒）`);
 }
@@ -631,7 +691,7 @@ function usVidSave(o){ try{ localStorage.setItem(US_VID_KEY, JSON.stringify(o));
 function usVidStatus(msg, cls){ usStatus('usVidStatus', msg, cls); }
 
 // 台本の区切り → 動画の場面
-const US_NAR_MAP = { cover: 'オープニング', index: '米国指数', usOthers: 'その他の指数', usJapan: '日本への影響', usAssets: '金利・資産', news: 'ニュース', usStocks: '個別株', usEarnings1: '決算', summary: 'まとめ' };
+const US_NAR_MAP = { cover: 'オープニング', index: '米国指数', usOthers: 'その他の指数', usAssets: US_TAG_ASSETS, news: 'ニュース', usStocks: '個別株', usEarnings1: '決算', summary: 'まとめ' };
 function usNarration(){
   const sec = usScriptSections(), out = {};
   for(const [id, tag] of Object.entries(US_NAR_MAP)){ const v = sec[tag]; if(v) out[id] = { text: v, seconds: null, src: v }; }
@@ -664,11 +724,13 @@ function usTseData(){
   const after = usPickedEarn().filter(r => r.afterTime).map(r => r.afterTime)[0] || null;
   return {
     market: 'us', brand: '米国マーケット振り返り', date: v.date, headline: '',
+    // 時刻は台本で読まず、画面の下の注記に出す（2026-11-14 すみぽん）
+    notes: { usAssets: `日本時間 ${usFetchedJst()} 時点${f && f.time ? `（日経平均先物は ${f.time} 時点）` : ''}`, usStocks: after && s.stocks.items.some(i => i.after) ? `時間外の値動きは日本時間 ${after} 時点` : '' },
     charts: s.indices.items.map(chart), others: [],
     contrib: { plus: [], minus: [] }, sectors: { up: [], down: [] }, rise: [], fall: [], trading: [],
     news: s.news.items.map(n => ({ title: n.title, body: n.detail })), news_image: null, summary: null, thumbnail: null,
     us: {
-      others: s.otherIndices.items.map(r => q(r)), japan, assets,
+      others: s.otherIndices.items.map(r => q(r)), japan: [], assets: [...japan, ...assets],   // 日本への影響と金利・資産は1つの場面（usAssets）に出す
       stocks: s.stocks.items.map(i => ({ symbol: i.symbol, name: i.name, pct: i.pct, headline: i.headline, detail: i.detail })),
       earnings: s.earnings.pages.map(p => p.map(e => ({ symbol: e.symbol, name: e.name, timing: e.timing, dayPct: e.dayPct, afterPct: e.session === 'afterhours' ? e.afterPct : null, revenue: e.revenue || null, eps: e.eps || null, guidance: e.guidance || null, comment: e.comment || '' }))),
       afterAsOf: after,
@@ -791,6 +853,7 @@ async function usVidMountNow(force){
     },
     onChange: (st) => { const o = usVidLoad() || {}; o.settings = st; usVidSave(o); },
     importBgm: typeof ssgBgmImport === 'function' ? ssgBgmImport : null,
+    voiceCalls: 1,   // 読み上げは1回でまとめて作る（2026-11-14 すみぽん。分けない）
     exportEl: document.getElementById('usVidExport'),
     exportElPortrait: document.getElementById('usVidExportV'),
     exportButton: { className: 'btn-sm', labels: ['🎬 横動画', '🎬 縦動画'] },
