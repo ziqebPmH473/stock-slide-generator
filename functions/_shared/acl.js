@@ -72,7 +72,7 @@ export function categoryOf(method, path, url) {
   if (path === "/api/tts") return "tts";
   if (path === "/api/image") return "image";
   if (path === "/api/transcribe") return "transcribe";
-  if (path === "/api/fetch-sources" || path === "/api/index-history") return "fetch";
+  if (path === "/api/fetch-sources" || path === "/api/index-history" || path === "/api/us-sources") return "fetch";
   // 保存は目録（1日の作業のまとめ）を置いたときだけ記録する（中身の1つずつは数えない）
   if (path === "/api/state" && method === "PUT" && url && !url.searchParams.get("part")) return "save";
   return "";
