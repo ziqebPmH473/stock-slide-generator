@@ -140,13 +140,28 @@ export async function getUsage(env, user, date = jstDate()) {
   }
 }
 
-// その日の回数を1つ増やす（R2 は足し算を一度にできないので、同時に叩かれると1回ぶんずれることがある）
+// ボタン1回で何度も呼ぶ機能（動画の読み上げは場面ごとに呼ぶなど）を「1回」と数えるため、
+// 前の呼び出しから GROUP_GAP_MS 以内に続いた呼び出しは、同じ操作の続きとしてまとめる。
+export const GROUP_GAP_MS = 3 * 60 * 1000;
+
+// いまの呼び出しが、前の操作の続きか（上限に達していても、始まった操作は最後まで通すため）
+export function isContinuation(u, cat, now = Date.now()) {
+  return !!u[cat + "Last"] && now - u[cat + "Last"] < GROUP_GAP_MS;
+}
+
+// その日の回数を数える。cat＝操作の回数（続きは数えない）、catCalls＝呼び出しの回数、catChars＝文字数、catLast＝最後に呼んだ時刻
+// （R2 は足し算を一度にできないので、同時に叩かれると1回ぶんずれることがある）
 export async function addUsage(env, user, cat, extra) {
   const date = jstDate();
   const u = await getUsage(env, user, date);
-  u[cat] = (u[cat] || 0) + 1;
+  const now = Date.now();
+  const cont = isContinuation(u, cat, now);
+  if (!cont) u[cat] = (u[cat] || 0) + 1;
+  u[cat + "Calls"] = (u[cat + "Calls"] || 0) + 1;
+  u[cat + "Last"] = now;
   if (extra && extra.chars) u[cat + "Chars"] = (u[cat + "Chars"] || 0) + extra.chars;
   await env.STATE.put(usageKey(date, user), JSON.stringify(u), { httpMetadata: { contentType: "application/json" } });
+  return cont;
 }
 
 export async function writeLog(env, entry) {

@@ -50,7 +50,8 @@ th { color:var(--muted); font-weight:600; }
     <button class="btn-sm" onclick="addAcct()">＋ アカウントを追加</button>
   </div>
   <p class="note">
-    ・上限は1日の回数です（空欄は無制限、0 は使えない）。日本時間の0時に戻ります。音声生成は動画の場面ごとに1回なので、動画1本で10回前後になります。<br>
+    ・上限は1日の操作の回数です（空欄は無制限、0 は使えない）。日本時間の0時に戻ります。<br>
+    ・ボタン1回で何度も呼ぶ機能（動画の読み上げは場面ごとに呼ぶなど）は、前の呼び出しから3分以内に続いた呼び出しをまとめて1回と数えます。上限に達していても、始まった操作は最後まで通します。3分以内に別のボタンを押した場合も、続きとして1回にまとまります。<br>
     ・「AI を直接呼ぶ」をオンにすると、画面に AI のキーを渡します（考える時間の長いモデルが切られにくい）。その代わり、そのアカウントの文章の AI は数えられず、上限も効きません。<br>
     ・管理者（環境変数 ADMIN_EMAILS）は制限を受けません。ここに無いアカウントは「その他のアカウント」の設定になります。<br>
     ・Cloudflare のログインを通れるかどうかは、ここではなく Cloudflare Zero Trust の Access のポリシーで決まります。
@@ -108,7 +109,7 @@ function acctHtml(key, p, title, isDefault){
     const off = (p.disabled||[]).includes(k);
     const used = u ? (u[k]||0) : '';
     const cls = (u && lim!=='' ) ? (used>=lim ? 'over' : used>=lim*0.8 ? 'near' : '') : '';
-    const chars = u && u[k+'Chars'] ? `<br><span style="color:var(--muted)">${u[k+'Chars'].toLocaleString()}字</span>` : '';
+    const chars = u && u[k+'Calls'] ? `<br><span style="color:var(--muted)">呼び出し${u[k+'Calls']}回${u[k+'Chars']?'・'+u[k+'Chars'].toLocaleString()+'字':''}</span>` : '';
     return `<tr><td>${esc(S.categories[k])}</td>
       <td><label><input type="checkbox" data-k="${esc(key)}" data-f="use" data-c="${k}" ${off?'':'checked'}>使う</label></td>
       <td><input type="number" min="0" placeholder="無制限" value="${lim}" data-k="${esc(key)}" data-f="lim" data-c="${k}"></td>
