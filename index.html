@@ -25,13 +25,24 @@
   const SEL = 'button, a.btn-sm, label.btn-sm, label.btn-mini, [role=button], input[type=button], input[type=submit]';
   // 動画の部品の中のボタンは、文字が状態で変わるので決まった名前にそろえる
   const ALIAS = { '🔊 音声を作る': '動画：場面の音声を作る', '🔊 作り直す': '動画：場面の音声を作る', '音声を再生成': '動画：音声を再生成（全場面）' };
+  // 動画の部品の中のボタンの決まった名前（無ければ ''）。文字に数が入るもの（「🔊 音声生成（8場面）」）や、記号だけのもの（場面ごとの ↻・＋）もここでそろえる（2026-11-14）
+  const aliasOf = el => {
+    const t = String(el.innerText || '').replace(/\s+/g, ' ').trim();
+    if (ALIAS[t]) return ALIAS[t];
+    if (/^🔊 音声生成/.test(t)) return '動画：音声生成';
+    if ((t === '↻' || t === '＋') && /^この場面の音声/.test(el.title || el.getAttribute('data-acl-title') || '')) return '動画：場面の音声を作る';
+    return '';
+  };
   const labelOf = el => {
     if (el.dataset && el.dataset.btn) return el.dataset.btn;   // 画面のボタンには data-btn で名前を付けてある（同じ「🔁 再生成」を見分けるため）
     const t = String(el.getAttribute('aria-label') || el.innerText || el.value || '').replace(/\s+/g, ' ').trim();
-    return (ALIAS[t] || (t.length <= 2 && el.title ? el.title : t) || el.title || '').slice(0, 40);
+    const a = aliasOf(el);
+    // 米国版のタブの中の動画の部品は、東証版と分けて数える・止められるように「米国版 」を付ける
+    if (a) return ((el.closest && el.closest('#tabUs') ? '米国版 ' : '') + a).slice(0, 40);
+    return ((t.length <= 2 && el.title ? el.title : t) || el.title || '').slice(0, 40);
   };
   // 使えないボタンのグレーアウト（下の ssgAcl〜）が、同じ名前の決め方を使う
-  window.ssgBtn = { SEL, ALIAS, labelOf };
+  window.ssgBtn = { SEL, ALIAS, labelOf, aliasOf };
   document.addEventListener('click', e => {
     const el = e.target && e.target.closest ? e.target.closest(SEL) : null;
     if (!el) return;
@@ -3893,7 +3904,7 @@ function ssgSyncBoot(){
 
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '8f727fe0f6';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = 'cdce3abdea';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -4257,8 +4268,7 @@ function ssgAclReason(label){
 // 制限の対象になるボタンか（名前を付けてあるボタンと、動画の部品の中の決まった名前のボタン）
 function ssgAclTarget(el){
   if(el.dataset && el.dataset.btn) return true;
-  const t = String(el.innerText || '').replace(/\s+/g, ' ').trim();
-  return !!(window.ssgBtn && window.ssgBtn.ALIAS[t]);
+  return !!(window.ssgBtn && window.ssgBtn.aliasOf(el));
 }
 function ssgAclPaint(){
   if(!window.ssgBtn) return;
