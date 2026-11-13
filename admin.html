@@ -35,6 +35,7 @@ th { color:var(--muted); font-weight:600; }
 .scroll { overflow-x:auto; }
 #logTable { min-width:720px; }
 #logTable td:nth-child(1), #logTable td:nth-child(4) { white-space:nowrap; }
+.usedby { font-size:11px; color:var(--muted); line-height:1.5; margin-top:2px; max-width:360px; }
 .btns { margin-top:8px; font-size:13px; } .btns summary { cursor:pointer; color:var(--muted); margin-bottom:4px; }
 .note { font-size:12px; color:var(--muted); line-height:1.6; margin-top:6px; }
 </style>
@@ -51,7 +52,7 @@ th { color:var(--muted); font-weight:600; }
     <button class="btn-sm" onclick="addAcct()">＋ アカウントを追加</button>
   </div>
   <p class="note">
-    ・上限は1日の操作の回数です（空欄は無制限、0 は使えない）。日本時間の0時に戻ります。<br>
+    ・上限は「機能」（サーバーに頼む仕事の種類）ごとの1日の回数です（空欄は無制限、0 は使えない）。日本時間の0時に戻ります。各機能の下に、全自動版のどのボタンで使うかを書いています。<br>
     ・ボタン1回＝1回と数えます（動画の読み上げのように、1回押すと何度も呼ぶものも1回）。どのボタンで何回使ったかは各アカウントの「今日のボタン別の回数」と、下の操作の記録で見られます。上限に達していても、始まった操作は最後まで通します。<br>
     ・ボタンを押さずに自動で動いたもの（画面を通さない呼び出しを含む）は「（ボタンなし・自動）」になり、3分以内に続いたものを1回にまとめます。<br>
     ・「AI を直接呼ぶ」をオンにすると、画面に AI のキーを渡します（考える時間の長いモデルが切られにくい）。その代わり、そのアカウントの文章の AI は数えられず、上限も効きません。<br>
@@ -81,6 +82,14 @@ th { color:var(--muted); font-weight:600; }
 let S = null;      // GET /api/admin の答え
 let CFG = null;    // 編集中の設定
 let LOGS = [];
+// 機能ごとに、全自動版のどのボタンで使うか（上限は「機能」ごと。ボタンの名前は「今日のボタン別の回数」と記録に出る）
+const USED_BY = {
+  ai: '②「ファクトチェック完了」（台本・まとめ・サムネ案・X投稿文をまとめて作る）、③「🔁 再生成」、③「一言・まとめを AI で作る」、①「🤖 AI分析」、⚙「🔌 AI接続テスト」',
+  tts: '③動画の「読み上げを入れる」',
+  image: '全自動版には無い（自動版の「🖼 画像をAI生成」だけ）',
+  transcribe: '③動画の「読み上げを入れる」の中で自動（1本の読み上げを場面ごとに切る）。ボタンは無い',
+  fetch: '①「🔄 データ取得」。ほかに自動で：サムネの値動き（ページを開いたとき・🔄）、③動画の指数のチャート（動画のデータを作るとき）',
+};
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const $ = id => document.getElementById(id);
 
@@ -113,7 +122,7 @@ function acctHtml(key, p, title, isDefault){
     const used = u ? (u[k]||0) : '';
     const cls = (u && lim!=='' ) ? (used>=lim ? 'over' : used>=lim*0.8 ? 'near' : '') : '';
     const chars = u && u[k+'Calls'] ? `<br><span style="color:var(--muted)">呼び出し${u[k+'Calls']}回${u[k+'Chars']?'・'+u[k+'Chars'].toLocaleString()+'字':''}</span>` : '';
-    return `<tr><td>${esc(S.categories[k])}</td>
+    return `<tr><td>${esc(S.categories[k])}<div class="usedby">${esc(USED_BY[k]||'')}</div></td>
       <td><label><input type="checkbox" data-k="${esc(key)}" data-f="use" data-c="${k}" ${off?'':'checked'}>使う</label></td>
       <td><input type="number" min="0" placeholder="無制限" value="${lim}" data-k="${esc(key)}" data-f="lim" data-c="${k}"></td>
       ${isDefault ? '' : `<td class="used ${cls}">${used}${lim!==''?' / '+lim:''}${chars}</td>`}</tr>`;
