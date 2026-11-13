@@ -770,9 +770,9 @@ function usTseData(){
   const japan = [];
   if(f && f.value != null){
     const d = Math.round(usN(f.vsNk225) || 0);
-    japan.push({ name: `日経平均先物（${f.source}）`, value: f.value, unit: '円', decimals: 0, change: f.vsNk225 == null ? null : d,
+    japan.push({ name: f.source === 'CME' ? '日経平均先物（CME）' : '日経平均先物', value: f.value, unit: '円', decimals: 0, change: f.vsNk225 == null ? null : d,
       changeLabel: '日経平均比', changeText: f.vsNk225 == null ? undefined : `${d > 0 ? '+' : d < 0 ? '-' : '±'}${Math.abs(d).toLocaleString('en-US')}円`,
-      note: `${f.time || ''}時点・日経平均の前日終値 ${usFmt(f.nk225Close, 0)}円` });
+      note: `日経平均の前日終値 ${usFmt(f.nk225Close, 0)}円` });
   }
   const jpy = by(s.japan.items, 'usdjpy'); if(jpy) japan.push(q(jpy, { unit: '円', decimals: 2 }));
   const t10 = by(s.assets.items, 'us10y');
