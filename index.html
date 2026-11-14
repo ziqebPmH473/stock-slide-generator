@@ -3920,7 +3920,7 @@ function ssgSyncBoot(){
 
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '73754ea92b';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = 'c4c4ca606f';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -4374,7 +4374,9 @@ function wkIndexWeek(ds, prev){
     if(base==null && x.points){ const q=x.points.filter(pt=>pt.date<first.date).pop(); if(q){ base=q.close; baseDate=q.date; } }
     if(base==null){ const f=all(first).find(y=>y.name===x.name); if(f && f.close!=null && f.change!=null){ base=f.close-f.change; } }
     if(base==null || !base) return null;
-    return { name:x.name, close:x.close, base, baseDate, change:x.close-base, pct:(x.close/base-1)*100 };
+    // 背景の薄いチャート用：前週末＋今週の各営業日の終値（その日にその指数が無ければ飛ばす）
+    const points=[base].concat(ds.map(d=>{ const y=all(d).find(z=>z.name===x.name); return y && y.close!=null ? y.close : null; }).filter(v=>v!=null));
+    return { name:x.name, close:x.close, base, baseDate, change:x.close-base, pct:(x.close/base-1)*100, points };
   }).filter(Boolean);
 }
 // 場面ごとの「今週のデータから」の文（集計できたものだけ）
