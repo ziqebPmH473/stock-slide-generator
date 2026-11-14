@@ -4490,13 +4490,18 @@ const WK_CHECK_ORDER=['index','rise','contrib','trading','fall','sectors'];
 function wkRenderThemes(){
   const el=document.getElementById('wkThemes'); if(!el || el.childElementCount) return;
   el.innerHTML=Object.keys(WK_PRESETS).map(k=>`<button class="btn-mini" onclick="wkPreset('${k}')" title="${autoEsc(WK_PRESETS[k].map(id=>(WK_THEMES.find(t=>t.id===id)||{}).title).join('・'))} だけにチェックを付ける">${k}</button>`).join('')
-    + WK_CHECK_ORDER.map(id=>WK_THEMES.find(t=>t.id===id)).map(t=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="${t.id}" checked>${autoEsc(t.title)}</label>`).join('');
+    // 「日」の右に、全部の場面のチェックを付ける・外すボタン（2026-11-14）
+    + `<button class="btn-mini" onclick="wkCheckAll(true)" title="すべての場面にチェックを付ける">全選択</button><button class="btn-mini" onclick="wkCheckAll(false)" title="すべての場面のチェックを外す">全解除</button>`
+    + WK_CHECK_ORDER.map(id=>WK_THEMES.find(t=>t.id===id)).map(t=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="${t.id}">${autoEsc(t.title)}</label>`).join('');
 }
 // 投稿する曜日ごとの場面（土：主要株価指数・値上がり率・寄与度／日：業種別・値下がり率・売買代金。週間騰落率のある指数と業種を土日に分ける）。押すとその場面だけにチェックが付く
 const WK_PRESETS={ '土':['index','rise','contrib'], '日':['sectors','fall','trading'] };
 function wkPreset(k){
   const ids=WK_PRESETS[k]||[];
   document.querySelectorAll('#wkThemes input[type=checkbox]').forEach(x=>{ x.checked=ids.includes(x.value); });
+}
+function wkCheckAll(on){
+  document.querySelectorAll('#wkThemes input[type=checkbox]').forEach(x=>{ x.checked=!!on; });
 }
 // その日の動画のデータを読む（サーバーの目録 → 各欄のまとめ → ssg_video）。この端末で作業中の日は、この端末の内容を使う
 // その日の取得データ（全自動版の「データ取得」）から、業種別指数の値を { 業種名: 値 } で取り出す（2026-11-14 から取っている。無ければ null）
