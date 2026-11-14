@@ -1090,6 +1090,7 @@ async function usSyncOpen(date, quiet){
 }
 // 一覧（⚙設定）
 async function usSyncList(){
+  if(typeof SSG_NOSYNC!=='undefined' && SSG_NOSYNC) return;   // ?nosync のときは、保存の一覧も取らない（サーバーとのやりとりをしない）
   const box = document.getElementById('usSyncList'); if(!box) return;
   try{
     const r = await (await fetch('/api/us-state', { cache: 'no-store' })).json();
