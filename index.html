@@ -4367,7 +4367,14 @@ function wkWeekChanged(){
 const WK_THEMES=[{id:'index',title:'主要株価指数'},{id:'contrib',title:'日経平均寄与度'},{id:'sectors',title:'業種別変動率'},{id:'rise',title:'値上がり率ランキング'},{id:'fall',title:'値下がり率ランキング'},{id:'trading',title:'売買代金ランキング'}];
 function wkRenderThemes(){
   const el=document.getElementById('wkThemes'); if(!el || el.childElementCount) return;
-  el.innerHTML=WK_THEMES.map(t=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="${t.id}" checked>${autoEsc(t.title)}</label>`).join('');
+  el.innerHTML=Object.keys(WK_PRESETS).map(k=>`<button class="btn-mini" onclick="wkPreset('${k}')" title="${autoEsc(WK_PRESETS[k].map(id=>(WK_THEMES.find(t=>t.id===id)||{}).title).join('・'))} だけにチェックを付ける">${k}</button>`).join('')
+    + WK_THEMES.map(t=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="${t.id}" checked>${autoEsc(t.title)}</label>`).join('');
+}
+// 投稿する曜日ごとの場面（土：主要指数・業種別・値上がり率／日：寄与度・値下がり率・売買代金）。押すとその場面だけにチェックが付く
+const WK_PRESETS={ '土':['index','sectors','rise'], '日':['contrib','fall','trading'] };
+function wkPreset(k){
+  const ids=WK_PRESETS[k]||[];
+  document.querySelectorAll('#wkThemes input[type=checkbox]').forEach(x=>{ x.checked=ids.includes(x.value); });
 }
 // その日の動画のデータを読む（サーバーの目録 → 各欄のまとめ → ssg_video）。この端末で作業中の日は、この端末の内容を使う
 async function wkLoadDay(day){
