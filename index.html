@@ -2652,7 +2652,8 @@ function autoSourceLines(s){
   if(!s.rows || !s.rows.length) return (s.text||'').slice(0,300);
   if(s.kind==='index')   return s.rows.map(r=>`${r.name}｜${r.value}｜${r.change}（${r.pct}）`).join('\n');
   if(s.kind==='contrib') return s.rows.slice(0,10).map(r=>`${r.code} ${r.name||autoLookupName(r.code)||''} 寄与度${r.contrib} 株価${r.price}`).join('\n');
-  if(s.kind==='sector')  return s.rows.slice(0,10).map(r=>`${r.name} ${r.rate} PER${r.per}`).join('\n');
+  // 業種別指数の値・前日比も見せる（週間まとめの業種の週間騰落率に使う。取れていない古いデータは出さない）
+  if(s.kind==='sector')  return s.rows.slice(0,10).map(r=>`${r.name} ${r.rate}${r.value!=null?` 指数${Number(r.value).toLocaleString('ja-JP',{minimumFractionDigits:2,maximumFractionDigits:2})}（${r.change||''}）`:''} PER${r.per}`).join('\n');
   // ranking
   return s.rows.slice(0,6).map(r=>`${r.rank}. ${r.code} ${r.name} ${r.rate}% 株価${r.price} 前日比${r.change}${r.value?(' 売買代金'+r.value):''}`).join('\n');
 }
