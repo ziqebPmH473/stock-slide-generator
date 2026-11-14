@@ -73,7 +73,7 @@ function parseKabutanContrib(html) {
   return rows;
 }
 
-// --- 株探：業種別（業種名＋変動率＋PER）---
+// --- 株探：業種別（業種名＋変動率＋PER＋業種別指数の値・前日比）---
 function parseKabutanSector(html) {
   const rows = [];
   for (const tr of html.match(/<tr[\s\S]*?<\/tr>/g) || []) {
@@ -84,7 +84,10 @@ function parseKabutanSector(html) {
     const nums = (tds[2] || "").match(/[+\-][\d.]+/g) || [];
     const rate = nums.length ? nums[nums.length - 1] + "%" : "";
     const per = (tds[3] || "").replace(/[^\d.]/g, "");
-    rows.push({ name: nameM[1].trim(), rate, per: per ? per + "倍" : "" });
+    // 業種別指数の値と前日比も持つ（週間まとめで、前週末と今週末の指数値から週間騰落率を出すため。2026-11-14）
+    const value = parseFloat((tds[1] || "").replace(/,/g, ""));
+    const code = (tr.match(/\b(0[0-9]{3})\b/) || [])[1] || "";
+    rows.push({ name: nameM[1].trim(), rate, per: per ? per + "倍" : "", code, value: isFinite(value) ? value : null, change: nums.length > 1 ? nums[0] : "" });
   }
   return rows;
 }
