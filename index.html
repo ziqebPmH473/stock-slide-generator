@@ -3919,7 +3919,7 @@ function ssgSyncBoot(){
 
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = 'c416401b3f';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '207b1f9d1a';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -4529,9 +4529,11 @@ async function wkMake(btn){
       const no=WK_THEMES.findIndex(w=>w.id===t.id)+1, mon=wkMonday(dates[0]).replace(/-/g,'');
       const names=['表紙'].concat(ds.map(x=>x.date), withWeek?['週間']:[]).map((_,i)=>`${no}-${i+1}_${mon}.png`);
       plan.push({ id:t.id, title:t.title, dates:ds.map(x=>x.date), names, from:specs.length, week, ds });
-      specs.push({ kind:'weekcover', scene:t.id, dates:ds.map(x=>x.date), weekly:withWeek });
+      // 比べた前週の日（全部の指数で同じ日のときだけ表紙に出す）
+      const bd=withWeek ? (week.map(r=>r.baseDate).find(Boolean)||null) : null, sameBd=withWeek && week.every(r=>r.baseDate===bd);
+      specs.push({ kind:'weekcover', scene:t.id, dates:ds.map(x=>x.date), weekly:withWeek, weeklyBase:sameBd?bd:null });
       for(const x of ds) specs.push({ kind:'scene', scene:t.id, data:x });
-      if(withWeek){ const bd=week.map(r=>r.baseDate).find(Boolean)||null; specs.push({ kind:'weekindex', dates:ds.map(x=>x.date), rows:week, baseDate:week.every(r=>r.baseDate===bd)?bd:null }); }
+      if(withWeek) specs.push({ kind:'weekindex', dates:ds.map(x=>x.date), rows:week, baseDate:sameBd?bd:null });
     }
     if(!specs.length){ wkStatus('選んだ場面のデータがありません','error'); return; }
     const blobs=await KV.tse.stills(specs, { onProgress:(n, all)=>wkStatus(`画像を作っています… ${n}/${all}`) });
