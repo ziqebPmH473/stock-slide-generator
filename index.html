@@ -6,6 +6,43 @@
 <title>東証マーケット振り返り スライド生成ツール</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@100;300;400;500;700;900&display=swap" rel="stylesheet">
+<script>
+// ==================== ?nosync：テスト用の保存場所（2026-11-14）====================
+// URL に ?nosync を付けて開くと、端末の保存場所（localStorage・IndexedDB）を「テスト用」に分ける。
+// ふだんの画面（?nosync なし）とは中身が混ざらない。?nosync で触った内容が、ふだんの画面やサーバーに出ていくことはない（すみぽん 2026-11-14）。
+// サーバー保存（読み込み・保存）も止める（index.html の SSG_NOSYNC・us.js の usSyncBoot）。
+// ・localStorage：キーの頭に "nosync:" を付けて読み書きし、ふだんのキーは見せない（key・length もテスト用だけを数える）
+// ・IndexedDB：データベースの名前の頭に "nosync-" を付ける（動画の部品の音声なども含む）
+// ページの一番最初で差し替えるので、ほかのスクリプト（動画の部品を含む）はすべてテスト用の保存場所を使う。
+(function(){
+  let on = false;
+  try { on = new URLSearchParams(location.search).has('nosync'); } catch (e) {}
+  if (!on) return;
+  window.SSG_SANDBOX = true;
+  const P = 'nosync:';
+  const ls = window.localStorage, proto = Object.getPrototypeOf(ls);
+  const og = { get: proto.getItem, set: proto.setItem, rm: proto.removeItem, key: proto.key, clear: proto.clear };
+  const lenDesc = Object.getOwnPropertyDescriptor(proto, 'length');
+  const mine = st => st === ls;
+  const keys = () => { const a = []; const n = lenDesc.get.call(ls); for (let i = 0; i < n; i++) { const k = og.key.call(ls, i); if (k && k.startsWith(P)) a.push(k.slice(P.length)); } return a; };
+  proto.getItem = function(k){ return mine(this) ? og.get.call(this, P + k) : og.get.call(this, k); };
+  proto.setItem = function(k, v){ return mine(this) ? og.set.call(this, P + k, v) : og.set.call(this, k, v); };
+  proto.removeItem = function(k){ return mine(this) ? og.rm.call(this, P + k) : og.rm.call(this, k); };
+  proto.key = function(i){ return mine(this) ? (keys()[i] ?? null) : og.key.call(this, i); };
+  proto.clear = function(){ if (!mine(this)) return og.clear.call(this); for (const k of keys()) og.rm.call(this, P + k); };
+  Object.defineProperty(proto, 'length', { configurable: true, get(){ return mine(this) ? keys().length : lenDesc.get.call(this); } });
+  const io = IDBFactory.prototype.open, idel = IDBFactory.prototype.deleteDatabase;
+  IDBFactory.prototype.open = function(name, ver){ return ver === undefined ? io.call(this, 'nosync-' + name) : io.call(this, 'nosync-' + name, ver); };
+  IDBFactory.prototype.deleteDatabase = function(name){ return idel.call(this, 'nosync-' + name); };
+  // テスト用だと分かるように、画面の上に帯を出す
+  document.addEventListener('DOMContentLoaded', () => {
+    const b = document.createElement('div');
+    b.textContent = '🧪 テスト用（?nosync）：この画面の作業は、ふだんの画面にもサーバーにも反映しません';
+    b.style.cssText = 'position:sticky;top:0;z-index:9998;background:#7c2d12;color:#fff;font-size:12px;font-weight:700;padding:6px 10px;text-align:center;';
+    document.body.prepend(b);
+  });
+})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
@@ -4172,10 +4209,10 @@ async function ssgSyncBaseDateChanged(){
   }catch(e){ ssgSyncStatus('☁ '+e.message, 'error'); }
 }
 async function ssgSyncRefreshList(){ const r=await ssgSyncApi(''); if(r.ok) ssgSyncRenderDays(r.days||[]); else ssgSyncStatus('☁ '+(r.error||`HTTP ${r.status}`), 'error'); }
-// URL に ?nosync を付けて開くと、サーバー保存を止める（読み込みも保存もしない）。この端末の内容をそのまま見て、💾 出力で取り出すため（2026-11-14）
+// URL に ?nosync を付けて開くと、サーバー保存を止める（読み込みも保存もしない）。端末の保存場所もテスト用に分ける（ページの先頭の ?nosync の差し替え。2026-11-14）
 const SSG_NOSYNC = (()=>{ try{ return new URLSearchParams(location.search).has('nosync'); }catch(e){ return false; } })();
 function ssgSyncBoot(){
-  if(SSG_NOSYNC){ ssgSyncOff='止めています（URL の ?nosync）'; ssgSyncStatus('☁ サーバー保存を止めています（URL の ?nosync）。この端末の内容は読み込み直しも上書きもしません。⚙設定の「💾 出力」で取り出せます', 'error'); return; }
+  if(SSG_NOSYNC){ ssgSyncOff='止めています（URL の ?nosync）'; ssgSyncStatus('☁ テスト用（URL の ?nosync）：サーバー保存を止めています。この画面の作業は、テスト用の保存場所だけに残ります（ふだんの画面・サーバーには反映しません）', 'error'); return; }
   ssgSyncCheckRemote(true);
   setInterval(()=>{ if(document.visibilityState==='visible') ssgSyncTick(); }, 20000);   // 動画の部品が IndexedDB に置く音声などは、ここで拾う
   document.addEventListener('visibilitychange', ()=>{
