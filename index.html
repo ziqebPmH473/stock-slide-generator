@@ -4487,8 +4487,8 @@ function wkRenderThemes(){
   el.innerHTML=Object.keys(WK_PRESETS).map(k=>`<button class="btn-mini" onclick="wkPreset('${k}')" title="${autoEsc(WK_PRESETS[k].map(id=>(WK_THEMES.find(t=>t.id===id)||{}).title).join('・'))} だけにチェックを付ける">${k}</button>`).join('')
     + WK_THEMES.map(t=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="${t.id}" checked>${autoEsc(t.title)}</label>`).join('');
 }
-// 投稿する曜日ごとの場面（土：主要指数・業種別・値上がり率／日：寄与度・値下がり率・売買代金）。押すとその場面だけにチェックが付く
-const WK_PRESETS={ '土':['index','sectors','rise'], '日':['contrib','fall','trading'] };
+// 投稿する曜日ごとの場面（土：主要株価指数・値上がり率・寄与度／日：業種別・値下がり率・売買代金。週間騰落率のある指数と業種を土日に分ける）。押すとその場面だけにチェックが付く
+const WK_PRESETS={ '土':['index','rise','contrib'], '日':['sectors','fall','trading'] };
 function wkPreset(k){
   const ids=WK_PRESETS[k]||[];
   document.querySelectorAll('#wkThemes input[type=checkbox]').forEach(x=>{ x.checked=ids.includes(x.value); });
@@ -4584,11 +4584,11 @@ function wkRenderResult(){
         <button class="btn-mini" onclick="autoCopyEl('wkCap${k}',this)">📋 投稿文をコピー</button></div>
       <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;">${t.files.map(f=>`<a href="${f.url}" target="_blank" title="${autoEsc(f.name)}" style="flex:none;"><img src="${f.url}" alt="${autoEsc(f.name)}" style="height:200px;border:1px solid var(--border);border-radius:4px;display:block;"></a>`).join('')}</div>
       <div style="font-size:11px;color:var(--muted);margin-top:4px;">Instagram 投稿文</div>
-      <textarea id="wkCap${k}" style="min-height:120px !important;font-size:12px;margin-top:2px;">${autoEsc(t.caption)}</textarea>
+      <textarea id="wkCap${k}" rows="2" style="min-height:0 !important;height:46px;resize:vertical;font-size:12px;margin-top:2px;">${autoEsc(t.caption)}</textarea>
       <div class="auto-row" style="margin-top:6px;"><span style="font-size:11px;color:var(--muted);">TikTok タイトル</span><button class="btn-mini" onclick="autoCopyEl('wkTtT${k}',this)">📋 コピー</button></div>
       <input id="wkTtT${k}" value="${autoEsc(t.tiktok.title)}" style="width:100%;font-size:12px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;">
       <div class="auto-row" style="margin-top:6px;"><span style="font-size:11px;color:var(--muted);">TikTok 説明文</span><span id="wkTtN${k}" style="font-size:11px;color:var(--muted);">${t.tiktok.body.length}文字</span><button class="btn-mini" onclick="autoCopyEl('wkTtB${k}',this)">📋 コピー</button></div>
-      <textarea id="wkTtB${k}" oninput="document.getElementById('wkTtN${k}').textContent=this.value.length+'文字'" style="min-height:200px !important;font-size:12px;">${autoEsc(t.tiktok.body)}</textarea>
+      <textarea id="wkTtB${k}" oninput="document.getElementById('wkTtN${k}').textContent=this.value.length+'文字'" rows="2" style="min-height:0 !important;height:46px;resize:vertical;font-size:12px;">${autoEsc(t.tiktok.body)}</textarea>
     </div>`).join('');
   document.getElementById('wkZipBtn').style.display='';
 }
