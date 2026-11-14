@@ -1013,7 +1013,7 @@ async function usAudioPut(date, key, value){
 }
 // 送る（変わったときに呼ぶ）。音声は、前に送ったものと text・seconds・大きさが違うものだけ送る
 function usSyncKick(){ clearTimeout(usSyncTimer); usSyncTimer = setTimeout(() => usSyncPush(false), 4000); }
-async function usSyncPush(force){
+async function usSyncPush(force, allowShrink){
   const date = usSyncDate(); if(!date || usSyncOff) return;
   if(usSyncBusy){ usSyncAgain = true; return; }
   usSyncBusy = true;
@@ -1031,8 +1031,16 @@ async function usSyncPush(force){
       if(!res.ok) throw new Error(`音声の保存に失敗（HTTP ${res.status}）`);
     }
     const doc = { state: JSON.parse(localStorage.getItem(US_STATE_KEY) || 'null'), video: JSON.parse(localStorage.getItem('ssgus_video') || 'null'), audio };
-    const res = await fetch(`/api/us-state?date=${date}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doc, baseRev: sync.date === date ? (sync.rev || 0) : await usSyncRemoteRev(date), force: !!force }) });
+    const res = await fetch(`/api/us-state?date=${date}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doc, baseRev: sync.date === date ? (sync.rev || 0) : await usSyncRemoteRev(date), force: !!force, allowShrink: !!allowShrink }) });
     const d = await res.json().catch(() => ({}));
+    if(res.status === 409 && d.shrink){
+      // サーバーの作業より中身が大きく減る（空から始めた・読み込み中に操作したなど）。上書きせず、サーバーの作業を残す（2026-11-14）
+      // 確認を閉じた・キャンセルしたときは上書きしない（AI が操作するブラウザは確認を自動で閉じることがあるため）
+      usSyncStatus(`☁ サーバーの ${date} の作業のほうが中身が多いので、上書きしていません`, 'error');
+      const ok = confirm(`米国版：サーバーの ${date} の作業（${d.curAmount}項目）より、この端末の作業（${d.newAmount}項目）がかなり少ないので、上書きしていません。\nOK：この端末の作業でサーバーを上書きする（サーバーの作業は消えます）\nキャンセル：上書きせず、サーバーの作業を開く`);
+      setTimeout(() => { ok ? usSyncPush(true, true) : usSyncOpen(date).catch(e => usSyncStatus('❌ ' + e.message, 'error')); }, 0);
+      return;
+    }
     if(res.status === 409){ usSyncStatus(`⚠ 別の端末が ${usSyncHm(d.updatedAt)} に保存しています。上書きしていません（⚙設定の「サーバー保存」で開くか上書きを選んでください）`, 'error'); return; }
     if(res.status === 403 || res.status === 503){ usSyncOff = d.error || `HTTP ${res.status}`; usSyncStatus('☁ サーバー保存は使えません（' + usSyncOff + '）'); return; }
     if(!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
@@ -1044,18 +1052,29 @@ async function usSyncPush(force){
 function usSyncHm(iso){ const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
 async function usSyncRemoteRev(date){ try{ const r = await (await fetch('/api/us-state', { cache: 'no-store' })).json(); const x = (r.days || []).find(d => d.date === date); return x ? x.rev : 0; }catch(e){ return 0; } }
 // サーバーの作業を開く（いまの作業は置き換える）
+// 読み込み中は操作できなくする（東証版と同じ表示。2026-11-14）。キャンセルされたら、この端末の作業は置き換えない
 async function usSyncOpen(date, quiet){
+  if(typeof ssgLoadingShow === 'function'){ ssgLoadCancelled = false; ssgLoadingShow(`☁ 米国版 ${date} の作業を読み込んでいます…`, true); }
+  try{
   const r = await (await fetch(`/api/us-state?date=${date}`, { cache: 'no-store' })).json();
   if(!r.ok) throw new Error(r.error || '開けませんでした');
   const doc = r.doc || {};
+  // 音声は先に全部取ってから、まとめて書き込む（途中でキャンセルされても、この端末の作業を半端に置き換えない）
+  const audios = [];
   for(const k of Object.keys(doc.audio || {})){
+    if(typeof ssgLoadCancelled !== 'undefined' && ssgLoadCancelled) break;
     const res = await fetch(`/api/us-state?date=${date}&audio=${encodeURIComponent(k)}`, { cache: 'no-store' });
     if(!res.ok) continue;
     const blob = await res.blob();
     let text = ''; try{ text = decodeURIComponent(res.headers.get('x-text') || ''); }catch(e){}
     const sec = parseFloat(res.headers.get('x-seconds') || '');
-    await usAudioPut(date, k, { blob, text, seconds: isFinite(sec) ? sec : undefined, speed: res.headers.get('x-speed') || undefined }).catch(() => {});
+    audios.push([k, { blob, text, seconds: isFinite(sec) ? sec : undefined, speed: res.headers.get('x-speed') || undefined }]);
   }
+  if(typeof ssgLoadCancelled !== 'undefined' && ssgLoadCancelled){
+    usSyncStatus(`☁ ${date} の読み込みを取りやめました。この端末の作業のまま続けます（サーバーの作業はそのまま。⚙設定の一覧から開けます）`);
+    return;
+  }
+  for(const [k, v] of audios) await usAudioPut(date, k, v).catch(() => {});
   if(doc.state) localStorage.setItem(US_STATE_KEY, JSON.stringify(doc.state)); else localStorage.removeItem(US_STATE_KEY);
   if(doc.video) localStorage.setItem('ssgus_video', JSON.stringify(doc.video)); else localStorage.removeItem('ssgus_video');
   usSyncSet({ date, rev: r.rev, audio: doc.audio || {} });
@@ -1064,6 +1083,7 @@ async function usSyncOpen(date, quiet){
   if(typeof usVidHandle !== 'undefined' && usVidHandle){ try{ usVidHandle.unmount(); }catch(e){} usVidHandle = null; }
   if(US.step === 'v' || US.step === 'n') usVidOpen();
   if(!quiet) usSyncStatus(`☁ サーバーの ${date} の作業を開きました`, 'ok');
+  } finally { if(typeof ssgLoadingHide === 'function') ssgLoadingHide(); }
 }
 // 一覧（⚙設定）
 async function usSyncList(){
@@ -1092,9 +1112,9 @@ async function usSyncBoot(){
     if(!r.ok){ usSyncOff = r.error || 'サーバー保存は使えません'; return; }
     const days = r.days || [];
     const cur = usSyncDate(), sync = usSyncGet();
-    if(!cur && days[0]) return await usSyncOpen(days[0].date, true).then(() => usSyncStatus(`☁ サーバーの ${days[0].date} の作業を開きました（続きから）`, 'ok'));
+    if(!cur && days[0]) return await usSyncOpen(days[0].date, true).then(() => { if(!ssgLoadCancelled) usSyncStatus(`☁ サーバーの ${days[0].date} の作業を開きました（続きから）`, 'ok'); });
     const same = days.find(d => d.date === cur);
-    if(same && same.rev > (sync.date === cur ? (sync.rev || 0) : 0)) return await usSyncOpen(cur, true).then(() => usSyncStatus(`☁ 別の端末で進んだ ${cur} の作業を開きました`, 'ok'));
+    if(same && same.rev > (sync.date === cur ? (sync.rev || 0) : 0)) return await usSyncOpen(cur, true).then(() => { if(!ssgLoadCancelled) usSyncStatus(`☁ 別の端末で進んだ ${cur} の作業を開きました`, 'ok'); });
     if(cur && !same) usSyncKick();   // サーバーにまだ無い回は送っておく
   }catch(e){}
 }

@@ -6,6 +6,7 @@
  *   GET  /api/state?date=D&part=N    … 目録が指す中身の1つ（各欄の文章のまとめ・画像・音声など）
  *   PUT  /api/state?date=D&part=N    … 中身の1つを置く（N は中身から作った名前。同じ中身なら同じ名前）
  *   PUT  /api/state?date=D           … 目録を置く。rev で上書き事故を防ぐ（別の端末が先に置いていたら 409）。
+ *                                      前の作業より中身が半分以下に減るときも、allowShrink が無ければ置かない（409・shrink。2026-11-14）。
  *                                      置いたあと、目録に無い中身と、新しい順で KEEP_DAYS 日より前の日を消す。
  *
  * 1日＝目録1つ（m/<日付>.json）＋中身いくつか（p/<日付>/<名前>）。画面側（index.html の ssgSync〜）が、
@@ -53,6 +54,20 @@ async function delPrefix(bucket, prefix, keep) {
   const objs = await listAll(bucket, prefix);
   const keys = objs.map(o => o.key).filter(k => !keep || !keep.has(k));
   for (let i = 0; i < keys.length; i += 1000) await bucket.delete(keys.slice(i, i + 1000));
+}
+
+// 作業の量（2026-11-14）：中身のある欄（50字以上）の数＋画像・音声などの数（BGM は数えない）。
+// 空から始めた端末や、読み込み中に押したボタンで中身が減った端末が、前の作業を上書きしないように比べる
+const MIN_FIELD = 50;
+async function amount(bucket, date, lsName, idb) {
+  let n = 0;
+  try {
+    const o = await bucket.get(`p/${date}/${lsName}`);
+    const ls = o ? JSON.parse(await o.text()) : {};
+    for (const v of Object.values(ls || {})) if (typeof v === 'string' && v.trim().length >= MIN_FIELD) n++;
+  } catch (e) {}
+  for (const [name, rows] of Object.entries(idb || {})) if (name !== 'ssg-bgm' && Array.isArray(rows)) n += rows.length;
+  return n;
 }
 
 export async function onRequestGet(context) {
@@ -110,11 +125,20 @@ export async function onRequestPut(context) {
     const missing = [...new Set(refs)].filter(n => !exist.has(`p/${date}/${n}`));
     if (missing.length) return json({ ok: false, missing }, 422);
 
+    // 前の作業より大きく減る（半分以下になる）保存は、allowShrink（画面で「上書きする」を選んだとき）が無ければ上書きしない。
+    // 前の作業はサーバーにそのまま残る（2026-11-14 すみぽん「空からスタートになったら上書きせず、前をサーバーに残す」）
+    const newAmount = await amount(bucket, date, body.ls, body.idb);
+    if (cur && !body.allowShrink) {
+      const curAmount = Number.isFinite(Number(cur.amount)) ? Number(cur.amount) : await amount(bucket, date, cur.ls, cur.idb);
+      if (curAmount > 0 && newAmount <= Math.floor(curAmount / 2)) {
+        return json({ ok: false, shrink: true, curAmount, newAmount, rev: have, updatedAt: cur.updatedAt }, 409);
+      }
+    }
     const now = new Date().toISOString();
-    const manifest = { v: 1, date, rev: have + 1, updatedAt: now, baseDate: String(body.baseDate || ''), step: String(body.step || ''), ls: body.ls, idb: body.idb };
+    const manifest = { v: 1, date, amount: newAmount, rev: have + 1, updatedAt: now, baseDate: String(body.baseDate || ''), step: String(body.step || ''), ls: body.ls, idb: body.idb };
     await bucket.put(`m/${date}.json`, JSON.stringify(manifest), {
       httpMetadata: { contentType: 'application/json' },
-      customMetadata: { rev: String(manifest.rev), updatedAt: now, baseDate: manifest.baseDate },
+      customMetadata: { rev: String(manifest.rev), updatedAt: now, baseDate: manifest.baseDate, amount: String(newAmount) },
     });
     // 目録に無くなった中身を消す
     await delPrefix(bucket, `p/${date}/`, new Set(refs.map(n => `p/${date}/${n}`)));

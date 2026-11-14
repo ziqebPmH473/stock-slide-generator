@@ -1206,6 +1206,15 @@ Appier G|4180|818|+96|+13.30%
   </div>
 </div>
 
+<!-- 読み込み中の表示（2026-11-14）：サーバーの作業を読み込んでいるあいだは操作できなくする。キャンセルで読み込みをやめて操作できる -->
+<div id="ssgLoading" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.82);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px;max-width:420px;width:100%;text-align:center;">
+    <div id="ssgLoadingMsg" style="font-size:15px;font-weight:700;margin-bottom:8px;">読み込み中…</div>
+    <div id="ssgLoadingSub" style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:12px;">終わるまで操作できません。途中で操作すると、読み込んだ作業を上書きしてしまうためです。</div>
+    <button id="ssgLoadingCancel" class="btn-sm" onclick="ssgLoadingCancel()">キャンセル（読み込まずに操作する）</button>
+  </div>
+</div>
+
 <!-- ==================== AI用タブ（2026-11-14）====================
   AI エージェントが操作するとき用。全自動版のコピー・貼付ボタンを工程ごとに並べ（押すと元のボタンを押したのと同じ）、
   コピーした全文を読み取り専用の欄と TXT で受け取れるようにする。貼付は「貼付用」の欄に入れてから 📥 を押す。
@@ -3871,6 +3880,8 @@ async function ssgKeepCommon(name, rows){
   const have=new Set(rows.map(r=>r.key)); return rows.concat(local.filter(r=>!have.has(r.key)));
 }
 async function ssgApplyState(o, sync, onDone){
+  // 書き込み始めたら、読み込み直すまで操作も保存も止める（古い画面の処理が、書き込んだ作業を上書きしないように）
+  ssgApplying=true; ssgSyncOff='読み込み直し中'; ssgLoadingShow('☁ 読み込み直しています…', false);
   // localStorage：ssg_* を消してから入れる（BGM の選択は、入れる側に無ければ残す）
   const keep={}; for(const k of SSG_COMMON_LS){ const v=localStorage.getItem(k); if(v!=null) keep[k]=v; }
   const del=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && k.startsWith(SSG_PREFIX)) del.push(k); }
@@ -3974,20 +3985,27 @@ async function ssgSyncPutPart(day, name, p){
 }
 
 // 送る：変わった中身を置いてから目録を置く
-async function ssgSyncPush(force){
+async function ssgSyncPush(force, allowShrink){
   const s=ssgSyncGet(); if(!s.on || !s.day) return;
   const c=await ssgSyncCollect();
   if(!force && !s.force && ssgSyncSame(c, s) && (s.baseDate||'')===c.baseDate) return;
   const have=new Set(s.parts||[]);
   ssgSyncStatus('☁ 保存中…');
   for(const [name, p] of Object.entries(c.parts)) if(!have.has(name)) await ssgSyncPutPart(s.day, name, p);
-  const man={ baseRev:s.rev||0, force:!!(force||s.force), baseDate:c.baseDate, step:window.__autoStepK||'1', ls:c.lsName, idb:c.idb };
+  const man={ baseRev:s.rev||0, force:!!(force||s.force), allowShrink:!!allowShrink, baseDate:c.baseDate, step:window.__autoStepK||'1', ls:c.lsName, idb:c.idb };
   const putMan=()=>ssgSyncApi(`date=${s.day}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(man) });
   let r=await putMan();
   if(r.status===422 && Array.isArray(r.missing)){
     // サーバーに無かった中身（前に置いたはずのもの）を置き直してもう一度
     for(const name of r.missing) if(c.parts[name]) await ssgSyncPutPart(s.day, name, c.parts[name]);
     r=await putMan();
+  }
+  if(r.status===409 && r.shrink){
+    // サーバーの作業より中身が大きく減る（空から始めた・読み込み中に操作したなど）。上書きせず、サーバーの作業を残す（2026-11-14）
+    // 確認を閉じた・キャンセルしたときは上書きしない（AI が操作するブラウザは確認を自動で閉じることがあるため、安全な側にする）
+    ssgSyncStatus(`☁ サーバーの ${s.day} の作業のほうが中身が多いので、上書きしていません`, 'error');
+    if(confirm(`サーバーの ${s.day} の作業（${r.curAmount}項目）より、この端末の内容（${r.newAmount}項目）がかなり少ないので、上書きしていません。\nOK：この端末の内容でサーバーを上書きする（サーバーの作業は消えます）\nキャンセル：上書きせず、サーバーの作業を読み込む`)) return ssgSyncPush(true, true);
+    await ssgSyncLoad(s.day); return;
   }
   if(r.status===409){
     // 別の端末が先に保存していた
@@ -4019,6 +4037,8 @@ function ssgSyncStart(){
 // asDay：前の版（作業した日の日付）で保存したものを、営業日の日付で保存し直すときに使う
 async function ssgSyncLoad(day, asDay){
   ssgSyncStatus(`☁ ${asDay||day} の作業を読み込んでいます…`);
+  ssgLoadCancelled=false;
+  ssgLoadingShow(`☁ ${asDay||day} の作業を読み込んでいます…`, true);
   const r=await ssgSyncApi(`date=${day}`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
   const m=r.manifest;
   const get=async name=>{ const res=await fetch(`/api/state?date=${day}&part=${name}`,{cache:'no-store'}); if(!res.ok) throw new Error(`中身を読めませんでした（HTTP ${res.status}）`); return res.text(); };
@@ -4029,6 +4049,8 @@ async function ssgSyncLoad(day, asDay){
     for(const row of rows) idb[name].push({ key:row.key, value:ssgUnpack(JSON.parse(await get(row.part))) });
   }
   const parts=[m.ls].concat(...Object.values(m.idb||{}).map(rows=>rows.map(x=>x.part))).sort();
+  // キャンセルされていたら、この端末の内容は置き換えない（サーバーの作業はそのまま）
+  if(ssgLoadCancelled){ ssgLoadingHide(); ssgSyncStatus(`☁ ${asDay||day} の読み込みを取りやめました。この端末の内容のまま続けます（サーバーの作業はそのまま。⚙設定の一覧から開けます）`); return; }
   await ssgApplyState({ ls, idb, baseDate:m.baseDate, step:m.step }, asDay ? { day:asDay, rev:0, parts:[], on:true, force:true } : { day, rev:m.rev, parts, baseDate:m.baseDate||'', on:true });
 }
 
@@ -4055,15 +4077,31 @@ async function ssgSyncInheritBgm(days, day){
   ssgSyncStatus(`☁ ${day} の作業はまだ保存していません（プロンプトをコピーすると保存を始めます）。BGM は ${src.date} の保存から引き継ぎました`);
 }
 // 開いたとき・表に出たとき：サーバーにその日の新しい保存があれば置き換える
+// 読み込み中の表示（2026-11-14）。cancellable のときは「キャンセル」で読み込みをやめ、この端末の内容のまま操作できる
+let ssgLoadCancelled=false, ssgApplying=false;
+function ssgLoadingShow(msg, cancellable){
+  const el=document.getElementById('ssgLoading'); if(!el) return;
+  document.getElementById('ssgLoadingMsg').textContent=msg||'読み込み中…';
+  document.getElementById('ssgLoadingCancel').style.display=cancellable?'':'none';
+  document.getElementById('ssgLoadingSub').textContent=cancellable
+    ? '終わるまで操作できません（途中で操作すると、読み込んだ作業を上書きしてしまうため）。キャンセルすると読み込みをやめ、この端末の内容のまま操作できます。サーバーの作業はそのまま残ります。'
+    : '読み込み直しています。このままお待ちください。';
+  el.style.display='flex';
+}
+function ssgLoadingHide(){ if(ssgApplying) return; const el=document.getElementById('ssgLoading'); if(el) el.style.display='none'; }
+function ssgLoadingCancel(){ ssgLoadCancelled=true; ssgLoadingHide(); }
 async function ssgSyncCheckRemote(boot){
   if(ssgSyncBusy) return;
   ssgSyncBusy=true;
+  ssgLoadCancelled=false;
+  if(boot) ssgLoadingShow('☁ サーバーの作業を確かめています…', true);
   try{
     const lst=await ssgSyncApi('');
     if(lst.status===403 || lst.notReady || lst.status===404 || lst.status===405){ ssgSyncOff=lst.error||'使えません'; ssgSyncStatus('☁ '+ssgSyncOff+'（この端末だけに保存）'); return; }
     if(!lst.ok){ ssgSyncStatus('☁ サーバーを確かめられませんでした：'+(lst.error||`HTTP ${lst.status}`), 'error'); return; }
     ssgSyncOff='';
     ssgSyncRenderDays(lst.days||[]);
+    if(ssgLoadCancelled){ ssgSyncStatus('☁ 読み込みを取りやめました。この端末の内容のまま続けます（サーバーの作業はそのまま。⚙設定の一覧から開けます）'); return; }
     let s=ssgSyncGet();
     // 前の版（作業した日の日付。土日もある）で持っていたら、その基準日の営業日に直して保存し直す
     if(s.day && ssgBizDayOf(s.day)!==s.day){ s=Object.assign(s, { day:ssgBizDayOf(s.baseDate||s.day), rev:0, parts:[], force:true }); ssgSyncSet(s); }
@@ -4091,7 +4129,7 @@ async function ssgSyncCheckRemote(boot){
     }
     await ssgSyncLoad(day);
   }catch(e){ ssgSyncStatus('☁ 読み込めませんでした：'+e.message, 'error'); }
-  finally{ ssgSyncBusy=false; if(boot) ssgSyncReady=true; }
+  finally{ ssgSyncBusy=false; if(boot) ssgSyncReady=true; ssgLoadingHide(); }
 }
 // ⚙設定の一覧（直近10日。開くとその日の作業に置き換える）
 function ssgSyncRenderDays(days){

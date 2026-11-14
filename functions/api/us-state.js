@@ -2,7 +2,8 @@
 // /api/us-state（2026-11-14）：米国版の作業をサーバー（R2）に保存する。別の端末・別の日でも続きから開ける
 //   GET  /api/us-state                     … 保存してある日の一覧（新しい順。date, rev, updatedAt）
 //   GET  /api/us-state?date=D              … その日の作業（{ ok, doc, rev, updatedAt }）
-//   PUT  /api/us-state?date=D              … その日の作業を置く（本文 { doc, baseRev, force }）。別の端末が先に置いていたら 409
+//   PUT  /api/us-state?date=D              … その日の作業を置く（本文 { doc, baseRev, force, allowShrink }）。別の端末が先に置いていたら 409。
+//                                            前の作業より中身が半分以下に減るときも、allowShrink が無ければ置かない（409・shrink。2026-11-14）
 //   GET  /api/us-state?date=D&audio=K      … 動画の読み上げの音声（場面ごと。中身は音声そのもの、text・seconds・speed は見出しに）
 //   PUT  /api/us-state?date=D&audio=K      … 音声を置く（見出し X-Text（URL エンコード）・X-Seconds・X-Speed）
 // 置き場所：us/<日付>/state.json、us/<日付>/audio/<キー>。日付は米国の対象日。新しい順で KEEP_DAYS 日より前は消す。
@@ -65,6 +66,16 @@ export async function onRequestGet(context) {
   }
 }
 
+// 作業の量（2026-11-14）：中身のある項目（50字以上）の数＋動画のデータ＋読み上げの数。前の作業より大きく減る保存は上書きしない
+function amount(doc) {
+  let n = 0;
+  const st = (doc && doc.state) || {};
+  for (const v of Object.values(st)) { const t = typeof v === "string" ? v : JSON.stringify(v ?? ""); if (t && t.trim().length >= 50) n++; }
+  if (doc && doc.video) n++;
+  n += Object.keys((doc && doc.audio) || {}).length;
+  return n;
+}
+
 export async function onRequestPut(context) {
   const g = guard(context); if (g) return g;
   const { request, env } = context;
@@ -90,6 +101,11 @@ export async function onRequestPut(context) {
     const cur = curObj ? await curObj.json() : null;
     const have = cur ? Number(cur.rev) || 0 : 0;
     if (!body.force && have !== (Number(body.baseRev) || 0)) return json({ ok: false, conflict: true, rev: have, updatedAt: cur && cur.updatedAt }, 409);
+    // 前の作業より大きく減る（半分以下になる）保存は、allowShrink が無ければ上書きしない（前の作業はサーバーに残る）
+    if (cur && !body.allowShrink) {
+      const curAmount = amount(cur.doc), newAmount = amount(body.doc);
+      if (curAmount > 0 && newAmount <= Math.floor(curAmount / 2)) return json({ ok: false, shrink: true, curAmount, newAmount, rev: have, updatedAt: cur.updatedAt }, 409);
+    }
     const now = new Date().toISOString();
     const rev = have + 1;
     await bucket.put(`us/${date}/state.json`, JSON.stringify({ v: 1, date, rev, updatedAt: now, doc: body.doc }), {
