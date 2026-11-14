@@ -3919,7 +3919,7 @@ function ssgSyncBoot(){
 
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '207b1f9d1a';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = '73754ea92b';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -4338,7 +4338,7 @@ const WK_CAPTIONS = {
 function wkCaption(id, dates, withWeek){
   const c=WK_CAPTIONS[id]; if(!c) return '';
   const range=dates.length>1 ? `${wkMd(dates[0])}〜${wkMd(dates[dates.length-1])}` : wkMd(dates[0]);
-  return [`📊【${c.head}】`, '', `${range}の東京株式市場を、日ごとに振り返り。`, ...c.lines, '', '📌 スワイプして日ごとの変化をチェック！', ...(withWeek?['最後の画像では、前週末比の騰落率も確認できます。']:[]), '', withWeek?'※日別の画像は各営業日の大引け時点のデータです。最後の画像は前週末比です。':'※各画像はその日の大引け時点のデータです（1週間を通した騰落率ではありません）。', '', c.tags].join('\n');
+  return [`📊【${c.head}】`, '', `${range}の東京株式市場を、日ごとに振り返り。`, ...c.lines, '', '📌 スワイプして日ごとの変化をチェック！', ...(withWeek?['最後の画像では、前週末比の騰落率も確認できます。']:[]), '', withWeek?(id==='sectors'?'※日別の画像は各営業日の騰落率です。最後の画像は前週末比の騰落率で、日別ランキングとは集計期間が異なります。':'※日別の画像は各営業日の大引け時点のデータです。最後の画像は前週末比です。'):'※各画像はその日の大引け時点のデータです（1週間を通した騰落率ではありません）。', '', c.tags].join('\n');
 }
 // ---- TikTok 用のタイトル・説明文（AI は使わない。各日の動画のデータから集計して定型文に差し込む。2026-11-14）----
 // 集計できない項目は文ごと省く。同じ値・同じ回数は全部並べる（1つを単独の首位にしない）
@@ -4405,6 +4405,10 @@ function wkFacts(id, ds, week){
     if(mn.length) L.push(`1日でいちばん大きく押し下げたのは${wkJoin(mn.map(r=>`${wkMd(r.date)}の${r.name}（${wkSign(r.value,2)}円）`))}。`);
   }
   if(id==='sectors'){
+    if(week && week.up){
+      L.push(`週間騰落率（前週末比）の上位5業種は、${wkJoin(week.up.map(r=>`${r.name}（${wkPct(r.pct)}）`))}。`);
+      L.push(`下位5業種は、${wkJoin(week.down.map(r=>`${r.name}（${wkPct(r.pct)}）`))}。`);
+    }
     const up=wkMost(ds.map(x=>(x.sectors&&x.sectors.up)||[])), dn=wkMost(ds.map(x=>(x.sectors&&x.sectors.down)||[]));
     if(up) L.push(`日別ランキングでは、${wkJoin(up.names)}が${up.names.length>1?'それぞれ':''}${up.n}営業日で上位5業種に入りました。`);
     if(dn) L.push(`下位5業種には、${wkJoin(dn.names)}が${dn.names.length>1?'それぞれ':''}${dn.n}営業日で入りました。`);
@@ -4436,7 +4440,10 @@ function wkTikTok(id, ds, week){
   const range=dates.length>1 ? `${wkMd(dates[0])}〜${wkMd(dates[dates.length-1])}` : wkMd(dates[0]);
   const shortRange=dates.length>1 ? `${wkMdShort(dates[0])}〜${wkMdShort(dates[dates.length-1])}` : wkMdShort(dates[0]);
   const facts=wkFacts(id, ds, week);
-  const note = id==='index' && (week||[]).length
+  const hasWeek = id==='index' ? !!(week||[]).length : id==='sectors' ? !!(week && week.up) : false;
+  const note = id==='sectors' && hasWeek
+    ? '※日別ランキングは各営業日の騰落率、最後のスライドは前週末比の騰落率で、集計期間が異なります。'
+    : id==='index' && hasWeek
     ? '※日別の画像は各営業日の大引け時点のデータです。前週末比は、前週の最後の営業日の終値と今週の最後の営業日の終値を比べた値です。'
     : '※各画像はその日の大引け時点のデータです（1週間を通した騰落率ではありません）。';
   const body=[
@@ -4444,7 +4451,7 @@ function wkTikTok(id, ds, week){
     `${range}の東京株式市場（${dates.length}営業日）について、${c.lead}`, '',
     ...(facts.length ? ['📍今週のデータから', ...facts, ''] : []),
     c.ask, '',
-    '📌 スワイプして日ごとの変化をチェック！', ...(id==='index' && (week||[]).length ? ['📌 最後のスライドでは、前週末比の騰落率も確認できます。'] : []), '',
+    '📌 スワイプして日ごとの変化をチェック！', ...(hasWeek ? [`📌 最後のスライドでは、${id==='sectors'?'週間騰落率ランキング':'前週末比の騰落率'}も確認できます。`] : []), '',
     note, '',
     c.tags,
   ].join('\n');
@@ -4487,16 +4494,35 @@ function wkPreset(k){
   document.querySelectorAll('#wkThemes input[type=checkbox]').forEach(x=>{ x.checked=ids.includes(x.value); });
 }
 // その日の動画のデータを読む（サーバーの目録 → 各欄のまとめ → ssg_video）。この端末で作業中の日は、この端末の内容を使う
+// その日の取得データ（全自動版の「データ取得」）から、業種別指数の値を { 業種名: 値 } で取り出す（2026-11-14 から取っている。無ければ null）
+function wkSecVals(autostateText){
+  let o=null; try{ o=JSON.parse(autostateText||'null'); }catch(e){}
+  const src=o && (o.sources||[]).find(x=>x.key==='kabutan_sector_desc');
+  const m={}; for(const r of (src&&src.rows)||[]) if(r && r.name && isFinite(r.value) && r.value>0) m[r.name]=r.value;
+  return Object.keys(m).length ? m : null;
+}
 async function wkLoadDay(day){
   const loc=wkLocalData();
-  if(loc && loc.date===day) return loc;
+  if(loc && loc.date===day) return Object.assign({}, loc, { _sec:wkSecVals(localStorage.getItem(SSG_PREFIX+'autostate')) });
   if(wkData[day]) return wkData[day];
   const r=await ssgSyncApi(`date=${day}`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
   const res=await fetch(`/api/state?date=${day}&part=${r.manifest.ls}`,{cache:'no-store'}); if(!res.ok) throw new Error(`HTTP ${res.status}`);
   const ls=await res.json();
   let v=null; try{ v=JSON.parse(ls[VID_KEY]||'null'); }catch(e){}
   if(!v || !v.data) return null;
-  return (wkData[day]=v.data);
+  return (wkData[day]=Object.assign({}, v.data, { _sec:wkSecVals(ls[SSG_PREFIX+'autostate']) }));
+}
+// 業種別の前週末比：前週の最後の営業日と今週の最後の営業日の業種別指数をくらべる。両方そろった業種が30以上のときだけ（そろわなければ null）
+function wkSectorWeek(ds, prev){
+  const a=prev && prev._sec, b=ds.length && ds[ds.length-1]._sec;
+  if(!a || !b) return null;
+  const rows=Object.keys(b).filter(k=>a[k]).map(k=>({ name:k, pct:(b[k]/a[k]-1)*100 }));
+  if(rows.length<30) return null;
+  const r2=x=>Math.round(x.pct*100)/100;   // 表示は小数第2位。並べるのも表示の値で（同じ値は名前順）
+  rows.forEach(x=>{ x.pct=r2(x); });
+  const up=[...rows].sort((x,y)=>y.pct-x.pct||x.name.localeCompare(y.name,'ja')).slice(0,5);
+  const down=[...rows].sort((x,y)=>x.pct-y.pct||x.name.localeCompare(y.name,'ja')).slice(0,5);
+  return { up, down, baseDate:prev.date, n:rows.length };
 }
 function wkClearOut(){ if(wkOut) for(const t of wkOut.themes) for(const f of t.files) URL.revokeObjectURL(f.url); wkOut=null; document.getElementById('wkResult').innerHTML=''; document.getElementById('wkZipBtn').style.display='none'; }
 async function wkMake(btn){
@@ -4515,7 +4541,7 @@ async function wkMake(btn){
     const has={ index:x=>(x.charts||[]).length+(x.others||[]).length>0, contrib:x=>x.contrib && (x.contrib.plus||[]).length+(x.contrib.minus||[]).length>0, sectors:x=>x.sectors && (x.sectors.up||[]).length+(x.sectors.down||[]).length>0, rise:x=>(x.rise||[]).length>0, fall:x=>(x.fall||[]).length>0, trading:x=>(x.trading||[]).length>0 };
     // 前週の最後の営業日（主要株価指数の前週末比に使う）
     let prevDay=null;
-    if(ids.includes('index')){
+    if(ids.includes('index') || ids.includes('sectors')){
       const pd=[...new Set(wkServerDays)].filter(d=>d<dates[0]).sort().pop();
       if(pd && wkMonday(pd)!==wkMonday(dates[0])){ try{ prevDay=await wkLoadDay(pd); if(prevDay) prevDay=Object.assign({}, prevDay, { date:pd }); }catch(e){ console.warn('週間まとめ：前週のデータが読めませんでした', pd, e); } }
     }
@@ -4523,23 +4549,25 @@ async function wkMake(btn){
     for(const t of KV.tse.weekThemes.filter(t=>ids.includes(t.id))){
       const ds=days.filter(has[t.id]); if(!ds.length) continue;
       // 主要株価指数だけ、最後に週間サマリー（前週末比）を足す。表紙にも「週間データ」の枠を出す
-      const week=t.id==='index' ? wkIndexWeek(ds, prevDay) : null;
-      const withWeek=!!(week && week.length);
+      const week=t.id==='index' ? wkIndexWeek(ds, prevDay) : t.id==='sectors' ? wkSectorWeek(ds, prevDay) : null;
+      const withWeek=t.id==='sectors' ? !!week : !!(week && week.length);
       // ファイル名は「種類の番号-何枚目_その週の月曜の日付」（1-1_20261109.png が指数の表紙、1-2 から日別）。種類の番号は場面の並びで固定
       const no=WK_THEMES.findIndex(w=>w.id===t.id)+1, mon=wkMonday(dates[0]).replace(/-/g,'');
       const names=['表紙'].concat(ds.map(x=>x.date), withWeek?['週間']:[]).map((_,i)=>`${no}-${i+1}_${mon}.png`);
       plan.push({ id:t.id, title:t.title, dates:ds.map(x=>x.date), names, from:specs.length, week, ds });
       // 比べた前週の日（全部の指数で同じ日のときだけ表紙に出す）
-      const bd=withWeek ? (week.map(r=>r.baseDate).find(Boolean)||null) : null, sameBd=withWeek && week.every(r=>r.baseDate===bd);
+      const bd=!withWeek ? null : t.id==='sectors' ? week.baseDate : (week.map(r=>r.baseDate).find(Boolean)||null);
+      const sameBd=withWeek && (t.id==='sectors' || week.every(r=>r.baseDate===bd));
       specs.push({ kind:'weekcover', scene:t.id, dates:ds.map(x=>x.date), weekly:withWeek, weeklyBase:sameBd?bd:null });
       for(const x of ds) specs.push({ kind:'scene', scene:t.id, data:x });
-      if(withWeek) specs.push({ kind:'weekindex', dates:ds.map(x=>x.date), rows:week, baseDate:sameBd?bd:null });
+      if(withWeek && t.id==='index') specs.push({ kind:'weekindex', dates:ds.map(x=>x.date), rows:week, baseDate:sameBd?bd:null });
+      if(withWeek && t.id==='sectors') specs.push({ kind:'weeksector', dates:ds.map(x=>x.date), up:week.up, down:week.down, baseDate:bd });
     }
     if(!specs.length){ wkStatus('選んだ場面のデータがありません','error'); return; }
     const blobs=await KV.tse.stills(specs, { onProgress:(n, all)=>wkStatus(`画像を作っています… ${n}/${all}`) });
     wkClearOut();
     // 画像と投稿文の数値は同じ集計（p.week）から出す
-    wkOut={ week:wkMonday(dates[0]), last:dates[dates.length-1], themes:plan.map(p=>({ id:p.id, title:p.title, caption:wkCaption(p.id, p.dates, !!(p.week&&p.week.length)), tiktok:wkTikTok(p.id, p.ds, p.week), files:p.names.map((name,i)=>{ const blob=blobs[p.from+i]; return { name, blob, url:URL.createObjectURL(blob) }; }) })) };
+    wkOut={ week:wkMonday(dates[0]), last:dates[dates.length-1], themes:plan.map(p=>({ id:p.id, title:p.title, caption:wkCaption(p.id, p.dates, p.id==='sectors' ? !!p.week : !!(p.week&&p.week.length)), tiktok:wkTikTok(p.id, p.ds, p.week), files:p.names.map((name,i)=>{ const blob=blobs[p.from+i]; return { name, blob, url:URL.createObjectURL(blob) }; }) })) };
     wkRenderResult();
     wkStatus(`✅ ${specs.length}枚できました`+(skipped.length?`（動画のデータが無い日：${skipped.map(wkMd).join('・')}）`:''), 'ok');
   }catch(e){ wkStatus('❌ '+e.message,'error'); }
