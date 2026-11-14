@@ -398,7 +398,7 @@ body.mode-full #vThumbBtn { display:none; }
   <button class="tab-btn" id="tabBtnFull" onclick="switchTab('full')" title="自動版＋動画（MP4）。取得データ・台本などは自動版と共通">全自動版<span class="tab-badge beta">NEW</span></button>
   <button class="tab-btn" id="tabBtnUs" onclick="switchTab('us')" title="米国市場の振り返り（全自動）。東証版とは別の作業">米国版<span class="tab-badge beta">試作</span></button>
   <button class="tab-btn" id="tabBtnWeekly" onclick="switchTab('weekly')" title="1週間ぶんの日別データを、場面ごとの画像（Instagram の画像投稿用）にまとめる">週間まとめ</button>
-  <button class="tab-btn" id="tabBtnAi" onclick="switchTab('ai')" title="AI エージェントが操作するとき用。全自動版のコピー・貼付ボタンと、コピーした全文（読み取り専用・TXT）">AI用</button>
+  <button class="tab-btn" id="tabBtnAi" onclick="switchTab('ai')" title="AI エージェントが操作するとき用。東証の全自動版・米国版のコピー・貼付ボタンと、コピーした全文（読み取り専用・TXT）">AI用</button>
   <button class="tab-btn" id="tabBtnAuto" onclick="switchTab('auto')">自動版<span class="tab-badge beta">BETA</span></button>
   <button class="tab-btn active" id="tabBtnManual" onclick="switchTab('manual')">手動版</button>
 </div>
@@ -1105,7 +1105,7 @@ Appier G|4180|818|+96|+13.30%
     <details open style="margin-top:8px;"><summary class="us-sum">決算一覧（場面7。候補の中から AI が選んだ銘柄を載せる）</summary><div id="usEarnings"></div></details>
     <details style="margin-top:8px;"><summary class="us-sum">変動率の高い銘柄（候補）</summary><div id="usMovers"></div></details>
     <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;">
-      <button class="btn-copy" onclick="usCopyCollect(this)">📋 AI収集プロンプト</button>
+      <button class="btn-copy" data-btn="米国版 📋 AI収集プロンプト" onclick="usCopyCollect(this)">📋 AI収集プロンプト</button>
       <span class="mut">ChatGPT などに貼り、ニュース・個別株と、決算一覧に載せる銘柄・コメント・ガイダンスを調べさせます（回答は JSON）。</span>
     </div>
   </div>
@@ -1113,12 +1113,12 @@ Appier G|4180|818|+96|+13.30%
   <div class="card us-step" data-step="2">
     <h2>② ファクトチェック（米国）</h2>
     <div class="auto-row">
-      <button class="btn-sm" onclick="usPasteReport(this)">📋 貼付</button>
+      <button class="btn-sm" data-btn="米国版 📋 貼付（AIのレポート）" onclick="usPasteReport(this)">📋 貼付</button>
       <button class="btn-sm" onclick="document.getElementById('usReport').value='';usReportChanged();">✕ クリア</button>
     </div>
     <textarea id="usReport" placeholder="AI の回答（JSON）を貼付" oninput="usReportChanged()" style="min-height:140px;"></textarea>
     <div class="auto-row" style="margin-top:6px;">
-      <button class="btn-copy" onclick="usCopyFactCheck(this)">✅ CK</button>
+      <button class="btn-copy" data-btn="米国版 ✅ CK" onclick="usCopyFactCheck(this)">✅ CK</button>
       <button class="btn-copy" onclick="autoClip('修正後内容が正しいか確認して', this)">🔍 FCCK</button>
       <button class="btn-copy" onclick="autoClip(AP_FIX_PROMPT, this)">🔧 修正</button>
     </div>
@@ -1144,11 +1144,11 @@ Appier G|4180|818|+96|+13.30%
     </div>
     <div class="auto-row" style="margin-top:10px;"><strong>台本</strong>
       <button class="btn-sm" data-btn="米国版 台本の再生成" onclick="usRegen('script', this)">🔁 再生成</button>
-      <button class="btn-mini" onclick="usCopy('usScript', this)">📋</button>
+      <button class="btn-mini" data-btn="米国版 📋 台本" onclick="usCopy('usScript', this)">📋</button>
       <span id="usScriptStatus" class="mut"></span></div>
     <textarea id="usScript" oninput="usScriptChanged()" onchange="usScriptApply()" style="min-height:260px;" title="直して欄の外を押すと、上の場面ごとの台本にも反映します"></textarea>
     <div class="auto-row" style="margin-top:8px;"><strong>場面のデータ</strong>
-      <button class="btn-mini" onclick="usCopyVideoData(this)" title="動画の部品に渡す形（JSON）をコピー">📋</button></div>
+      <button class="btn-mini" data-btn="米国版 📋 動画のデータ（JSON）" onclick="usCopyVideoData(this)" title="動画の部品に渡す形（JSON）をコピー">📋</button></div>
     <div id="usVideoData"></div>
   </div>
 
@@ -1160,11 +1160,11 @@ Appier G|4180|818|+96|+13.30%
       <span class="mut" id="usVidExportHint">③動画で「動画のデータを作る」を押すと、ここに書き出しのボタンが出ます。</span></div>
     <div class="auto-row"><strong>サムネ案</strong>
       <button class="btn-sm" data-btn="米国版 サムネ案の再生成" onclick="usRegen('sns', this)">🔁 再生成</button>
-      <button class="btn-mini" onclick="usCopy('usSnsThumb', this)">📋</button>
+      <button class="btn-mini" data-btn="米国版 📋 サムネ案" onclick="usCopy('usSnsThumb', this)">📋</button>
       <span id="usSnsStatus" class="mut"></span></div>
     <textarea id="usSnsThumb" oninput="usSnsChanged()" style="min-height:110px;"></textarea>
     <div class="auto-row" style="margin-top:8px;"><strong>X投稿文</strong>
-      <button class="btn-mini" onclick="usCopy('usSnsX', this)">📋</button></div>
+      <button class="btn-mini" data-btn="米国版 📋 X投稿文" onclick="usCopy('usSnsX', this)">📋</button></div>
     <textarea id="usSnsX" oninput="usSnsChanged()" style="min-height:140px;"></textarea>
   </div>
 </div><!-- /#tabUs -->
@@ -1213,7 +1213,7 @@ Appier G|4180|818|+96|+13.30%
 <div id="tabAiDesk" class="tab-panel">
   <div class="card">
     <h2>AI用：コピーした全文</h2>
-    <p class="sub" style="margin-bottom:8px;">全自動版（またはこのタブ）でコピーボタンを押すと、クリップボードへのコピーと同時に、全文をここに出します。クリップボードを読めない環境では、この欄か TXT で受け取ってください。履歴はこのタブを閉じるまで、最新10件です。</p>
+    <p class="sub" style="margin-bottom:8px;">東証の全自動版・米国版（またはこのタブ）でコピーボタンを押すと、クリップボードへのコピーと同時に、全文をここに出します。クリップボードを読めない環境では、この欄か TXT で受け取ってください。履歴はこのタブを閉じるまで、最新10件です。</p>
     <div class="auto-row" style="flex-wrap:wrap;gap:6px;">
       <select id="aiCopyPick" onchange="aiDeskShow()" style="flex:1 1 260px;min-width:0;"></select>
       <button class="btn-sm" onclick="aiDeskDownload()">⬇ TXT</button>
@@ -1223,13 +1223,13 @@ Appier G|4180|818|+96|+13.30%
   </div>
   <div class="card">
     <h2>AI用：貼付用</h2>
-    <p class="sub" style="margin-bottom:8px;">ChatGPT の回答などをここに入れてから、📥 貼付・📋 貼付のボタン（全自動版でも、下の一覧でも）を押すと、クリップボードの代わりにこの文を使います。使ったら欄は空になります。空のときは、いつもどおりクリップボードを読みます。</p>
+    <p class="sub" style="margin-bottom:8px;">ChatGPT の回答などをここに入れてから、📥 貼付・📋 貼付のボタン（東証の全自動版・米国版でも、下の一覧でも）を押すと、クリップボードの代わりにこの文を使います。使ったら欄は空になります。空のときは、いつもどおりクリップボードを読みます。</p>
     <textarea id="aiPasteText" style="min-height:140px;font-size:12px;" placeholder="ここに貼り付ける文を入れる"></textarea>
     <div id="aiPasteStatus" style="font-size:11px;color:var(--muted);min-height:16px;margin-top:4px;"></div>
   </div>
   <div class="card">
-    <h2>AI用：全自動版のコピー・貼付ボタン</h2>
-    <p class="sub" style="margin-bottom:8px;">全自動版にある同じボタンです。押すと元のボタンを押したのと同じに動きます（状態の表示やエラーは全自動版の画面に出ます）。📋 を押すと、全文が上の「コピーした全文」に出ます。</p>
+    <h2>AI用：コピー・貼付ボタン（東証の全自動版・米国版）</h2>
+    <p class="sub" style="margin-bottom:8px;">東証の全自動版・米国版にある同じボタンです。押すと元のボタンを押したのと同じに動きます（状態の表示やエラーは元の画面に出ます）。📋 を押すと、全文が上の「コピーした全文」に出ます。</p>
     <div id="aiBtnList"></div>
   </div>
 </div>
@@ -2357,8 +2357,8 @@ function switchTab(name){
   if(aiPanel) aiPanel.classList.toggle('active', ai);
   if(aiBtn) aiBtn.classList.toggle('active', ai);
   if(ai){
-    for(const id of ['tabManual','tabAuto','tabWeekly']) document.getElementById(id).classList.remove('active');
-    for(const id of ['tabBtnManual','tabBtnAuto','tabBtnFull','tabBtnWeekly']) document.getElementById(id).classList.remove('active');
+    for(const id of ['tabManual','tabAuto','tabWeekly','tabUs']) { const el=document.getElementById(id); if(el) el.classList.remove('active'); }
+    for(const id of ['tabBtnManual','tabBtnAuto','tabBtnFull','tabBtnWeekly','tabBtnUs']) { const el=document.getElementById(id); if(el) el.classList.remove('active'); }
     try{ aiDeskRender(); }catch(e){ console.warn(e); }
     return;
   }
@@ -2394,18 +2394,26 @@ function switchTab(name){
 }
 
 // ==================== AI用タブ（2026-11-14）====================
-const AI_DESK_STEPS = [['1','① データ取得・抽出'],['2','② ファクトチェック'],['v','③ 動画'],['n','④ SNS'],['s','⚙ 設定']];
-// 全自動版のコピー・貼付ボタンを、いまの置き場所から工程ごとに集める（全自動版では ④スライド・⑤出力の部品が ③動画・④SNS に移っている）
+// 並べる工程：[画面, 工程の印, 見出し]。東証の全自動版は #tabAuto の .astep[data-astep]、米国版は #tabUs の .us-step[data-step]
+const AI_DESK_STEPS = [
+  ['jp','1','東証 全自動版 ① データ取得・抽出'],['jp','2','東証 全自動版 ② ファクトチェック'],['jp','v','東証 全自動版 ③ 動画'],['jp','n','東証 全自動版 ④ SNS'],['jp','s','東証 全自動版 ⚙ 設定'],
+  ['us','1','米国版 ① 取得・抽出'],['us','2','米国版 ② ファクトCK'],['us','v','米国版 ③ 動画'],['us','n','米国版 ④ SNS'],['us','s','米国版 ⚙ 設定'],
+];
+// コピー・貼付ボタンを、いまの置き場所から工程ごとに集める（東証の全自動版では ④スライド・⑤出力の部品が ③動画・④SNS に移っている）
 function aiDeskButtons(){
   const re = /Copy|Clip|Paste|apCopy/;
   const out = {};
+  const add = (key, b) => (out[key] = out[key] || []).push(b);
   document.querySelectorAll('#tabAuto button, #tabAuto label.btn-sm').forEach(b=>{
-    const oc = b.getAttribute('onclick') || '';
-    if(!re.test(oc)) return;
-    if(b.closest('.auto-only')) return;            // 全自動版では出ないもの
+    if(!re.test(b.getAttribute('onclick') || '')) return;
+    if(b.closest('.auto-only')) return;            // 東証の全自動版では出ないもの
     const st = b.closest('.astep'); const k = st ? st.dataset.astep : '';
-    if(!AI_DESK_STEPS.some(x=>x[0]===k)) return;   // 全自動版に無い工程（③音声生成・④スライド・⑤出力）
-    (out[k] = out[k] || []).push(b);
+    if(AI_DESK_STEPS.some(x=>x[0]==='jp' && x[1]===k)) add('jp|'+k, b);   // 全自動版に無い工程（③音声生成・④スライド・⑤出力）は除く
+  });
+  document.querySelectorAll('#tabUs button, #tabUs label.btn-sm').forEach(b=>{
+    if(!re.test(b.getAttribute('onclick') || '')) return;
+    const st = b.closest('.us-step'); const k = st ? st.dataset.step : '';
+    add('us|'+k, b);
   });
   return out;
 }
@@ -2414,8 +2422,8 @@ function aiDeskRender(){
   const groups = aiDeskButtons();
   aiDeskRefs = [];
   let h = '';
-  for(const [k, name] of AI_DESK_STEPS){
-    const list = groups[k] || [];
+  for(const [scr, k, name] of AI_DESK_STEPS){
+    const list = groups[scr+'|'+k] || [];
     if(!list.length) continue;
     h += `<div style="margin:8px 0 4px;font-size:12px;font-weight:700;">${name}</div><div style="display:flex;flex-wrap:wrap;gap:6px;">`;
     for(const b of list){
