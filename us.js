@@ -1085,6 +1085,8 @@ async function usSyncForce(){
 }
 // 開いたとき：この端末に作業が無ければいちばん新しい回を、同じ回でサーバーのほうが新しければそれを開く
 async function usSyncBoot(){
+  // URL に ?nosync を付けて開くと、サーバー保存を止める（東証版と同じ。この端末の内容をそのまま残す）
+  if(typeof SSG_NOSYNC!=='undefined' && SSG_NOSYNC){ usSyncOff = '止めています（URL の ?nosync）'; usSyncStatus('☁ サーバー保存を止めています（URL の ?nosync）'); return; }
   try{
     const r = await (await fetch('/api/us-state', { cache: 'no-store' })).json();
     if(!r.ok){ usSyncOff = r.error || 'サーバー保存は使えません'; return; }

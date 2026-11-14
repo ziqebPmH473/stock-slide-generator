@@ -4125,7 +4125,10 @@ async function ssgSyncBaseDateChanged(){
   }catch(e){ ssgSyncStatus('☁ '+e.message, 'error'); }
 }
 async function ssgSyncRefreshList(){ const r=await ssgSyncApi(''); if(r.ok) ssgSyncRenderDays(r.days||[]); else ssgSyncStatus('☁ '+(r.error||`HTTP ${r.status}`), 'error'); }
+// URL に ?nosync を付けて開くと、サーバー保存を止める（読み込みも保存もしない）。この端末の内容をそのまま見て、💾 出力で取り出すため（2026-11-14）
+const SSG_NOSYNC = (()=>{ try{ return new URLSearchParams(location.search).has('nosync'); }catch(e){ return false; } })();
 function ssgSyncBoot(){
+  if(SSG_NOSYNC){ ssgSyncOff='止めています（URL の ?nosync）'; ssgSyncStatus('☁ サーバー保存を止めています（URL の ?nosync）。この端末の内容は読み込み直しも上書きもしません。⚙設定の「💾 出力」で取り出せます', 'error'); return; }
   ssgSyncCheckRemote(true);
   setInterval(()=>{ if(document.visibilityState==='visible') ssgSyncTick(); }, 20000);   // 動画の部品が IndexedDB に置く音声などは、ここで拾う
   document.addEventListener('visibilitychange', ()=>{
