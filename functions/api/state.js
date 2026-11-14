@@ -128,6 +128,8 @@ export async function onRequestPut(context) {
     // 前の作業より大きく減る（半分以下になる）保存は、allowShrink（画面で「上書きする」を選んだとき）が無ければ上書きしない。
     // 前の作業はサーバーにそのまま残る（2026-11-14 すみぽん「空からスタートになったら上書きせず、前をサーバーに残す」）
     const newAmount = await amount(bucket, date, body.ls, body.idb);
+    // 中身が何も無い作業は保存しない（2026-11-14）
+    if (newAmount === 0) return json({ ok: false, empty: true, error: '中身が無いので保存しません' }, 422);
     if (cur && !body.allowShrink) {
       const curAmount = Number.isFinite(Number(cur.amount)) ? Number(cur.amount) : await amount(bucket, date, cur.ls, cur.idb);
       if (curAmount > 0 && newAmount <= Math.floor(curAmount / 2)) {

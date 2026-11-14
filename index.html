@@ -3985,9 +3985,18 @@ async function ssgSyncPutPart(day, name, p){
 }
 
 // 送る：変わった中身を置いてから目録を置く
+// 作業の量（サーバーの functions/api/state.js の amount と同じ数え方）：中身のある欄（50字以上）の数＋画像・音声などの数（BGM は数えない）
+function ssgSyncAmount(c){
+  let n=0;
+  try{ for(const v of Object.values(JSON.parse(c.parts[c.lsName].text||'{}'))) if(typeof v==='string' && v.trim().length>=50) n++; }catch(e){}
+  for(const [name, rows] of Object.entries(c.idb||{})) if(name!=='ssg-bgm') n+=(rows||[]).length;
+  return n;
+}
 async function ssgSyncPush(force, allowShrink){
   const s=ssgSyncGet(); if(!s.on || !s.day) return;
   const c=await ssgSyncCollect();
+  // 中身が何も無いときは保存しない（2026-11-14 すみぽん「空のプロジェクトは保存しないでほしい」）
+  if(ssgSyncAmount(c)===0){ ssgSyncStatus(`☁ ${s.day} はまだ中身が無いので、保存していません（データ取得などで中身が入ったら保存します）`); return; }
   if(!force && !s.force && ssgSyncSame(c, s) && (s.baseDate||'')===c.baseDate) return;
   const have=new Set(s.parts||[]);
   ssgSyncStatus('☁ 保存中…');

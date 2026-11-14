@@ -97,6 +97,8 @@ export async function onRequestPut(context) {
     let body;
     try { body = await request.json(); } catch (e) { return json({ ok: false, error: "内容を読み取れませんでした" }, 400); }
     if (!body || typeof body.doc !== "object" || !body.doc) return json({ ok: false, error: "作業の形が違います" }, 400);
+    // 中身が何も無い作業は保存しない（2026-11-14）
+    if (amount(body.doc) === 0) return json({ ok: false, empty: true, error: "中身が無いので保存しません" }, 422);
     const curObj = await bucket.get(`us/${date}/state.json`);
     const cur = curObj ? await curObj.json() : null;
     const have = cur ? Number(cur.rev) || 0 : 0;

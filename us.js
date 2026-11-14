@@ -1031,6 +1031,9 @@ async function usSyncPush(force, allowShrink){
       if(!res.ok) throw new Error(`音声の保存に失敗（HTTP ${res.status}）`);
     }
     const doc = { state: JSON.parse(localStorage.getItem(US_STATE_KEY) || 'null'), video: JSON.parse(localStorage.getItem('ssgus_video') || 'null'), audio };
+    // 中身が何も無いときは保存しない（2026-11-14。数え方はサーバーの functions/api/us-state.js の amount と同じ）
+    { let n = 0; for(const v of Object.values(doc.state || {})){ const t = typeof v === 'string' ? v : JSON.stringify(v ?? ''); if(t && t.trim().length >= 50) n++; } if(doc.video) n++; n += Object.keys(audio).length;
+      if(n === 0){ usSyncStatus(`☁ ${date} はまだ中身が無いので、保存していません`); return; } }
     const res = await fetch(`/api/us-state?date=${date}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doc, baseRev: sync.date === date ? (sync.rev || 0) : await usSyncRemoteRev(date), force: !!force, allowShrink: !!allowShrink }) });
     const d = await res.json().catch(() => ({}));
     if(res.status === 409 && d.shrink){
