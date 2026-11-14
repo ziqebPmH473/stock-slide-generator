@@ -4485,10 +4485,12 @@ function wkWeekChanged(){
 }
 // 場面の一覧（部品の KessanViz.tse.weekThemes と同じ並び。部品は画像を作るときに読むので、欄はここから出す）
 const WK_THEMES=[{id:'index',title:'主要株価指数'},{id:'contrib',title:'日経平均寄与度'},{id:'sectors',title:'業種別変動率'},{id:'rise',title:'値上がり率ランキング'},{id:'fall',title:'値下がり率ランキング'},{id:'trading',title:'売買代金ランキング'}];
+// チェック欄の並び（投稿する順：土＝指数・値上がり率・寄与度、日＝売買代金・値下がり率・業種別）。欄の並びだけで、画像のファイル名の番号は WK_THEMES のまま
+const WK_CHECK_ORDER=['index','rise','contrib','trading','fall','sectors'];
 function wkRenderThemes(){
   const el=document.getElementById('wkThemes'); if(!el || el.childElementCount) return;
   el.innerHTML=Object.keys(WK_PRESETS).map(k=>`<button class="btn-mini" onclick="wkPreset('${k}')" title="${autoEsc(WK_PRESETS[k].map(id=>(WK_THEMES.find(t=>t.id===id)||{}).title).join('・'))} だけにチェックを付ける">${k}</button>`).join('')
-    + WK_THEMES.map(t=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="${t.id}" checked>${autoEsc(t.title)}</label>`).join('');
+    + WK_CHECK_ORDER.map(id=>WK_THEMES.find(t=>t.id===id)).map(t=>`<label style="font-size:12px;display:inline-flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" value="${t.id}" checked>${autoEsc(t.title)}</label>`).join('');
 }
 // 投稿する曜日ごとの場面（土：主要株価指数・値上がり率・寄与度／日：業種別・値下がり率・売買代金。週間騰落率のある指数と業種を土日に分ける）。押すとその場面だけにチェックが付く
 const WK_PRESETS={ '土':['index','rise','contrib'], '日':['sectors','fall','trading'] };
