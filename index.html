@@ -77,6 +77,69 @@
     return p;
   };
 })();
+
+// ==================== AI用タブ：コピーした全文の控えと、貼付の代わり（2026-11-14）====================
+// 操作する AI エージェントのブラウザはクリップボードを読めないので、コピーした文面を受け取れない。
+// ・コピー（navigator.clipboard.writeText・execCommand('copy')）を横取りして、全文を ssgCopies に残す（最新10件。タブを閉じるまで）。
+//   AI用タブの読み取り専用の欄に出し、TXT で保存できる。クリップボードへのコピーは今までどおり行う。
+// ・貼付（navigator.clipboard.readText）は、AI用タブの「貼付用」の欄に文が入っていれば、それを使って欄を空にする。
+//   空ならいつもどおりクリップボードを読む（人が使うときは変わらない）。
+// ボタンの名前：data-btn、無ければ表示の文字。「📋」だけのボタンは、同じ行の見出し（strong・summary）を前に付ける
+function ssgBtnLabel(el){
+  if (!el) return '';
+  if (el.dataset && el.dataset.btn) return el.dataset.btn;
+  const t = String(el.innerText || el.value || el.title || '').replace(/\s+/g, ' ').trim();
+  if (t.replace(/[^\p{L}\p{N}]/gu, '').length >= 2) return t.slice(0, 60);
+  const row = el.closest('.auto-row, summary, .ap-row, div');
+  const head = row && row.querySelector('strong, h3, h2');
+  const ctx = head ? head.innerText.replace(/\s+/g, ' ').trim() : (el.title || '');
+  return ((ctx ? ctx + ' ' : '') + t).slice(0, 60);
+}
+(function(){
+  let lastLabel = '';
+  document.addEventListener('click', e => {
+    const el = e.target && e.target.closest ? e.target.closest('button, label.btn-sm, label.btn-mini, [role=button]') : null;
+    if (!el) return;
+    lastLabel = ssgBtnLabel(el);
+  }, true);
+  let copies = [];
+  try { copies = JSON.parse(sessionStorage.getItem('ssg_ai_copies') || '[]'); } catch (e) {}
+  window.ssgCopies = copies;
+  function record(text){
+    text = String(text == null ? '' : text);
+    if (!text) return;
+    const now = Date.now();
+    if (copies[0] && copies[0].text === text && now - copies[0].t < 3000) return;   // writeText が失敗して execCommand で取り直したときの二重を除く
+    copies.unshift({ t: now, label: window.__ssgNextLabel || lastLabel || '（ボタン不明）', text });
+    copies.length = Math.min(copies.length, 10);
+    try { sessionStorage.setItem('ssg_ai_copies', JSON.stringify(copies)); } catch (e) {}
+    try { window.dispatchEvent(new CustomEvent('ssg-copied')); } catch (e) {}
+  }
+  window.ssgRecordCopy = record;
+  if (navigator.clipboard) {
+    const w = navigator.clipboard.writeText && navigator.clipboard.writeText.bind(navigator.clipboard);
+    if (w) navigator.clipboard.writeText = function(t){ record(t); return w(t); };
+    const r = navigator.clipboard.readText && navigator.clipboard.readText.bind(navigator.clipboard);
+    if (r) navigator.clipboard.readText = function(){
+      const box = document.getElementById('aiPasteText');
+      if (box && box.value.trim()) {
+        const v = box.value; box.value = '';
+        try { window.dispatchEvent(new CustomEvent('ssg-pasted', { detail: { label: lastLabel, chars: v.length } })); } catch (e) {}
+        return Promise.resolve(v);
+      }
+      return r();
+    };
+  }
+  const ex = document.execCommand.bind(document);
+  document.execCommand = function(cmd){
+    if (String(cmd).toLowerCase() === 'copy') {
+      const a = document.activeElement;
+      if (a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT')) record(a.value.substring(a.selectionStart, a.selectionEnd) || a.value);
+      else record(String(window.getSelection ? window.getSelection() : ''));
+    }
+    return ex.apply(document, arguments);
+  };
+})();
 </script>
 <style>
 /* ===== APP UI ===== */
@@ -335,6 +398,7 @@ body.mode-full #vThumbBtn { display:none; }
   <button class="tab-btn" id="tabBtnFull" onclick="switchTab('full')" title="自動版＋動画（MP4）。取得データ・台本などは自動版と共通">全自動版<span class="tab-badge beta">NEW</span></button>
   <button class="tab-btn" id="tabBtnUs" onclick="switchTab('us')" title="米国市場の振り返り（全自動）。東証版とは別の作業">米国版<span class="tab-badge beta">試作</span></button>
   <button class="tab-btn" id="tabBtnWeekly" onclick="switchTab('weekly')" title="1週間ぶんの日別データを、場面ごとの画像（Instagram の画像投稿用）にまとめる">週間まとめ</button>
+  <button class="tab-btn" id="tabBtnAi" onclick="switchTab('ai')" title="AI エージェントが操作するとき用。全自動版のコピー・貼付ボタンと、コピーした全文（読み取り専用・TXT）">AI用</button>
   <button class="tab-btn" id="tabBtnAuto" onclick="switchTab('auto')">自動版<span class="tab-badge beta">BETA</span></button>
   <button class="tab-btn active" id="tabBtnManual" onclick="switchTab('manual')">手動版</button>
 </div>
@@ -626,16 +690,16 @@ Appier G|4180|818|+96|+13.30%
       <div class="a2" style="margin-top:6px;">
         <div style="border:1px solid var(--border);border-radius:6px;padding:8px;">
           <div class="auto-row"><strong style="font-size:11px;color:var(--text);">分析RANK</strong>
-            <button class="btn-mini" onclick="autoCopyEl('autoRankOut',this)">📋</button></div>
+            <button class="btn-mini" data-btn="📋 分析RANK" onclick="autoCopyEl('autoRankOut',this)">📋</button></div>
           <textarea id="autoRankOut" style="min-height:180px !important;"></textarea>
         </div>
         <div style="border:1px solid var(--border);border-radius:6px;padding:8px;">
-          <details><summary style="font-size:11px;color:var(--muted);cursor:pointer;">▼ 名称RANK <button class="btn-mini" onclick="event.preventDefault();autoCopyEl('autoMeigaraIn',this)">📋</button></summary>
+          <details><summary style="font-size:11px;color:var(--muted);cursor:pointer;">▼ 名称RANK <button class="btn-mini" data-btn="📋 名称RANK" onclick="event.preventDefault();autoCopyEl('autoMeigaraIn',this)">📋</button></summary>
             <textarea id="autoMeigaraIn"></textarea>
           </details>
           <div class="auto-row" style="margin-top:6px;"><strong style="font-size:11px;color:var(--text);">銘柄名一覧表</strong>
             <button class="btn-sm" onclick="autoConvertNames()">🔤 変換</button>
-            <button class="btn-mini" onclick="autoCopyEl('autoMeigaraOut',this)">📋</button>
+            <button class="btn-mini" data-btn="📋 銘柄名一覧表" onclick="autoCopyEl('autoMeigaraOut',this)">📋</button>
             <span style="font-size:10px;color:var(--muted);" id="autoDictInfo"></span>
             <span id="autoMeigaraStatus" style="font-size:11px;color:var(--muted);"></span></div>
           <textarea id="autoMeigaraOut"></textarea>
@@ -651,7 +715,7 @@ Appier G|4180|818|+96|+13.30%
   <div class="card">
     <h2>② ファクトチェック</h2>
     <div class="auto-row">
-      <button class="btn-sm" onclick="autoPasteFc(this)">📋 貼付</button>
+      <button class="btn-sm" data-btn="📋 貼付（ファクトチェックのレポート）" onclick="autoPasteFc(this)">📋 貼付</button>
       <button class="btn-sm" onclick="document.getElementById('autoFcReport').value='';">✕ クリア</button>
     </div>
     <textarea id="autoFcReport" placeholder="ChatGPTのレポートを貼付" style="min-height:140px;"></textarea>
@@ -668,13 +732,13 @@ Appier G|4180|818|+96|+13.30%
       <summary style="font-size:11px;color:var(--muted);cursor:pointer;">▼ ChatGPTで手動（APIが遅いとき）</summary>
       <p style="margin:6px 0 4px;">📋 でプロンプトをコピー → ChatGPT に貼る → 回答をコピー → 📥 で貼付。貼付すると次のプロンプトも自動でコピーします。順番：①台本 → ②全情報 → ③サムネ/X → ④スライド文章。</p>
       <div class="auto-row">
-        <button class="btn-copy" onclick="autoManualCopy('script',this)">📋 ①台本</button><button class="btn-sm" onclick="autoManualPaste('script',this)">📥 貼付</button>
+        <button class="btn-copy" onclick="autoManualCopy('script',this)">📋 ①台本</button><button class="btn-sm" data-btn="📥 貼付（①台本）" onclick="autoManualPaste('script',this)">📥 貼付</button>
         <span style="color:var(--muted)">→</span>
-        <button class="btn-copy" onclick="autoManualCopy('fullinfo',this)">📋 ②全情報</button><button class="btn-sm" onclick="autoManualPaste('fullinfo',this)">📥 貼付</button>
+        <button class="btn-copy" onclick="autoManualCopy('fullinfo',this)">📋 ②全情報</button><button class="btn-sm" data-btn="📥 貼付（②全情報）" onclick="autoManualPaste('fullinfo',this)">📥 貼付</button>
         <span style="color:var(--muted)">→</span>
-        <button class="btn-copy" onclick="autoManualCopy('sns',this)">📋 ③サムネ/X</button><button class="btn-sm" onclick="autoManualPaste('sns',this)">📥 貼付</button>
+        <button class="btn-copy" onclick="autoManualCopy('sns',this)">📋 ③サムネ/X</button><button class="btn-sm" data-btn="📥 貼付（③サムネ/X）" onclick="autoManualPaste('sns',this)">📥 貼付</button>
         <span style="color:var(--muted)">→</span>
-        <button class="btn-copy" onclick="autoManualCopy('slide',this)">📋 ④スライド文章</button><button class="btn-sm" onclick="autoManualPaste('slide',this)">📥 貼付</button>
+        <button class="btn-copy" onclick="autoManualCopy('slide',this)">📋 ④スライド文章</button><button class="btn-sm" data-btn="📥 貼付（④スライド文章）" onclick="autoManualPaste('slide',this)">📥 貼付</button>
       </div>
       <div id="autoManualStatus" style="font-size:11px;color:var(--muted);min-height:16px;margin:4px 0;"></div>
       <button class="btn" id="autoManualFinishBtn" data-btn="② ChatGPT完了（次へ）" onclick="autoManualFinish(this)">ChatGPT完了（次へ）</button>
@@ -1139,6 +1203,34 @@ Appier G|4180|818|+96|+13.30%
     </div>
     <p style="font-size:11px;color:var(--muted);margin:6px 0;">これが実際にAIへ送られる内容です（現行でNotebookLM等に貼っていた内容と見比べられます）。</p>
     <textarea id="autoPayloadText" readonly style="flex:1;min-height:64vh !important;font-size:11px;line-height:1.5;"></textarea>
+  </div>
+</div>
+
+<!-- ==================== AI用タブ（2026-11-14）====================
+  AI エージェントが操作するとき用。全自動版のコピー・貼付ボタンを工程ごとに並べ（押すと元のボタンを押したのと同じ）、
+  コピーした全文を読み取り専用の欄と TXT で受け取れるようにする。貼付は「貼付用」の欄に入れてから 📥 を押す。
+  人が使う全自動版の画面には何も足さない。 -->
+<div id="tabAiDesk" class="tab-panel">
+  <div class="card">
+    <h2>AI用：コピーした全文</h2>
+    <p class="sub" style="margin-bottom:8px;">全自動版（またはこのタブ）でコピーボタンを押すと、クリップボードへのコピーと同時に、全文をここに出します。クリップボードを読めない環境では、この欄か TXT で受け取ってください。履歴はこのタブを閉じるまで、最新10件です。</p>
+    <div class="auto-row" style="flex-wrap:wrap;gap:6px;">
+      <select id="aiCopyPick" onchange="aiDeskShow()" style="flex:1 1 260px;min-width:0;"></select>
+      <button class="btn-sm" onclick="aiDeskDownload()">⬇ TXT</button>
+      <span id="aiCopyMeta" style="font-size:11px;color:var(--muted);"></span>
+    </div>
+    <textarea id="aiCopyText" readonly style="min-height:240px;font-size:12px;" placeholder="（まだコピーしていません）"></textarea>
+  </div>
+  <div class="card">
+    <h2>AI用：貼付用</h2>
+    <p class="sub" style="margin-bottom:8px;">ChatGPT の回答などをここに入れてから、📥 貼付・📋 貼付のボタン（全自動版でも、下の一覧でも）を押すと、クリップボードの代わりにこの文を使います。使ったら欄は空になります。空のときは、いつもどおりクリップボードを読みます。</p>
+    <textarea id="aiPasteText" style="min-height:140px;font-size:12px;" placeholder="ここに貼り付ける文を入れる"></textarea>
+    <div id="aiPasteStatus" style="font-size:11px;color:var(--muted);min-height:16px;margin-top:4px;"></div>
+  </div>
+  <div class="card">
+    <h2>AI用：全自動版のコピー・貼付ボタン</h2>
+    <p class="sub" style="margin-bottom:8px;">全自動版にある同じボタンです。押すと元のボタンを押したのと同じに動きます（状態の表示やエラーは全自動版の画面に出ます）。📋 を押すと、全文が上の「コピーした全文」に出ます。</p>
+    <div id="aiBtnList"></div>
   </div>
 </div>
 
@@ -2259,6 +2351,17 @@ function autoPlaceBlocks(full){
   if(full && typeof vidHandle!=='undefined' && vidHandle) vidPlaceInPanel();
 }
 function switchTab(name){
+  // AI用タブ（2026-11-14）：週間まとめと同じく表示だけ切り替える（全自動版の部品の置き場所はそのまま）
+  const ai = name === 'ai';
+  const aiPanel = document.getElementById('tabAiDesk'), aiBtn = document.getElementById('tabBtnAi');
+  if(aiPanel) aiPanel.classList.toggle('active', ai);
+  if(aiBtn) aiBtn.classList.toggle('active', ai);
+  if(ai){
+    for(const id of ['tabManual','tabAuto','tabWeekly']) document.getElementById(id).classList.remove('active');
+    for(const id of ['tabBtnManual','tabBtnAuto','tabBtnFull','tabBtnWeekly']) document.getElementById(id).classList.remove('active');
+    try{ aiDeskRender(); }catch(e){ console.warn(e); }
+    return;
+  }
   // 週間まとめは日次の画面とは別。全自動版／自動版の切り替え（部品の置き場所）には触らず、表示だけ切り替える
   // 米国版も週間まとめと同じく、東証版の日次の画面とは別。表示だけ切り替える
   const weekly = name === 'weekly', us = name === 'us';
@@ -2289,6 +2392,77 @@ function switchTab(name){
   document.getElementById('tabBtnFull').classList.toggle('active', full);
   if(!isManual){ autoInitSteps(); let k=window.__autoStepK||'1'; if(!full && k==='v') k='1'; autoStep(k); }
 }
+
+// ==================== AI用タブ（2026-11-14）====================
+const AI_DESK_STEPS = [['1','① データ取得・抽出'],['2','② ファクトチェック'],['v','③ 動画'],['n','④ SNS'],['s','⚙ 設定']];
+// 全自動版のコピー・貼付ボタンを、いまの置き場所から工程ごとに集める（全自動版では ④スライド・⑤出力の部品が ③動画・④SNS に移っている）
+function aiDeskButtons(){
+  const re = /Copy|Clip|Paste|apCopy/;
+  const out = {};
+  document.querySelectorAll('#tabAuto button, #tabAuto label.btn-sm').forEach(b=>{
+    const oc = b.getAttribute('onclick') || '';
+    if(!re.test(oc)) return;
+    if(b.closest('.auto-only')) return;            // 全自動版では出ないもの
+    const st = b.closest('.astep'); const k = st ? st.dataset.astep : '';
+    if(!AI_DESK_STEPS.some(x=>x[0]===k)) return;   // 全自動版に無い工程（③音声生成・④スライド・⑤出力）
+    (out[k] = out[k] || []).push(b);
+  });
+  return out;
+}
+let aiDeskRefs = [];
+function aiDeskRender(){
+  const groups = aiDeskButtons();
+  aiDeskRefs = [];
+  let h = '';
+  for(const [k, name] of AI_DESK_STEPS){
+    const list = groups[k] || [];
+    if(!list.length) continue;
+    h += `<div style="margin:8px 0 4px;font-size:12px;font-weight:700;">${name}</div><div style="display:flex;flex-wrap:wrap;gap:6px;">`;
+    for(const b of list){
+      const i = aiDeskRefs.push(b) - 1;
+      const label = ssgBtnLabel(b);
+      const paste = /Paste/.test(b.getAttribute('onclick')||'');
+      h += `<button class="${paste?'btn-sm':'btn-copy'}" onclick="aiDeskPress(${i})">${label.replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}</button>`;
+    }
+    h += '</div>';
+  }
+  document.getElementById('aiBtnList').innerHTML = h || '<p class="sub">ボタンが見つかりません（全自動版を一度開いてから、このタブを開き直してください）</p>';
+  aiDeskList();
+}
+// 一覧のボタン：元のボタンを押す（名前は一覧の名前で控える）
+function aiDeskPress(i){
+  const b = aiDeskRefs[i]; if(!b) return;
+  window.__ssgNextLabel = ssgBtnLabel(b);
+  try{ b.click(); } finally { setTimeout(()=>{ window.__ssgNextLabel = ''; }, 1500); }
+}
+function aiDeskList(){
+  const sel = document.getElementById('aiCopyPick'); if(!sel) return;
+  const cs = window.ssgCopies || [];
+  const two = n=>String(n).padStart(2,'0');
+  sel.innerHTML = cs.length ? cs.map((c,i)=>{ const d=new Date(c.t); return `<option value="${i}">${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}　${c.label.replace(/</g,'&lt;')}（${c.text.length.toLocaleString()}字）</option>`; }).join('') : '<option value="">（まだコピーしていません）</option>';
+  sel.value = cs.length ? '0' : '';
+  aiDeskShow();
+}
+function aiDeskShow(){
+  const cs = window.ssgCopies || [];
+  const c = cs[parseInt(document.getElementById('aiCopyPick').value,10)];
+  document.getElementById('aiCopyText').value = c ? c.text : '';
+  document.getElementById('aiCopyMeta').textContent = c ? `${c.text.length.toLocaleString()}字` : '';
+}
+function aiDeskDownload(){
+  const cs = window.ssgCopies || [];
+  const c = cs[parseInt(document.getElementById('aiCopyPick').value,10)];
+  if(!c){ alert('まだコピーしていません'); return; }
+  const d = new Date(c.t), two = n=>String(n).padStart(2,'0');
+  // ファイル名は英数字だけ（日本語の名前を無視して「download」にするブラウザがある。AI が操作するブラウザで確かめた）
+  const name = `ssg-prompt_${d.getFullYear()}${two(d.getMonth()+1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}.txt`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([c.text], { type:'text/plain;charset=utf-8' }));
+  a.download = name; a.style.display = 'none'; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ a.remove(); URL.revokeObjectURL(a.href); }, 5000);   // すぐ消すとファイル名が付かないブラウザがある
+}
+window.addEventListener('ssg-copied', ()=>{ try{ aiDeskList(); }catch(e){} });
+window.addEventListener('ssg-pasted', e=>{ const st=document.getElementById('aiPasteStatus'); if(st) st.textContent=`✅ 貼付用の文（${(e.detail&&e.detail.chars||0).toLocaleString()}字）を「${(e.detail&&e.detail.label)||''}」で使いました`; });
 
 // ==================== 自動版：ステップウィザード（1画面1工程）====================
 const AUTO_STEPS = [
