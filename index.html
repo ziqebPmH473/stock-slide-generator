@@ -2394,47 +2394,81 @@ function switchTab(name){
 }
 
 // ==================== AI用タブ（2026-11-14）====================
-// 並べる工程：[画面, 工程の印, 見出し]。東証の全自動版は #tabAuto の .astep[data-astep]、米国版は #tabUs の .us-step[data-step]
-const AI_DESK_STEPS = [
-  ['jp','1','東証 全自動版 ① データ取得・抽出'],['jp','2','東証 全自動版 ② ファクトチェック'],['jp','v','東証 全自動版 ③ 動画'],['jp','n','東証 全自動版 ④ SNS'],['jp','s','東証 全自動版 ⚙ 設定'],
-  ['us','1','米国版 ① 取得・抽出'],['us','2','米国版 ② ファクトCK'],['us','v','米国版 ③ 動画'],['us','n','米国版 ④ SNS'],['us','s','米国版 ⚙ 設定'],
+// 並べる画面と工程（2026-11-14 すみぽん：タブ名の見出しの下に、工程・行ごとに、元と同じ名前で並べる）
+// 東証の全自動版は #tabAuto の .astep[data-astep]、米国版は #tabUs の .us-step[data-step]
+const AI_DESK_SCREENS = [
+  { key:'jp', title:'東証 全自動版', root:'#tabAuto', step:'.astep', attr:'astep', steps:[['1','① データ取得・抽出'],['2','② ファクトチェック'],['v','③ 動画'],['n','④ SNS'],['s','⚙ 設定']] },
+  { key:'us', title:'米国版',        root:'#tabUs',   step:'.us-step', attr:'step', steps:[['1','① 取得・抽出'],['2','② ファクトCK'],['v','③ 動画'],['n','④ SNS'],['s','⚙ 設定']] },
 ];
-// コピー・貼付ボタンを、いまの置き場所から工程ごとに集める（東証の全自動版では ④スライド・⑤出力の部品が ③動画・④SNS に移っている）
-function aiDeskButtons(){
-  const re = /Copy|Clip|Paste|apCopy/;
-  const out = {};
-  const add = (key, b) => (out[key] = out[key] || []).push(b);
-  document.querySelectorAll('#tabAuto button, #tabAuto label.btn-sm').forEach(b=>{
-    if(!re.test(b.getAttribute('onclick') || '')) return;
-    if(b.closest('.auto-only')) return;            // 東証の全自動版では出ないもの
-    const st = b.closest('.astep'); const k = st ? st.dataset.astep : '';
-    if(AI_DESK_STEPS.some(x=>x[0]==='jp' && x[1]===k)) add('jp|'+k, b);   // 全自動版に無い工程（③音声生成・④スライド・⑤出力）は除く
-  });
-  document.querySelectorAll('#tabUs button, #tabUs label.btn-sm').forEach(b=>{
-    if(!re.test(b.getAttribute('onclick') || '')) return;
-    const st = b.closest('.us-step'); const k = st ? st.dataset.step : '';
-    add('us|'+k, b);
-  });
+const AI_DESK_RE = /Copy|Clip|Paste|apCopy/;
+function aiDeskIsTarget(b){
+  if(!AI_DESK_RE.test(b.getAttribute('onclick') || '')) return false;
+  if(b.closest('#tabAuto') && b.closest('.auto-only')) return false;   // 東証の全自動版では出ないもの
+  return true;
+}
+// 行の見出し：行の中の見出し（strong）、無ければ囲んでいる折りたたみの見出し（summary）
+function aiDeskRowHead(row){
+  const txt = el => el ? Array.from(el.childNodes).filter(n=>!(n.nodeType===1 && n.matches('button'))).map(n=>n.textContent).join('').replace(/[▼▶]/g,'').replace(/\s+/g,' ').trim() : '';
+  if(row.matches('summary')) return txt(row);
+  const st = row.querySelector(':scope > strong, :scope > h3');
+  if(st) return txt(st);
+  const det = row.closest('details');
+  if(det && !det.contains(row.closest('summary'))) return txt(det.querySelector('summary'));
+  return '';
+}
+// 画面 → 工程 → 行（元の画面の行＝ボタンの親の要素）の順に集める
+function aiDeskCollect(){
+  const out = [];
+  for(const sc of AI_DESK_SCREENS){
+    const stepsOut = [];
+    for(const [k, name] of sc.steps){
+      const rows = new Map();
+      document.querySelectorAll(`${sc.root} ${sc.step}[data-${sc.attr}="${k}"] button, ${sc.root} ${sc.step}[data-${sc.attr}="${k}"] label.btn-sm`).forEach(b=>{
+        if(!aiDeskIsTarget(b)) return;
+        const row = b.parentElement;
+        if(!rows.has(row)) rows.set(row, []);
+        rows.get(row).push(b);
+      });
+      if(rows.size) stepsOut.push({ name, rows:[...rows.entries()] });
+    }
+    if(stepsOut.length) out.push({ title: sc.title, steps: stepsOut });
+  }
   return out;
 }
 let aiDeskRefs = [];
 function aiDeskRender(){
-  const groups = aiDeskButtons();
+  const esc = t => String(t).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   aiDeskRefs = [];
   let h = '';
-  for(const [scr, k, name] of AI_DESK_STEPS){
-    const list = groups[scr+'|'+k] || [];
-    if(!list.length) continue;
-    h += `<div style="margin:8px 0 4px;font-size:12px;font-weight:700;">${name}</div><div style="display:flex;flex-wrap:wrap;gap:6px;">`;
-    for(const b of list){
-      const i = aiDeskRefs.push(b) - 1;
-      const label = ssgBtnLabel(b);
-      const paste = /Paste/.test(b.getAttribute('onclick')||'');
-      h += `<button class="${paste?'btn-sm':'btn-copy'}" onclick="aiDeskPress(${i})">${label.replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}</button>`;
+  for(const sc of aiDeskCollect()){
+    h += `<h3 style="font-size:15px;margin:14px 0 4px;padding-bottom:4px;border-bottom:1px solid var(--border);">${esc(sc.title)}</h3>`;
+    for(const st of sc.steps){
+      h += `<div style="margin:8px 0 2px;font-size:12px;font-weight:700;">${esc(st.name)}</div>`;
+      for(const [row, btns] of st.rows){
+        const head = aiDeskRowHead(row);
+        h += `<div style="margin:4px 0 6px 8px;">${head ? `<div style="font-size:11px;color:var(--muted);margin-bottom:2px;">${esc(head)}</div>` : ''}<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">`;
+        // 元の行と同じ順に、同じ名前で並べる（行の中の「→」も写す）
+        // コピーのすぐ後ろに貼付が並ぶ組（手動フロー）は、改行で離れないように1つにまとめる
+        const items = [];
+        for(const el of row.children){
+          if(btns.includes(el)){
+            const i = aiDeskRefs.push(el) - 1;
+            const label = String(el.innerText || el.textContent || '').replace(/\s+/g,' ').trim() || el.title || '（名前なし）';
+            const paste = /Paste/.test(el.getAttribute('onclick')||'');
+            const html = `<button class="${paste?'btn-sm':'btn-copy'}" onclick="aiDeskPress(${i})" title="${esc(ssgBtnLabel(el))}">${esc(label)}</button>`;
+            const prev = items[items.length-1];
+            if(paste && prev && prev.copy && prev.el === el.previousElementSibling) { prev.html += html; prev.copy = false; }
+            else items.push({ html, copy: !paste, el });
+          } else if(items.length && el.tagName==='SPAN' && el.textContent.trim()==='→'){
+            items.push({ html:'<span style="color:var(--muted)">→</span>' });
+          }
+        }
+        for(const it of items) h += `<span style="display:inline-flex;gap:6px;align-items:center;white-space:nowrap;">${it.html}</span>`;
+        h += '</div></div>';
+      }
     }
-    h += '</div>';
   }
-  document.getElementById('aiBtnList').innerHTML = h || '<p class="sub">ボタンが見つかりません（全自動版を一度開いてから、このタブを開き直してください）</p>';
+  document.getElementById('aiBtnList').innerHTML = h || '<p class="sub">ボタンが見つかりません（全自動版・米国版を一度開いてから、このタブを開き直してください）</p>';
   aiDeskList();
 }
 // 一覧のボタン：元のボタンを押す（名前は一覧の名前で控える）
