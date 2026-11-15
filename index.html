@@ -4639,8 +4639,26 @@ const WK_CAPTIONS = {
   fall:    { head:'今週の値下がり率ランキング', lines:['各営業日の値下がり率トップ5（プライム市場）をまとめました。','今週、大きく売られたのはどの銘柄だったのか？'], tags:'#日本株 #値下がり率 #急落 #株式投資 #東京株式市場' },
   trading: { head:'今週の売買代金ランキング', lines:['各営業日の売買代金トップ5をまとめました。','今週、資金が集まったのはどの銘柄だったのか？'], tags:'#日本株 #売買代金 #株式投資 #東京株式市場 #プライム市場' },
 };
-function wkCaption(id, dates, withWeek){
-  const c=WK_CAPTIONS[id]; if(!c) return '';
+// 個別銘柄のランキング（値上がり率・値下がり率・寄与度・売買代金）のハッシュタグ：各営業日の1位の銘柄を5つ。
+// 同じ銘柄が重なって5つに届かないときは、2位・3位…の銘柄で埋める。寄与度は押し上げ側のランキングを使う。
+// 銘柄が1つも取れないときは定型のタグを使う
+const WK_STOCK_TAG_LISTS = { rise:x=>x.rise, fall:x=>x.fall, trading:x=>x.trading, contrib:x=>x.contrib&&x.contrib.plus };
+function wkStockTags(id, ds, fallback){
+  const get=WK_STOCK_TAG_LISTS[id]; if(!get || !ds || !ds.length) return fallback;
+  const lists=ds.map(x=>get(x)||[]), maxLen=Math.max(0, ...lists.map(l=>l.length));
+  const seen=new Set(), tags=[];
+  for(let r=0; r<maxLen && tags.length<5; r++) for(const l of lists){
+    if(tags.length>=5) break;
+    const x=l[r]; if(!x || !x.name) continue;
+    const k=x.code||x.name; if(seen.has(k)) continue;
+    const t=String(x.name).replace(/[\s　#＃&＆'’\-－.．,，、。()（）\[\]［］!！?？:：;；/／]/g,''); if(!t) continue;
+    seen.add(k); tags.push('#'+t);
+  }
+  return tags.length ? tags.join(' ') : fallback;
+}
+function wkCaption(id, dates, withWeek, ds){
+  const c0=WK_CAPTIONS[id]; if(!c0) return '';
+  const c={ ...c0, tags:wkStockTags(id, ds, c0.tags) };
   const range=dates.length>1 ? `${wkMd(dates[0])}〜${wkMd(dates[dates.length-1])}` : wkMd(dates[0]);
   return [`📊【${c.head}】`, '', `${range}の東京株式市場を、日ごとに振り返り。`, ...c.lines, '', '📌 スワイプして日ごとの変化をチェック！', ...(withWeek?['最後の画像では、前週末比の騰落率も確認できます。']:[]), '', withWeek?(id==='sectors'?'※日別の画像は各営業日の騰落率です。最後の画像は前週末比の騰落率で、日別ランキングとは集計期間が異なります。':'※日別の画像は各営業日の大引け時点のデータです。最後の画像は前週末比です。'):'※各画像はその日の大引け時点のデータです（1週間を通した騰落率ではありません）。', '', c.tags].join('\n');
 }
@@ -4759,7 +4777,7 @@ function wkTikTok(id, ds, week){
     c.ask, '',
     '📌 スワイプして日ごとの変化をチェック！', ...(hasWeek ? [`📌 最後のスライドでは、${id==='sectors'?'週間騰落率ランキング':'前週末比の騰落率'}も確認できます。`] : []), '',
     note, '',
-    c.tags,
+    wkStockTags(id, ds, c.tags),
   ].join('\n');
   return { title:`${c.title}（${shortRange}）`, body };
 }
@@ -4880,7 +4898,7 @@ async function wkMake(btn){
     const blobs=await KV.tse.stills(specs, { onProgress:(n, all)=>wkStatus(`画像を作っています… ${n}/${all}`) });
     wkClearOut();
     // 画像と投稿文の数値は同じ集計（p.week）から出す
-    wkOut={ week:wkMonday(dates[0]), last:dates[dates.length-1], themes:plan.map(p=>({ id:p.id, title:p.title, caption:wkCaption(p.id, p.dates, p.id==='sectors' ? !!p.week : !!(p.week&&p.week.length)), tiktok:wkTikTok(p.id, p.ds, p.week), files:p.names.map((name,i)=>{ const blob=blobs[p.from+i]; return { name, blob, url:URL.createObjectURL(blob) }; }) })) };
+    wkOut={ week:wkMonday(dates[0]), last:dates[dates.length-1], themes:plan.map(p=>({ id:p.id, title:p.title, caption:wkCaption(p.id, p.dates, p.id==='sectors' ? !!p.week : !!(p.week&&p.week.length), p.ds), tiktok:wkTikTok(p.id, p.ds, p.week), files:p.names.map((name,i)=>{ const blob=blobs[p.from+i]; return { name, blob, url:URL.createObjectURL(blob) }; }) })) };
     wkRenderResult();
     wkStatus(`✅ ${specs.length}枚できました`+(skipped.length?`（動画のデータが無い日：${skipped.map(wkMd).join('・')}）`:''), 'ok');
   }catch(e){ wkStatus('❌ '+e.message,'error'); }
