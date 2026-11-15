@@ -4641,7 +4641,7 @@ const WK_CAPTIONS = {
 };
 // 個別銘柄のランキング（値上がり率・値下がり率・寄与度・売買代金）のハッシュタグ：各営業日の1位の銘柄を5つ。
 // 同じ銘柄が重なって5つに届かないときは、2位・3位…の銘柄で埋める。寄与度は押し上げ側のランキングを使う。
-// 銘柄が1つも取れないときは定型のタグを使う
+// 銘柄名の「ホールディングス」「HD」は外す。銘柄が1つも取れないときは定型のタグを使う
 const WK_STOCK_TAG_LISTS = { rise:x=>x.rise, fall:x=>x.fall, trading:x=>x.trading, contrib:x=>x.contrib&&x.contrib.plus };
 function wkStockTags(id, ds, fallback){
   const get=WK_STOCK_TAG_LISTS[id]; if(!get || !ds || !ds.length) return fallback;
@@ -4651,7 +4651,7 @@ function wkStockTags(id, ds, fallback){
     if(tags.length>=5) break;
     const x=l[r]; if(!x || !x.name) continue;
     const k=x.code||x.name; if(seen.has(k)) continue;
-    const t=String(x.name).replace(/[\s　#＃&＆'’\-－.．,，、。()（）\[\]［］!！?？:：;；/／]/g,''); if(!t) continue;
+    const t=String(x.name).replace(/ホールディングス|(?:HD|ＨＤ)(?=$|[\s　)）])/g,'').replace(/[\s　#＃&＆'’\-－.．,，、。()（）\[\]［］!！?？:：;；/／]/g,'').replace(/^・+|・+$/g,''); if(!t) continue;   // 「ホールディングス」「HD」は付けない
     seen.add(k); tags.push('#'+t);
   }
   return tags.length ? tags.join(' ') : fallback;
