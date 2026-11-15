@@ -4747,7 +4747,6 @@ function wkFacts(id, ds, week){
     if(b.length) L.push(`期間中の1日の${id==='rise'?'上昇':'下落'}率がいちばん大きかったのは、${wkJoin(b.map(r=>`${wkMd(r.date)}の${r.name}（${wkPct(r.pct)}）`))}でした。`);
     const rp=wkRepeat(ds.map(x=>x[id]||[]));
     if(rp.length) L.push(`複数の日でTOP5に入ったのは、${wkJoin(rp.map(x=>`${x.name}（${x.n}回）`))}。`);
-    else L.push('期間中、2回以上TOP5に入った銘柄はありませんでした。');
   }
   if(id==='trading'){
     const m=wkMost(ds.map(x=>x.trading||[]));
