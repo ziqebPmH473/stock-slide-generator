@@ -110,11 +110,15 @@ function parseNikkei(html) {
 // 年月日＋時刻のすぐ後に「現在・更新・時点」があるものだけを読む（ニュースなどの日付と取り違えないように）。
 // 野村は日付の出方を確かめていないので、見つからなかったときに備えて、日付らしい文字を dateHints に少し残す
 const AS_OF_RE = /(\d{4})\s*[年/.]\s*(\d{1,2})\s*[月/.]\s*(\d{1,2})\s*日?\s*(?:\([月火水木金土日]\)|（[月火水木金土日]）)?\s*(\d{1,2}):(\d{2})(?::\d{2})?\s*(?:現在|更新|時点)/;
+// 野村は「国内指数 2026/11/16 情報更新」（時刻なし。2026-11-16 本番の取得で確かめた）。時刻のある形が無いときだけ、日付＋「情報更新」を読む
+const AS_OF_DATE_RE = /(\d{4})\s*[年/.]\s*(\d{1,2})\s*[月/.]\s*(\d{1,2})\s*日?\s*情報更新/;
 function parseAsOf(text) {
-  const m = text.match(AS_OF_RE);
-  if (!m) return null;
   const p2 = (n) => String(n).padStart(2, "0");
-  return { date: `${m[1]}-${p2(m[2])}-${p2(m[3])}`, time: `${p2(m[4])}:${m[5]}`, text: m[0] };
+  const m = text.match(AS_OF_RE);
+  if (m) return { date: `${m[1]}-${p2(m[2])}-${p2(m[3])}`, time: `${p2(m[4])}:${m[5]}`, text: m[0] };
+  const d = text.match(AS_OF_DATE_RE);
+  if (d) return { date: `${d[1]}-${p2(d[2])}-${p2(d[3])}`, time: "", text: d[0] };
+  return null;
 }
 function dateHints(text) {
   const out = [];
