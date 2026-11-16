@@ -1083,6 +1083,18 @@ async function usScreenText(){
   return { headline: String(o.headline || '').trim(), summary: { feature: String(o.feature || '').trim(), closing: String(o.closing || '').trim() || null, points: (Array.isArray(o.points) ? o.points : []).slice(0, 3).map(x => ({ title: String(x.title || '').trim(), body: String(x.body || '').trim() })).filter(x => x.title) } };
 }
 
+// まとめの場面を必ず出す（2026-11-17 すみぽん「最後のまとめスライドが作成されない」）。
+// 部品はまとめのデータ（feature か points）が無いと場面ごと出さない。AI のまとめがまだ無い・作れなかった・中身が空のときは、
+// 仮のまとめ（冒頭の一言。無ければ台本のまとめ・オープニングの最初の文）を入れる。「一言・まとめを AI で作る」で AI のまとめに入れ替わる
+function usSummaryFallback(data){
+  const sm = data.summary;
+  if(sm && (String(sm.feature || '').trim() || (sm.points || []).length)) return data;
+  const sec = usScriptSections();
+  const first = (t) => String(t || '').split(/[。\n]/).map(x => x.trim()).find(Boolean) || '';
+  const feature = String(data.headline || '').trim() || first(sec['まとめ']) || first(sec['オープニング']) || `${usDateJa(data.date)}の米国市場`;
+  data.summary = { feature, closing: (sm && sm.closing) || null, points: [], auto: true };
+  return data;
+}
 // 動画のデータを作る（AI は呼ばない）。台本のその区切りが前と同じなら、前の文と音声の長さを引き継ぐ（東証版の vidBuild と同じ）
 async function usVidBuild(btn, quiet){
   if(!US.data){ usVidStatus('先に①データ取得をしてください', 'error'); return false; }
@@ -1092,14 +1104,8 @@ async function usVidBuild(btn, quiet){
     const prev = usVidLoad() || {};
     if(prev.data && prev.data.date === data.date){ data.headline = prev.data.headline || ''; data.summary = prev.data.summary || null; }
     if(!data.headline) data.headline = (usScriptSections()['オープニング'] || '').split(/[。\n]/)[0];
-    // まとめの画面のデータ（AI が作る一言・注目点）がまだ無くても、台本に【まとめ】があれば、仮のまとめ（冒頭の一言だけ）で場面を出す。
-    // データが無いと場面ごと出ず、まとめの台本に音声が入らなかった（2026-11-16 すみぽん「まとめに音声が入らない」）。
-    // 「一言・まとめを AI で作る」を押せば、AI が作ったまとめに入れ替わる
     if(data.summary && data.summary.auto) data.summary = null;   // 仮のまとめは、いまの台本から作り直す
-    if(!data.summary){
-      const feature = data.headline || (usScriptSections()['まとめ'] || '').split(/[。\n]/)[0];
-      if((usScriptSections()['まとめ'] || '').trim() && feature) data.summary = { feature, closing: null, points: [], auto: true };
-    }
+    usSummaryFallback(data);
     let narration = usNarration();
     const prevNar = (prev.settings && prev.settings.narration) || {};
     if(!Object.keys(narration).length && Object.keys(prevNar).length) narration = prevNar;
@@ -1128,6 +1134,7 @@ async function usVidScreenAi(btn){
     const cur = usVidLoad();
     if(sc.headline) cur.data.headline = sc.headline;
     cur.data.summary = sc.summary;
+    usSummaryFallback(cur.data);   // AI の答えが空（feature も points も無い）でも、まとめの場面は出す
     usVidSave(cur);
     await usVidMount(true);
     usVidStatus('✅ 一言・まとめを作りました', 'ok');
@@ -1260,7 +1267,7 @@ async function usVidMountNow(force){
   const KV = await vidLoadLib();
   const thumbs = { h: await usThumbImage(usThumbText()), v: await usVThumbImage(usVThumbTexts(), saved.data.date) };
   usThumbPreview(thumbs);
-  const data = Object.assign({}, saved.data, { thumbnail: thumbs.h, thumbnail_portrait: thumbs.v });
+  const data = usSummaryFallback(Object.assign({}, saved.data, { thumbnail: thumbs.h, thumbnail_portrait: thumbs.v }));   // 前に作った動画のデータでも、まとめの場面を出す
   // プレビューの初期値は縦（2026-11-16 すみぽん）。その回で最初に開いたときだけ縦にし、あとはプレビューの「横・縦」で選んだほうを覚える
   if(!saved.orientInit){
     saved.settings = Object.assign({}, saved.settings || {}, { width: 1080, height: 1920 });
