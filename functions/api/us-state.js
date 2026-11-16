@@ -14,6 +14,8 @@
 // 東証版の保存（/api/state。m/・p/）とは別。使えるのは、ログイン（Cloudflare Access）を通った本番の画面とローカルだけ。
 // ============================================================
 
+import { pick, owners } from "../_shared/store.js";
+
 const PROD_HOST = "ssg-9506afd114d7.pages.dev";
 const KEEP_DAYS = 30;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -73,11 +75,13 @@ async function days(bucket) {
 
 export async function onRequestGet(context) {
   const g = guard(context); if (g) return g;
-  const bucket = context.env.STATE;
+  const sc = pick(context, false); if (sc.error) return json({ ok: false, error: sc.error }, 403);
+  const bucket = sc.bucket;
   const url = new URL(context.request.url);
   const date = url.searchParams.get("date"), audio = url.searchParams.get("audio");
   try {
-    if (!date) return json({ ok: true, days: await days(bucket), keep: KEEP_DAYS });
+    if (url.searchParams.get("owners")) return json({ ok: true, me: sc.me, owners: await owners(context.env.STATE, sc.me, days) });
+    if (!date) return json({ ok: true, days: await days(bucket), keep: KEEP_DAYS, owner: sc.owner, me: sc.me });
     if (!DATE_RE.test(date)) return json({ ok: false, error: "日付の形が違います" }, 400);
     if (url.searchParams.get("history")) return json({ ok: true, history: (await gens(bucket, date)).map(({ key, ...g }) => g), keep: KEEP_GENS });
     if (url.searchParams.get("rev")) {
@@ -115,7 +119,8 @@ function amount(doc) {
 export async function onRequestPut(context) {
   const g = guard(context); if (g) return g;
   const { request, env } = context;
-  const bucket = env.STATE;
+  const sc = pick(context, true); if (sc.error) return json({ ok: false, error: sc.error }, 403);
+  const bucket = sc.bucket;
   const url = new URL(request.url);
   const date = url.searchParams.get("date"), audio = url.searchParams.get("audio");
   if (!date || !DATE_RE.test(date)) return json({ ok: false, error: "日付の形が違います" }, 400);

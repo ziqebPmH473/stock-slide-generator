@@ -1040,8 +1040,9 @@ async function usSyncPush(force, allowShrink){
       // サーバーの作業より中身が大きく減る（空から始めた・読み込み中に操作したなど）。上書きせず、サーバーの作業を残す（2026-11-14）
       // 確認を閉じた・キャンセルしたときは上書きしない（AI が操作するブラウザは確認を自動で閉じることがあるため）
       usSyncStatus(`☁ サーバーの ${date} の作業のほうが中身が多いので、上書きしていません`, 'error');
-      const ok = confirm(`米国版：サーバーの ${date} の作業（${d.curAmount}項目）より、この端末の作業（${d.newAmount}項目）がかなり少ないので、上書きしていません。\nOK：この端末の作業でサーバーを上書きする（サーバーの作業は消えます）\nキャンセル：上書きせず、サーバーの作業を開く`);
-      setTimeout(() => { ok ? usSyncPush(true, true) : usSyncOpen(date).catch(e => usSyncStatus('❌ ' + e.message, 'error')); }, 0);
+      const ok = confirm(`米国版：サーバーの ${date} の作業（${d.curAmount}項目）より、この端末の作業（${d.newAmount}項目）がかなり少ないので、上書きしていません。\nOK：この端末の作業でサーバーを上書きする（サーバーの作業は消えます）\nキャンセル：上書きしない（サーバーの作業はそのまま。読み込むときは ⚙設定の一覧の「開く」）`);
+      if(ok) setTimeout(() => usSyncPush(true, true), 0);
+      else usSyncStatus(`☁ サーバーの ${date} の作業のほうが中身が多いので、上書きしていません（読み込むときは ⚙設定の一覧の「開く」）`, 'error');
       return;
     }
     if(res.status === 409){ usSyncStatus(`⚠ 別の端末が ${usSyncHm(d.updatedAt)} に保存しています。上書きしていません（⚙設定の「サーバー保存」で開くか上書きを選んでください）`, 'error'); return; }
@@ -1056,17 +1057,19 @@ function usSyncHm(iso){ const d = new Date(iso); return isNaN(d) ? '' : d.toLoca
 async function usSyncRemoteRev(date){ try{ const r = await (await fetch('/api/us-state', { cache: 'no-store' })).json(); const x = (r.days || []).find(d => d.date === date); return x ? x.rev : 0; }catch(e){ return 0; } }
 // サーバーの作業を開く（いまの作業は置き換える）
 // 読み込み中は操作できなくする（東証版と同じ表示。2026-11-14）。キャンセルされたら、この端末の作業は置き換えない
-async function usSyncOpen(date, quiet){
+// from：ほかのアカウント・分ける前の共有の保存から読むとき（2026-11-16）。読んだ内容は自分の保存先に送る
+async function usSyncOpen(date, quiet, from){
+  const fq = from ? `&from=${encodeURIComponent(from)}` : '';
   if(typeof ssgLoadingShow === 'function'){ ssgLoadCancelled = false; ssgLoadingShow(`☁ 米国版 ${date} の作業を読み込んでいます…`, true); }
   try{
-  const r = await (await fetch(`/api/us-state?date=${date}`, { cache: 'no-store' })).json();
+  const r = await (await fetch(`/api/us-state?date=${date}${fq}`, { cache: 'no-store' })).json();
   if(!r.ok) throw new Error(r.error || '開けませんでした');
   const doc = r.doc || {};
   // 音声は先に全部取ってから、まとめて書き込む（途中でキャンセルされても、この端末の作業を半端に置き換えない）
   const audios = [];
   for(const k of Object.keys(doc.audio || {})){
     if(typeof ssgLoadCancelled !== 'undefined' && ssgLoadCancelled) break;
-    const res = await fetch(`/api/us-state?date=${date}&audio=${encodeURIComponent(k)}`, { cache: 'no-store' });
+    const res = await fetch(`/api/us-state?date=${date}&audio=${encodeURIComponent(k)}${fq}`, { cache: 'no-store' });
     if(!res.ok) continue;
     const blob = await res.blob();
     let text = ''; try{ text = decodeURIComponent(res.headers.get('x-text') || ''); }catch(e){}
@@ -1080,7 +1083,8 @@ async function usSyncOpen(date, quiet){
   for(const [k, v] of audios) await usAudioPut(date, k, v).catch(() => {});
   if(doc.state) localStorage.setItem(US_STATE_KEY, JSON.stringify(doc.state)); else localStorage.removeItem(US_STATE_KEY);
   if(doc.video) localStorage.setItem('ssgus_video', JSON.stringify(doc.video)); else localStorage.removeItem('ssgus_video');
-  usSyncSet({ date, rev: r.rev, audio: doc.audio || {} });
+  if(from){ usSyncSet({ date, rev: await usSyncRemoteRev(date), audio: {} }); setTimeout(() => usSyncPush(true), 500); }   // 自分の保存先に写す
+  else usSyncSet({ date, rev: r.rev, audio: doc.audio || {} });
   US = Object.assign({ data: null, report: '', parsed: null, script: '', snsThumb: '', snsX: '', step: '1' }, {});
   usRestore(); usRenderAll(); usStep(US.step || '1');
   if(typeof usVidHandle !== 'undefined' && usVidHandle){ try{ usVidHandle.unmount(); }catch(e){} usVidHandle = null; }
@@ -1093,21 +1097,26 @@ async function usSyncList(){
   if(typeof SSG_NOSYNC!=='undefined' && SSG_NOSYNC) return;   // ?nosync のときは、保存の一覧も取らない（サーバーとのやりとりをしない）
   const box = document.getElementById('usSyncList'); if(!box) return;
   try{
-    const r = await (await fetch('/api/us-state', { cache: 'no-store' })).json();
+    // 自分の保存（開く）と、ほかのアカウント・前の共有の保存（読み込む。読むだけ）（2026-11-16）
+    const r = await (await fetch('/api/us-state?owners=1', { cache: 'no-store' })).json();
     if(!r.ok){ box.innerHTML = `<span class="mut">${autoEsc(r.error || '')}</span>`; return; }
     const cur = usSyncDate();
-    box.innerHTML = (r.days || []).slice(0, 10).map(d => `<div class="auto-row"><span>${autoEsc(usDateJa(d.date))}</span><span class="mut">${autoEsc(usSyncHm(d.updatedAt))} 保存</span>${d.date === cur ? '<span class="mut">（いま開いている回）</span>' : ''}<button class="btn-mini" onclick="usSyncOpenBtn('${d.date}')">開く</button></div>`).join('') || '<span class="mut">まだ保存はありません</span>';
+    box.innerHTML = (r.owners || []).map(o => {
+      const rows = (o.days || []).slice(0, 10).map(d => `<div class="auto-row"><span>${autoEsc(usDateJa(d.date))}</span><span class="mut">${autoEsc(usSyncHm(d.updatedAt))} 保存</span>${o.me && d.date === cur ? '<span class="mut">（いま開いている回）</span>' : ''}<button class="btn-mini" onclick="usSyncOpenBtn('${d.date}'${o.me ? '' : `,'${autoEsc(o.owner)}'`})">${o.me ? '開く' : '読み込む'}</button></div>`).join('');
+      if(o.me) return rows || '<span class="mut">自分の保存はまだありません</span>';
+      return `<div class="mut" style="margin-top:6px;">${autoEsc(o.shared ? '共有（11/16 にアカウントごとに分ける前の保存）' : o.owner)}（読み込むだけ。読み込んだ内容は自分の保存先に入ります）</div>` + rows;
+    }).join('');
   }catch(e){ box.innerHTML = '<span class="mut">一覧を取れませんでした</span>'; }
 }
-async function usSyncOpenBtn(date){
-  if(!confirm(`サーバーの ${usDateJa(date)} の作業を開きます。いまこの端末にある米国版の作業は置き換わります。よろしいですか？`)) return;
-  try{ await usSyncOpen(date); }catch(e){ usSyncStatus('❌ ' + e.message, 'error'); }
+async function usSyncOpenBtn(date, from){
+  if(!confirm(`${from ? (from === '_shared' ? '前の共有の保存' : from + ' の保存') : '自分のサーバー保存'}の ${usDateJa(date)} の作業を開きます。いまこの端末にある米国版の作業は置き換わります。よろしいですか？`)) return;
+  try{ await usSyncOpen(date, false, from); }catch(e){ usSyncStatus('❌ ' + e.message, 'error'); }
 }
 async function usSyncForce(){
   if(!confirm('この端末の米国版の作業で、サーバーの保存を上書きします。よろしいですか？')) return;
   await usSyncPush(true);
 }
-// 開いたとき：この端末に作業が無ければいちばん新しい回を、同じ回でサーバーのほうが新しければそれを開く
+// 開いたとき：自分のサーバー保存を確かめて知らせるだけ（読み込みは ⚙設定の一覧から手動。2026-11-16）
 async function usSyncBoot(){
   // URL に ?nosync を付けて開くと、サーバー保存を止める（東証版と同じ。この端末の内容をそのまま残す）
   if(typeof SSG_NOSYNC!=='undefined' && SSG_NOSYNC){ usSyncOff = '止めています（URL の ?nosync）'; usSyncStatus('☁ サーバー保存を止めています（URL の ?nosync）'); return; }
@@ -1116,9 +1125,10 @@ async function usSyncBoot(){
     if(!r.ok){ usSyncOff = r.error || 'サーバー保存は使えません'; return; }
     const days = r.days || [];
     const cur = usSyncDate(), sync = usSyncGet();
-    if(!cur && days[0]) return await usSyncOpen(days[0].date, true).then(() => { if(!ssgLoadCancelled) usSyncStatus(`☁ サーバーの ${days[0].date} の作業を開きました（続きから）`, 'ok'); });
+    // 読み込みは手動（2026-11-16 すみぽん「手動で読み込むように」）。知らせるだけ
+    if(!cur && days[0]) return usSyncStatus(`☁ 自分のサーバー保存に ${days[0].date} の作業があります。続きから作業するときは ⚙設定の一覧の「開く」`);
     const same = days.find(d => d.date === cur);
-    if(same && same.rev > (sync.date === cur ? (sync.rev || 0) : 0)) return await usSyncOpen(cur, true).then(() => { if(!ssgLoadCancelled) usSyncStatus(`☁ 別の端末で進んだ ${cur} の作業を開きました`, 'ok'); });
+    if(same && same.rev > (sync.date === cur ? (sync.rev || 0) : 0)) return usSyncStatus(`☁ 自分のサーバー保存に、この端末より新しい ${cur} の作業があります（${usSyncHm(same.updatedAt)}）。読み込むときは ⚙設定の一覧の「開く」`, 'error');
     if(cur && !same) usSyncKick();   // サーバーにまだ無い回は送っておく
   }catch(e){}
 }

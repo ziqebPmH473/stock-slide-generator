@@ -17,11 +17,17 @@
  * 基準日が変わる・日が変わる・別の端末からの上書き（force）・中身が大きく減る上書き（allowShrink）・前の版に戻す、のときは
  * 30分たっていなくても残し、これは KEEP_GENS とは別に KEEP_PINNED 世代まで残す（ふつうの保存で押し出されないように）。
  *
+ * 保存先はアカウントごと（2026-11-16。R2 の u/<アカウント>/ の下。functions/_shared/store.js）。書けるのは自分の保存先だけ。
+ * GET に from=<アカウント>（分ける前の共有は from=_shared）を付けると、ほかの保存を読める（読むだけ）。
+ *   GET  /api/state?owners=1         … 保存のあるアカウントごとの日の一覧（自分が先頭、共有が最後）
+ *
  * 1日＝目録1つ（m/<日付>.json）＋中身いくつか（p/<日付>/<名前>）。画面側（index.html の ssgSync〜）が、
  * 変わった中身だけを置いてから目録を置く。
  * R2 が紐づいていない（env.STATE が無い）ときは 503 を返し、画面側はブラウザ保存だけで動く。
  * 使えるのは、ログイン（Cloudflare Access）を通った本番の画面と、ローカルの確認だけ（gemini-key.js と同じ）。
  */
+
+import { pick, owners } from '../_shared/store.js';
 
 const PROD_HOST = 'ssg-9506afd114d7.pages.dev';
 const KEEP_DAYS = 10;  // 残す日数（保存はプロンプトをコピーした日だけできるので、だいたい直近10営業日）
@@ -131,12 +137,14 @@ async function amount(bucket, date, lsName, idb) {
 
 export async function onRequestGet(context) {
   const g = guard(context); if (g) return g;
-  const bucket = context.env.STATE;
+  const sc = pick(context, false); if (sc.error) return json({ ok: false, error: sc.error }, 403);
+  const bucket = sc.bucket;
   const url = new URL(context.request.url);
   const date = url.searchParams.get('date');
   const part = url.searchParams.get('part');
   try {
-    if (!date) return json({ ok: true, days: await days(bucket), keep: KEEP_DAYS });
+    if (url.searchParams.get('owners')) return json({ ok: true, me: sc.me, owners: await owners(context.env.STATE, sc.me, days) });
+    if (!date) return json({ ok: true, days: await days(bucket), keep: KEEP_DAYS, owner: sc.owner, me: sc.me });
     if (!DATE_RE.test(date)) return json({ ok: false, error: '日付の形が違います' }, 400);
     if (url.searchParams.get('history')) {
       return json({ ok: true, history: (await gens(bucket, date)).map(({ key, ...g }) => g), keep: KEEP_GENS });
@@ -164,7 +172,8 @@ export async function onRequestGet(context) {
 
 export async function onRequestPut(context) {
   const g = guard(context); if (g) return g;
-  const bucket = context.env.STATE;
+  const sc = pick(context, true); if (sc.error) return json({ ok: false, error: sc.error }, 403);
+  const bucket = sc.bucket;
   const url = new URL(context.request.url);
   const date = url.searchParams.get('date');
   const part = url.searchParams.get('part');

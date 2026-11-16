@@ -677,7 +677,8 @@ Appier G|4180|818|+96|+13.30%
         <button class="btn-mini" onclick="ssgSyncRefreshList()">↻</button>
         <span id="ssgSyncStatus" style="font-size:11px;color:var(--muted);"></span></div>
       <div id="ssgSyncList" style="margin-top:4px;"></div>
-      <p style="margin-bottom:0;">作業は営業日（基準日の営業日。土日・祝日は直前の営業日）ごとに保存します。たとえば 10/18（日）に作っても 10/16（金）の回として残ります。最初にプロンプトをコピーした時点から自動でサーバーにも保存します（日付が入っただけでは保存しません）。別の端末で開くと、その営業日の保存があれば続きから開きます。営業日が変わって保存が無ければ、新しく始まります。サーバーには直近10営業日分が残り、「開く」で前の回に戻せます。基準日を変えたときは、次にプロンプトをコピーした時点から、その営業日の回として保存します。</p>
+      <div id="ssgSyncOthers"></div>
+      <p style="margin-bottom:0;">作業は営業日（基準日の営業日。土日・祝日は直前の営業日）ごとに保存します。たとえば 10/18（日）に作っても 10/16（金）の回として残ります。最初にプロンプトをコピーした時点から自動でサーバーにも保存します（日付が入っただけでは保存しません）。保存先はアカウントごとに分かれていて（2026-11-16 から）、ほかのアカウント（AI など）の保存で上書きされることはありません。<strong>開いたときに自動で読み込むことはしません。</strong>別の端末で続きをするときは、この一覧の「開く」（自分の保存）か「読み込む」（ほかのアカウント・前の共有の保存）を押してください。読み込んだ内容は自分の保存先に入り、相手の保存は変わりません。サーバーには直近10営業日分と、1日ごとに前の版（5世代＋基準日・日の変わり目などで別に3世代）が残ります。基準日を変えたときは、次にプロンプトをコピーした時点から、その営業日の回として保存します。</p>
     </div>
     <!-- 管理画面への入口は管理者にだけ出す（/api/admin?me=1 で確かめてから表示。2026-11-14） -->
     <div class="admin-only" style="display:none;border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
@@ -4067,8 +4068,8 @@ async function ssgSyncPush(force, allowShrink){
     // サーバーの作業より中身が大きく減る（空から始めた・読み込み中に操作したなど）。上書きせず、サーバーの作業を残す（2026-11-14）
     // 確認を閉じた・キャンセルしたときは上書きしない（AI が操作するブラウザは確認を自動で閉じることがあるため、安全な側にする）
     ssgSyncStatus(`☁ サーバーの ${s.day} の作業のほうが中身が多いので、上書きしていません`, 'error');
-    if(confirm(`サーバーの ${s.day} の作業（${r.curAmount}項目）より、この端末の内容（${r.newAmount}項目）がかなり少ないので、上書きしていません。\nOK：この端末の内容でサーバーを上書きする（サーバーの作業は消えます）\nキャンセル：上書きせず、サーバーの作業を読み込む`)) return ssgSyncPush(true, true);
-    await ssgSyncLoad(s.day); return;
+    if(confirm(`サーバーの ${s.day} の作業（${r.curAmount}項目）より、この端末の内容（${r.newAmount}項目）がかなり少ないので、上書きしていません。\nOK：この端末の内容でサーバーを上書きする（サーバーの作業は消えます）\nキャンセル：上書きしない（サーバーの作業はそのまま。読み込むときは ⚙設定の一覧の「開く」）`)) return ssgSyncPush(true, true);
+    ssgSyncOff='サーバーの作業のほうが中身が多いので、保存を止めています'; ssgSyncStatus(`☁ ${ssgSyncOff}（サーバーの ${s.day} はそのまま。読み込むときは ⚙設定の一覧の「開く」。この端末の内容で上書きするときはページを読み込み直してから保存）`, 'error'); return;
   }
   if(r.status===409){
     // 別の端末が先に保存していた
@@ -4098,13 +4099,16 @@ function ssgSyncStart(){
 
 // サーバーの1日分で置き換えて読み込み直す
 // asDay：前の版（作業した日の日付）で保存したものを、営業日の日付で保存し直すときに使う
-async function ssgSyncLoad(day, asDay){
+// from：ほかのアカウント・分ける前の共有の保存から読むとき（2026-11-16）。読んだ内容は自分の保存先の その日 として保存する
+async function ssgSyncLoad(day, asDay, from){
+  const fq=from?`&from=${encodeURIComponent(from)}`:'';
+  if(from && !asDay) asDay=day;
   ssgSyncStatus(`☁ ${asDay||day} の作業を読み込んでいます…`);
   ssgLoadCancelled=false;
   ssgLoadingShow(`☁ ${asDay||day} の作業を読み込んでいます…`, true);
-  const r=await ssgSyncApi(`date=${day}`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
+  const r=await ssgSyncApi(`date=${day}${fq}`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
   const m=r.manifest;
-  const get=async name=>{ const res=await fetch(`/api/state?date=${day}&part=${name}`,{cache:'no-store'}); if(!res.ok) throw new Error(`中身を読めませんでした（HTTP ${res.status}）`); return res.text(); };
+  const get=async name=>{ const res=await fetch(`/api/state?date=${day}&part=${name}${fq}`,{cache:'no-store'}); if(!res.ok) throw new Error(`中身を読めませんでした（HTTP ${res.status}）`); return res.text(); };
   const ls=JSON.parse(await get(m.ls));
   const idb={};
   for(const [name, rows] of Object.entries(m.idb||{})){
@@ -4114,18 +4118,20 @@ async function ssgSyncLoad(day, asDay){
   const parts=[m.ls].concat(...Object.values(m.idb||{}).map(rows=>rows.map(x=>x.part))).sort();
   // キャンセルされていたら、この端末の内容は置き換えない（サーバーの作業はそのまま）
   if(ssgLoadCancelled){ ssgLoadingHide(); ssgSyncStatus(`☁ ${asDay||day} の読み込みを取りやめました。この端末の内容のまま続けます（サーバーの作業はそのまま。⚙設定の一覧から開けます）`); return; }
+  ssgSyncNoticeHide();
   await ssgApplyState({ ls, idb, baseDate:m.baseDate, step:m.step }, asDay ? { day:asDay, rev:0, parts:[], on:true, force:true } : { day, rev:m.rev, parts, baseDate:m.baseDate||'', on:true });
 }
 
 // 新しい日をこの端末で始めるとき、この端末に BGM が1曲も無ければ、サーバーの直近の日から BGM（曲・選択・動画の部品の BGM）を引き継ぐ
 // （BGM は共通の設定。別の端末で登録した曲を、日が変わった端末でも使えるように）
 async function ssgSyncInheritBgm(days, day){
-  if(!days.length) return;
   const idx=await ssgBgmIndex(); if(idx.length) return;
-  const src=days.find(x=>x.date!==day); if(!src) return;
-  const r=await ssgSyncApi(`date=${src.date}`); if(!r.ok) return;
+  let src=days.find(x=>x.date!==day), fq='';
+  // 自分の保存に無ければ、ほかのアカウント・前の共有の保存から（読むだけ。2026-11-16）
+  if(!src){ const o=await ssgSyncApi('owners=1'); const ow=o.ok&&(o.owners||[]).find(x=>!x.me&&(x.days||[]).some(d=>d.date!==day)); if(!ow) return; src=ow.days.find(d=>d.date!==day); fq=`&from=${encodeURIComponent(ow.owner)}`; }
+  const r=await ssgSyncApi(`date=${src.date}${fq}`); if(!r.ok) return;
   const m=r.manifest;
-  const get=async name=>{ const res=await fetch(`/api/state?date=${src.date}&part=${name}`,{cache:'no-store'}); if(!res.ok) throw new Error(`中身を読めませんでした（HTTP ${res.status}）`); return res.text(); };
+  const get=async name=>{ const res=await fetch(`/api/state?date=${src.date}&part=${name}${fq}`,{cache:'no-store'}); if(!res.ok) throw new Error(`中身を読めませんでした（HTTP ${res.status}）`); return res.text(); };
   let n=0;
   for(const name of ['ssg-bgm','kessan-viz-audio']){
     const rows=(m.idb&&m.idb[name]||[]).filter(row=>ssgCommonRow(name, row.key));
@@ -4171,8 +4177,6 @@ async function ssgSyncCheckRemote(boot){
     const day=s.day||ssgBizDay();
     const d=(lst.days||[]).find(x=>x.date===day);
     // その営業日の保存が、前の版の日付（例：10/18 に作った 10/16 の回）で残っていれば、それを開いて営業日の日付で保存し直す
-    const old=!d && !s.on && (lst.days||[]).find(x=>ssgBizDayOf(x.date)!==x.date && ssgBizDayOf(x.baseDate||x.date)===day);
-    if(old){ await ssgSyncLoad(old.date, day); return; }
     if(!d){
       if(s.rev) ssgSyncSet(Object.assign(s, { rev:0, parts:[] }));
       ssgSyncStatus(s.on?`☁ ${day} はまだサーバーにありません（保存します）`:`☁ ${day} の作業はまだ保存していません（プロンプトをコピーすると保存を始めます）`);
@@ -4182,20 +4186,36 @@ async function ssgSyncCheckRemote(boot){
     }
     if(s.force){ ssgSyncSet(Object.assign(s, { rev:d.rev, on:true })); ssgSyncKick(); return; }   // 取込の直後など：この端末の内容でサーバーを上書きする
     if((s.rev||0)===d.rev){ ssgSyncStatus(`☁ ${day} の保存と同じ内容です（${ssgSyncHm(d.updatedAt)}）`, 'ok'); return; }
-    // この端末に、まだ送っていない変更があるか
-    let dirty=false;
-    if(s.on && s.day===day && s.rev){ try{ dirty=!ssgSyncSame(await ssgSyncCollect(), s); }catch(e){} }
-    // まだ保存を始めていない端末でも、今日の欄に書いてあれば聞く（サーバー保存を入れる前からの作業を黙って消さない）
-    else if(!s.on && day===ssgBizDay()){ dirty=AP_STORAGE_IDS.some(id=>{ const v=(localStorage.getItem(SSG_PREFIX+id)||'').trim(); return v && !thumbIsDefault(v); }); }
-    if(dirty && !confirm(`別の端末で、${day} の作業が新しく保存されています（${ssgSyncHm(d.updatedAt)}）。\nOK：そちらの内容に置き換えて読み込み直す\nキャンセル：この端末の内容を残す（次の保存でサーバーを上書き）`)){
-      ssgSyncSet(Object.assign(s, { force:true })); ssgSyncKick(); return;
-    }
-    await ssgSyncLoad(day);
+    // 読み込みは手動（2026-11-16 すみぽん「手動で読み込むように」）。サーバーのほうが新しくても置き換えず、知らせるだけ
+    ssgSyncStatus(`☁ 自分のサーバー保存に ${day} の別の版があります（${ssgSyncHm(d.updatedAt)}）。読み込むときは ⚙設定の一覧の「開く」`);
+    ssgSyncNotice(`☁ 自分のサーバー保存に ${day} の作業があります（${ssgSyncHm(d.updatedAt)} 保存）。この端末の内容とは違います。`, day);
   }catch(e){ ssgSyncStatus('☁ 読み込めませんでした：'+e.message, 'error'); }
   finally{ ssgSyncBusy=false; if(boot) ssgSyncReady=true; ssgLoadingHide(); }
 }
 // ⚙設定の一覧（直近10日。開くとその日の作業に置き換える）
+// 知らせ（画面の上。読み込むかは人が決める）
+function ssgSyncNotice(msg, day){
+  let el=document.getElementById('ssgSyncNotice');
+  if(!el){ el=document.createElement('div'); el.id='ssgSyncNotice'; el.style.cssText='position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:9998;max-width:calc(100% - 32px);background:#1e3a5f;color:#e2e8f0;border:1px solid #3b82f6;border-radius:8px;padding:8px 12px;font-size:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;box-shadow:0 4px 12px rgba(0,0,0,.4);'; document.body.appendChild(el); }
+  el.innerHTML=`<span>${autoEsc(msg)}</span><button class="btn-mini" onclick="ssgSyncOpenDay('${autoEsc(day)}')">読み込む</button><button class="btn-mini" onclick="ssgSyncNoticeHide()">このまま続ける</button>`;
+}
+function ssgSyncNoticeHide(){ const el=document.getElementById('ssgSyncNotice'); if(el) el.remove(); }
+// ほかのアカウント・分ける前の共有の保存（読み込むだけ。読み込んだ内容は自分の保存先に入る。2026-11-16）
+async function ssgSyncRenderOthers(){
+  const el=document.getElementById('ssgSyncOthers'); if(!el) return;
+  try{
+    const r=await ssgSyncApi('owners=1'); if(!r.ok){ el.innerHTML=''; return; }
+    const when=iso=>new Date(iso).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    const others=(r.owners||[]).filter(o=>!o.me && (o.days||[]).length);
+    el.innerHTML=others.length?'<div style="font-size:11px;color:var(--muted);margin-top:8px;">ほかのアカウント・前の共有の保存（読み込むだけ。読み込んだ内容は自分の保存先に入ります）</div>'+others.map(o=>{
+      const name=o.shared?'共有（11/16 にアカウントごとに分ける前の保存）':o.owner;
+      const days=(o.days||[]).filter(d=>ssgBizDayOf(d.date)===d.date);
+      return `<div style="font-size:11px;margin-top:4px;font-weight:bold;">${autoEsc(name)}</div>`+days.map(d=>`<div class="auto-row" style="gap:8px;font-size:11px;"><span style="min-width:110px;">${autoEsc(d.date)}</span><span style="color:var(--muted);">最終保存 ${autoEsc(when(d.updatedAt))}</span><button class="btn-mini" onclick="ssgSyncOpenDay('${autoEsc(d.date)}','${autoEsc(o.owner)}')">読み込む</button><button class="btn-mini" onclick="ssgSyncShowGens('${autoEsc(d.date)}','${autoEsc(o.owner)}')">前の版</button></div><div id="ssgGens-${autoEsc(o.owner)}-${autoEsc(d.date)}" style="margin:0 0 6px 16px;font-size:11px;"></div>`).join('');
+    }).join(''):'';
+  }catch(e){ el.innerHTML=''; }
+}
 function ssgSyncRenderDays(days){
+  ssgSyncRenderOthers();
   const el=document.getElementById('ssgSyncList'); if(!el) return;
   const cur=ssgSyncGet().day||'';
   const when=iso=>new Date(iso).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
@@ -4206,14 +4226,15 @@ function ssgSyncRenderDays(days){
 }
 // 前の版（2026-11-16）：サーバーは上書きの前の版を1日ごとに5世代（30分ごとに1世代）＋基準日・日が変わったときなどの版を別に3世代残す
 const SSG_GEN_REASON={ time:'30分ごと', first:'最初の版', baseDate:'基準日が変わる前', day:'日が変わる前', force:'別の端末で上書きされる前', shrink:'中身が減る前', restore:'前の版に戻す前' };
-async function ssgSyncShowGens(day){
-  const el=document.getElementById('ssgGens-'+day); if(!el) return;
+async function ssgSyncShowGens(day, from){
+  const el=document.getElementById('ssgGens-'+(from?from+'-':'')+day); if(!el) return;
+  const fq=from?`&from=${encodeURIComponent(from)}`:'';
   if(el.dataset.open==='1'){ el.dataset.open=''; el.innerHTML=''; return; }
   el.dataset.open='1'; el.textContent='読み込み中…';
   try{
-    const r=await ssgSyncApi(`date=${day}&history=1`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
+    const r=await ssgSyncApi(`date=${day}&history=1${fq}`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
     const when=iso=>new Date(iso).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
-    el.innerHTML=(r.history||[]).length ? r.history.map(g=>`<div class="auto-row" style="gap:8px;"><span>${autoEsc(when(g.updatedAt))} の版</span><span style="color:var(--muted);">基準日 ${autoEsc(g.baseDate||'不明')}・${g.amount}項目・${autoEsc(SSG_GEN_REASON[g.reason]||g.reason)}</span><button class="btn-mini" onclick="ssgSyncRestoreGen('${autoEsc(day)}',${Number(g.rev)},'${autoEsc(when(g.updatedAt))}')">この版に戻す</button></div>`).join('')
+    el.innerHTML=(r.history||[]).length ? r.history.map(g=>`<div class="auto-row" style="gap:8px;"><span>${autoEsc(when(g.updatedAt))} の版</span><span style="color:var(--muted);">基準日 ${autoEsc(g.baseDate||'不明')}・${g.amount}項目・${autoEsc(SSG_GEN_REASON[g.reason]||g.reason)}</span>${from?`<button class="btn-mini" onclick="ssgSyncLoadGen('${autoEsc(day)}',${Number(g.rev)},'${autoEsc(from)}','${autoEsc(when(g.updatedAt))}')">この版を読み込む</button>`:`<button class="btn-mini" onclick="ssgSyncRestoreGen('${autoEsc(day)}',${Number(g.rev)},'${autoEsc(when(g.updatedAt))}')">この版に戻す</button>`}</div>`).join('')
       : '<span style="color:var(--muted);">前の版はまだありません（2026-11-16 から残し始めました）</span>';
   }catch(e){ el.textContent='❌ '+e.message; }
 }
@@ -4226,9 +4247,27 @@ async function ssgSyncRestoreGen(day, rev, label){
     await ssgSyncLoad(day);
   }catch(e){ ssgSyncStatus('☁ 戻せませんでした：'+e.message, 'error'); }
 }
-async function ssgSyncOpenDay(day){
-  if(!confirm(`いまの内容を、サーバーに保存してある ${day} の作業に置き換えます。よろしいですか？\n（いまの作業は、保存していればサーバーに残っています。開いたあとの変更は ${day} の保存に入ります）`)) return;
-  try{ await ssgSyncTick(); await ssgSyncLoad(day); }catch(e){ ssgSyncStatus('☁ 開けませんでした：'+e.message, 'error'); }
+async function ssgSyncOpenDay(day, from){
+  const src=from?(from==='_shared'?'前の共有の保存':`${from} の保存`):'自分のサーバー保存';
+  if(!confirm(`いまの内容を、${src}の ${day} の作業に置き換えます。よろしいですか？\n（いまの作業は、保存していれば自分のサーバー保存に残っています。開いたあとの変更は、自分の ${day} の保存に入ります）`)) return;
+  try{ await ssgSyncTick(); await ssgSyncLoad(day, null, from); }catch(e){ ssgSyncStatus('☁ 開けませんでした：'+e.message, 'error'); }
+}
+// ほかのアカウント・共有の前の版を読み込む（相手の保存は変えない。読み込んだ内容は自分の保存先に入る）
+async function ssgSyncLoadGen(day, rev, from, label){
+  if(!confirm(`いまの内容を、${from==='_shared'?'前の共有の保存':from+' の保存'}の ${day}（${label} の版）に置き換えます。よろしいですか？\n（開いたあとの変更は、自分の ${day} の保存に入ります）`)) return;
+  try{
+    await ssgSyncTick();
+    const fq=`&from=${encodeURIComponent(from)}`;
+    ssgLoadCancelled=false; ssgLoadingShow(`☁ ${day} の作業を読み込んでいます…`, true);
+    const r=await ssgSyncApi(`date=${day}&rev=${rev}${fq}`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
+    const m=r.manifest;
+    const get=async name=>{ const res=await fetch(`/api/state?date=${day}&part=${name}${fq}`,{cache:'no-store'}); if(!res.ok) throw new Error(`中身を読めませんでした（HTTP ${res.status}）`); return res.text(); };
+    const ls=JSON.parse(await get(m.ls)); const idb={};
+    for(const [name, rows] of Object.entries(m.idb||{})){ idb[name]=[]; for(const row of rows) idb[name].push({ key:row.key, value:ssgUnpack(JSON.parse(await get(row.part))) }); }
+    if(ssgLoadCancelled){ ssgLoadingHide(); return; }
+    ssgSyncNoticeHide();
+    await ssgApplyState({ ls, idb, baseDate:m.baseDate, step:m.step }, { day, rev:0, parts:[], on:true, force:true });
+  }catch(e){ ssgLoadingHide(); ssgSyncStatus('☁ 読み込めませんでした：'+e.message, 'error'); }
 }
 // 基準日を変えて、作っている回の営業日が変わったとき：その日の保存があれば開くか聞く。
 // 開かないときは、次にプロンプトをコピーした時点から、その日の作業として保存する（日付を変えただけでは保存しない）
@@ -4820,10 +4859,13 @@ function wkTikTok(id, ds, week){
   return { title:`${c.title}（${shortRange}）`, body };
 }
 // 週の一覧を作り直す（サーバーの保存＋この端末で作業中の日）
+let wkFrom={};   // 日 → 読む保存先（'' は自分）
 async function wkRefresh(){
   const sel=document.getElementById('wkWeek'); if(!sel) return;
   wkServerDays=[];
-  if(ssgSyncReady && !ssgSyncOff){ try{ const r=await ssgSyncApi(''); if(r.ok) wkServerDays=(r.days||[]).map(d=>d.date).filter(d=>ssgBizDayOf(d)===d); }catch(e){} }
+  // 自分の保存を先に使い、自分に無い日は、ほかのアカウント・前の共有の保存から読む（読むだけ。2026-11-16）
+  wkFrom={};
+  if(ssgSyncReady && !ssgSyncOff){ try{ const r=await ssgSyncApi('owners=1'); if(r.ok){ for(const o of (r.owners||[])) for(const d of (o.days||[])){ if(ssgBizDayOf(d.date)!==d.date || d.date in wkFrom) continue; wkFrom[d.date]=o.me?'':o.owner; } wkServerDays=Object.keys(wkFrom); } }catch(e){} }
   const loc=wkLocalData();
   const all=[...new Set(wkServerDays.concat(loc?[loc.date]:[]))].sort();
   const weeks=[...new Set(all.map(wkMonday))].sort().reverse();
@@ -4874,8 +4916,9 @@ async function wkLoadDay(day){
   const loc=wkLocalData();
   if(loc && loc.date===day) return Object.assign({}, loc, { _sec:wkSecVals(localStorage.getItem(SSG_PREFIX+'autostate')) });
   if(wkData[day]) return wkData[day];
-  const r=await ssgSyncApi(`date=${day}`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
-  const res=await fetch(`/api/state?date=${day}&part=${r.manifest.ls}`,{cache:'no-store'}); if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  const fq=wkFrom[day]?`&from=${encodeURIComponent(wkFrom[day])}`:'';
+  const r=await ssgSyncApi(`date=${day}${fq}`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
+  const res=await fetch(`/api/state?date=${day}&part=${r.manifest.ls}${fq}`,{cache:'no-store'}); if(!res.ok) throw new Error(`HTTP ${res.status}`);
   const ls=await res.json();
   let v=null; try{ v=JSON.parse(ls[VID_KEY]||'null'); }catch(e){}
   if(!v || !v.data) return null;
