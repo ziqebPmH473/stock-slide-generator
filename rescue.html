@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>作業の取り出し</title>
+<style>
+  body{ font-family: system-ui, sans-serif; background:#0f172a; color:#e2e8f0; margin:0; padding:24px 16px; line-height:1.7; }
+  main{ max-width:720px; margin:0 auto; }
+  h1{ font-size:20px; }
+  button{ font-size:16px; padding:10px 18px; border-radius:8px; border:1px solid #475569; background:#1e293b; color:#e2e8f0; cursor:pointer; }
+  button:disabled{ opacity:.5; }
+  #st{ margin-top:12px; white-space:pre-wrap; font-size:14px; }
+  .note{ font-size:13px; color:#94a3b8; }
+</style>
+</head>
+<body>
+<main>
+<h1>この端末に残っている作業の取り出し</h1>
+<p>このページは、ツール本体を動かさずに、この端末（このブラウザ）に残っている作業をファイルにするだけです。
+日替わりの消去も、サーバーへの保存・読み込みもしません。中身は何も変えません。</p>
+<p><button id="go">💾 この端末の作業をファイルに出力</button></p>
+<div id="st"></div>
+<p class="note">出力したファイル（ssg_rescue_….json）は、ツールの ⚙設定 の「取込」でそのまま開けます（東証版の作業）。
+米国版の作業もファイルの中に入っています（ssgus_*）。<br>
+この端末に作業があるか先に確かめたいときは、ボタンを押すと、入っていた欄の数と基準日が出ます。</p>
+</main>
+<script>
+// 取り出し専用（2026-11-16）。index.html を開くと「営業日が変わった」で端末の作業が消えるため、
+// 消える前の作業を、ツールを動かさずに出力する。形は index.html の ssgStateExport と同じ（「取込」で開ける）。
+// localStorage・IndexedDB は読むだけ（無いデータベースは作らない）。
+const SSG_PREFIX = 'ssg_';
+const SKIP = ['sync','lastDate','restoreBaseDate','restoreStep'].map(k => SSG_PREFIX + k);
+const DBS = ['ssg-images','kessan-viz-audio','ssg-bgm'];
+const st = m => { document.getElementById('st').textContent = m; };
+
+async function dbNames(){ try{ return new Set((await indexedDB.databases()).map(d => d.name)); }catch(e){ return null; } }
+function dump(name){
+  return new Promise((res, rej) => {
+    const rq = indexedDB.open(name);
+    rq.onupgradeneeded = () => { rq.transaction.abort(); };   // 無いデータベースは作らない
+    rq.onerror = () => res([]);
+    rq.onsuccess = () => {
+      const db = rq.result;
+      if(!db.objectStoreNames.contains('kv')){ db.close(); res([]); return; }
+      const out = [];
+      const c = db.transaction('kv', 'readonly').objectStore('kv').openCursor();
+      c.onsuccess = () => { const cur = c.result; if(!cur){ db.close(); res(out); return; } out.push({ key: cur.key, value: cur.value }); cur.continue(); };
+      c.onerror = () => { db.close(); rej(c.error); };
+    };
+  });
+}
+function b64(blob){ return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(r.error); r.readAsDataURL(blob); }); }
+async function pack(v){
+  if(v instanceof Blob) return { __blob:1, type:v.type || '', b64: await b64(v) };
+  if(Array.isArray(v)){ const a = []; for(const x of v) a.push(await pack(x)); return a; }
+  if(v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype){ const o = {}; for(const k of Object.keys(v)) o[k] = await pack(v[k]); return o; }
+  return v;
+}
+document.getElementById('go').onclick = async ev => {
+  const btn = ev.target; btn.disabled = true;
+  try{
+    st('まとめています…');
+    const ls = {}, all = {};
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i); if(!k) continue;
+      all[k] = localStorage.getItem(k);
+      if(k.startsWith(SSG_PREFIX) && !SKIP.includes(k)) ls[k] = all[k];
+    }
+    const names = await dbNames();
+    const idb = {}; let rows = 0;
+    for(const name of DBS){
+      if(names && !names.has(name)){ idb[name] = []; continue; }
+      try{ idb[name] = await pack(await dump(name)); rows += idb[name].length; }catch(e){ idb[name] = []; }
+    }
+    // 基準日・保存先の日付（端末に残っている印から）
+    let sync = {}; try{ sync = JSON.parse(all[SSG_PREFIX + 'sync'] || '{}') || {}; }catch(e){}
+    const baseDate = sync.baseDate || sync.day || all[SSG_PREFIX + 'lastDate'] || '';
+    const filled = Object.values(ls).filter(v => typeof v === 'string' && v.trim().length >= 50).length;
+    const out = { app:'stock-slide-generator', version:1, exportedAt:new Date().toISOString(), baseDate, step:all[SSG_PREFIX + 'autoStep'] || '1', localStorage:ls, idb, rescue:{ allLocalStorage:all, sync } };
+    const json = JSON.stringify(out);
+    const n = new Date(), stamp = `${n.getFullYear()}${String(n.getMonth()+1).padStart(2,'0')}${String(n.getDate()).padStart(2,'0')}_${String(n.getHours()).padStart(2,'0')}${String(n.getMinutes()).padStart(2,'0')}`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([json], { type:'application/json' }));
+    a.download = `ssg_rescue_${(baseDate || 'unknown').replace(/-/g,'')}_${stamp}.json`;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    st(`✅ 出力しました（${(json.length/1024/1024).toFixed(1)} MB）\n` +
+       `この端末の作業：基準日 ${baseDate || '不明'}／中身のある欄 ${filled} 個／画像・音声など ${rows} 件\n` +
+       `最後に保存していた日：${sync.day || '不明'}／ブラウザの日付の印：${all[SSG_PREFIX + 'lastDate'] || '不明'}` +
+       (filled === 0 && rows === 0 ? '\n⚠ この端末には作業が残っていないようです。' : ''));
+  }catch(e){ st('❌ ' + (e && e.message || e)); }
+  finally{ btn.disabled = false; }
+};
+</script>
+</body>
+</html>

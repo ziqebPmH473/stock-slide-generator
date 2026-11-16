@@ -6,6 +6,10 @@
 //                                            前の作業より中身が半分以下に減るときも、allowShrink が無ければ置かない（409・shrink。2026-11-14）
 //   GET  /api/us-state?date=D&audio=K      … 動画の読み上げの音声（場面ごと。中身は音声そのもの、text・seconds・speed は見出しに）
 //   PUT  /api/us-state?date=D&audio=K      … 音声を置く（見出し X-Text（URL エンコード）・X-Seconds・X-Speed）
+//   GET  /api/us-state?date=D&history=1    … 前の版の一覧（新しい順）。GET ?date=D&rev=N … 前の版の作業
+//   PUT  /api/us-state?date=D&restore=N    … 前の版 N を今の版にする（今の版も前の版として残す）
+// 前の版（2026-11-16）：上書きするとき前の作業を us/<日付>/hist/<rev>.json に残す。決まりは東証版（/api/state）と同じ
+//   （1日ごとに新しい順で5世代・30分ごとに1世代。基準日の変わり目などは別に3世代）。音声は場面ごとに上書きされるので、前の版には入らない。
 // 置き場所：us/<日付>/state.json、us/<日付>/audio/<キー>。日付は米国の対象日。新しい順で KEEP_DAYS 日より前は消す。
 // 東証版の保存（/api/state。m/・p/）とは別。使えるのは、ログイン（Cloudflare Access）を通った本番の画面とローカルだけ。
 // ============================================================
@@ -14,6 +18,31 @@ const PROD_HOST = "ssg-9506afd114d7.pages.dev";
 const KEEP_DAYS = 30;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const AUDIO_RE = /^[A-Za-z0-9:_\-]{1,64}$/;
+const KEEP_GENS = 5, KEEP_PINNED = 3, GEN_MIN_MS = 30 * 60 * 1000;
+const jstDay = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10); };
+async function gens(bucket, date) {
+  const objs = await listAll(bucket, `us/${date}/hist/`, ["customMetadata"]);
+  return objs.map((o) => { const m = o.customMetadata || {}; return { key: o.key, rev: Number(m.rev) || 0, updatedAt: m.updatedAt || "", savedAt: m.savedAt || o.uploaded.toISOString(), amount: Number(m.amount) || 0, reason: m.reason || "", pin: m.pin === "1" }; })
+    .filter((g) => g.rev > 0).sort((a, b) => b.rev - a.rev);
+}
+async function rotate(bucket, date, cur, next) {
+  let list = await gens(bucket, date);
+  if (cur) {
+    let reason = next.restore ? "restore" : next.force ? "force" : next.allowShrink ? "shrink" : jstDay(cur.updatedAt) !== jstDay(new Date().toISOString()) ? "day" : "";
+    if (!reason) reason = !list[0] ? "first" : (new Date(cur.updatedAt) - new Date(list[0].updatedAt) >= GEN_MIN_MS ? "time" : "");
+    if (reason && !list.some((g) => g.rev === Number(cur.rev))) {
+      await bucket.put(`us/${date}/hist/${cur.rev}.json`, JSON.stringify(cur), {
+        httpMetadata: { contentType: "application/json" },
+        customMetadata: { rev: String(cur.rev), updatedAt: cur.updatedAt || "", savedAt: new Date().toISOString(), amount: String(amount(cur.doc)), reason, pin: ["time", "first"].includes(reason) ? "0" : "1" },
+      });
+      list = await gens(bucket, date);
+    }
+  }
+  const keep = new Set(list.slice(0, KEEP_GENS).map((g) => g.key));
+  for (const g of list.filter((g) => g.pin && !keep.has(g.key)).slice(0, KEEP_PINNED)) keep.add(g.key);
+  const drop = list.filter((g) => !keep.has(g.key)).map((g) => g.key);
+  if (drop.length) await bucket.delete(drop);
+}
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -50,6 +79,13 @@ export async function onRequestGet(context) {
   try {
     if (!date) return json({ ok: true, days: await days(bucket), keep: KEEP_DAYS });
     if (!DATE_RE.test(date)) return json({ ok: false, error: "日付の形が違います" }, 400);
+    if (url.searchParams.get("history")) return json({ ok: true, history: (await gens(bucket, date)).map(({ key, ...g }) => g), keep: KEEP_GENS });
+    if (url.searchParams.get("rev")) {
+      const o = await bucket.get(`us/${date}/hist/${Number(url.searchParams.get("rev")) || 0}.json`);
+      if (!o) return json({ ok: false, error: "その版は残っていません" }, 404);
+      const s = await o.json();
+      return json({ ok: true, doc: s.doc, rev: s.rev, updatedAt: s.updatedAt });
+    }
     if (audio) {
       if (!AUDIO_RE.test(audio)) return json({ ok: false, error: "名前の形が違います" }, 400);
       const o = await bucket.get(`us/${date}/audio/${audio}`);
@@ -84,6 +120,19 @@ export async function onRequestPut(context) {
   const date = url.searchParams.get("date"), audio = url.searchParams.get("audio");
   if (!date || !DATE_RE.test(date)) return json({ ok: false, error: "日付の形が違います" }, 400);
   try {
+    if (url.searchParams.get("restore")) {
+      const rev = Number(url.searchParams.get("restore"));
+      const ho = await bucket.get(`us/${date}/hist/${rev}.json`);
+      if (!rev || !ho) return json({ ok: false, error: "その版は残っていません" }, 404);
+      const old = await ho.json();
+      const curObj = await bucket.get(`us/${date}/state.json`);
+      const cur = curObj ? await curObj.json() : null;
+      const now = new Date().toISOString();
+      const nrev = (cur ? Number(cur.rev) || 0 : 0) + 1;
+      await bucket.put(`us/${date}/state.json`, JSON.stringify({ v: 1, date, rev: nrev, updatedAt: now, doc: old.doc, restoredFrom: rev }), { httpMetadata: { contentType: "application/json" }, customMetadata: { rev: String(nrev), updatedAt: now } });
+      await rotate(bucket, date, cur, { restore: true });
+      return json({ ok: true, rev: nrev, updatedAt: now });
+    }
     if (audio) {
       if (!AUDIO_RE.test(audio)) return json({ ok: false, error: "名前の形が違います" }, 400);
       const buf = await request.arrayBuffer();
@@ -114,6 +163,7 @@ export async function onRequestPut(context) {
       httpMetadata: { contentType: "application/json" },
       customMetadata: { rev: String(rev), updatedAt: now },
     });
+    await rotate(bucket, date, cur, { force: !!body.force, allowShrink: !!body.allowShrink });   // 前の作業を前の版に残す（2026-11-16）
     // 作業の中の音声の一覧に無くなった音声を消す
     const keepAudio = new Set(Object.keys((body.doc && body.doc.audio) || {}).map((k) => `us/${date}/audio/${k}`));
     const olds = (await listAll(bucket, `us/${date}/audio/`)).map((o) => o.key).filter((k) => !keepAudio.has(k));

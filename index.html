@@ -4035,6 +4035,23 @@ async function ssgSyncPush(force, allowShrink){
   // 中身が何も無いときは保存しない（2026-11-14 すみぽん「空のプロジェクトは保存しないでほしい」）
   if(ssgSyncAmount(c)===0){ ssgSyncStatus(`☁ ${s.day} はまだ中身が無いので、保存していません（データ取得などで中身が入ったら保存します）`); return; }
   if(!force && !s.force && ssgSyncSame(c, s) && (s.baseDate||'')===c.baseDate) return;
+  // 違う日の名前で保存しない（2026-11-16。11/13 の保存が 16 日の作業で上書きされた件）
+  // ・基準日の営業日が保存先の日と違う → 黙って保存せず聞く。閉じた・キャンセルなら保存を止める（AI のブラウザは確認を自動で閉じるため）
+  const nd=c.baseDate ? ssgBizDayOf(c.baseDate) : '';
+  if(nd && nd!==s.day && !ssgSyncBaseOverride){
+    if(confirm(`サーバー保存の日（${s.day}）と、いまの基準日の回（${nd}）が違います。\nOK：${nd} の作業として保存する（${s.day} の保存はそのまま）\nキャンセル：保存しない（${s.day} を上書きしないよう、サーバー保存を止めます）`)){
+      ssgSyncSet(Object.assign(s, { day:nd, rev:0, parts:[], force:false, on:true })); ssgSyncPending=true; return;
+    }
+    ssgSyncOff=`保存先（${s.day}）と基準日の回（${nd}）が違うので止めています`; ssgSyncStatus('☁ '+ssgSyncOff+'。ページを読み込み直すと、また確かめます', 'error'); return;
+  }
+  // ・ページを開いたまま営業日が変わった（週末から開いたままのタブで月曜の作業をするなど）→ 前の日の名前で保存し続けてよいか聞く
+  const lastDay=localStorage.getItem(SSG_PREFIX+'lastDate')||'';
+  if(lastDay && lastDay!==ssgWorkDay() && s.day<ssgWorkDay()){
+    if(!confirm(`このページは ${lastDay} から開いたままで、営業日が ${ssgWorkDay()} に変わっています。\nいまの内容をサーバーの ${s.day} の作業として保存しますか？\nOK：${s.day} として保存する\nキャンセル：保存しない（ページを読み込み直すと、${ssgWorkDay()} の作業として新しく始まります。${s.day} の保存はそのまま）`)){
+      ssgSyncOff=`営業日が変わったので止めています（${s.day} を上書きしないため）`; ssgSyncStatus('☁ '+ssgSyncOff+'。ページを読み込み直してください', 'error'); return;
+    }
+    localStorage.setItem(SSG_PREFIX+'lastDate', ssgWorkDay());   // 続けると選んだ（読み込み直しても消さない）
+  }
   const have=new Set(s.parts||[]);
   ssgSyncStatus('☁ 保存中…');
   for(const [name, p] of Object.entries(c.parts)) if(!have.has(name)) await ssgSyncPutPart(s.day, name, p);
@@ -4184,8 +4201,30 @@ function ssgSyncRenderDays(days){
   const when=iso=>new Date(iso).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
   const wd=iso=>'日月火水木金土'[new Date(iso+'T00:00:00').getDay()];
   days=days.filter(d=>ssgBizDayOf(d.date)===d.date);   // 前の版の日付（作業した日）のものは出さない（開いたときに営業日の日付で保存し直す）
-  el.innerHTML=days.length?days.map(d=>`<div class="auto-row" style="gap:8px;font-size:11px;"><span style="min-width:110px;">${autoEsc(d.date)}（${wd(d.date)}）</span><span style="color:var(--muted);">最終保存 ${autoEsc(when(d.updatedAt))}</span>${d.date===cur?'<span style="color:var(--muted);">（いま開いている日）</span>':`<button class="btn-mini" onclick="ssgSyncOpenDay('${autoEsc(d.date)}')">開く</button>`}</div>`).join('')
+  el.innerHTML=days.length?days.map(d=>`<div class="auto-row" style="gap:8px;font-size:11px;"><span style="min-width:110px;">${autoEsc(d.date)}（${wd(d.date)}）</span><span style="color:var(--muted);">最終保存 ${autoEsc(when(d.updatedAt))}</span>${d.date===cur?'<span style="color:var(--muted);">（いま開いている日）</span>':`<button class="btn-mini" onclick="ssgSyncOpenDay('${autoEsc(d.date)}')">開く</button>`}<button class="btn-mini" onclick="ssgSyncShowGens('${autoEsc(d.date)}')" title="上書きされる前の版（5世代）を見る・戻す">前の版</button></div><div id="ssgGens-${autoEsc(d.date)}" style="margin:0 0 6px 16px;font-size:11px;"></div>`).join('')
     :'<span style="font-size:11px;color:var(--muted);">まだありません</span>';
+}
+// 前の版（2026-11-16）：サーバーは上書きの前の版を1日ごとに5世代（30分ごとに1世代）＋基準日・日が変わったときなどの版を別に3世代残す
+const SSG_GEN_REASON={ time:'30分ごと', first:'最初の版', baseDate:'基準日が変わる前', day:'日が変わる前', force:'別の端末で上書きされる前', shrink:'中身が減る前', restore:'前の版に戻す前' };
+async function ssgSyncShowGens(day){
+  const el=document.getElementById('ssgGens-'+day); if(!el) return;
+  if(el.dataset.open==='1'){ el.dataset.open=''; el.innerHTML=''; return; }
+  el.dataset.open='1'; el.textContent='読み込み中…';
+  try{
+    const r=await ssgSyncApi(`date=${day}&history=1`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
+    const when=iso=>new Date(iso).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    el.innerHTML=(r.history||[]).length ? r.history.map(g=>`<div class="auto-row" style="gap:8px;"><span>${autoEsc(when(g.updatedAt))} の版</span><span style="color:var(--muted);">基準日 ${autoEsc(g.baseDate||'不明')}・${g.amount}項目・${autoEsc(SSG_GEN_REASON[g.reason]||g.reason)}</span><button class="btn-mini" onclick="ssgSyncRestoreGen('${autoEsc(day)}',${Number(g.rev)},'${autoEsc(when(g.updatedAt))}')">この版に戻す</button></div>`).join('')
+      : '<span style="color:var(--muted);">前の版はまだありません（2026-11-16 から残し始めました）</span>';
+  }catch(e){ el.textContent='❌ '+e.message; }
+}
+async function ssgSyncRestoreGen(day, rev, label){
+  if(!confirm(`サーバーの ${day} の作業を、${label} の版に戻します。\n（いまの ${day} の作業も「前の版」として残るので、あとから戻せます）\n戻したあと、${day} の作業をこの端末に読み込みます。よろしいですか？`)) return;
+  try{
+    await ssgSyncTick();   // この端末の未送信の変更を先に送る（今の版として前の版に残る）
+    const r=await ssgSyncApi(`date=${day}&restore=${rev}`, { method:'PUT' }); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
+    ssgSyncStatus(`☁ ${day} を ${label} の版に戻しました`, 'ok');
+    await ssgSyncLoad(day);
+  }catch(e){ ssgSyncStatus('☁ 戻せませんでした：'+e.message, 'error'); }
 }
 async function ssgSyncOpenDay(day){
   if(!confirm(`いまの内容を、サーバーに保存してある ${day} の作業に置き換えます。よろしいですか？\n（いまの作業は、保存していればサーバーに残っています。開いたあとの変更は ${day} の保存に入ります）`)) return;
