@@ -920,8 +920,15 @@ function usCopy(id, btn){ autoClip((document.getElementById(id) || {}).value || 
 
 // ---------- テキストモデル（米国版の⚙設定。中身は東証版の⚙設定の「テキストモデル」と同じ1つの設定）----------
 // 選択肢は東証版の欄（autoModelOverride）から写し、どちらで変えても両方に反映する（保存は東証版の仕組みのまま）
+// 読み上げの声・音声モデル（③動画・⚙設定）も同じ作り（2026-11-16 すみぽん「米国版の音声モデルを選択する箇所がない」）。
+// 米国版の読み上げは前から東証版の欄（autoTtsVoice・autoTtsModel）の値で作っていたが、米国版の画面に欄が無かった
 function usModelInit(){
-  const src = document.getElementById('autoModelOverride'), dst = document.getElementById('usModel');
+  usMirror('autoModelOverride', 'usModel');
+  for(const id of ['usTtsVoice', 'usTtsVoice2']) usMirror('autoTtsVoice', id);
+  for(const id of ['usTtsModel', 'usTtsModel2']) usMirror('autoTtsModel', id);
+}
+function usMirror(srcId, dstId){
+  const src = document.getElementById(srcId), dst = document.getElementById(dstId);
   if(!src || !dst) return;
   dst.innerHTML = src.innerHTML; dst.value = src.value;
   dst.addEventListener('change', () => { src.value = dst.value; src.dispatchEvent(new Event('change', { bubbles: true })); src.dispatchEvent(new Event('input', { bubbles: true })); });

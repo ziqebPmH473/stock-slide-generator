@@ -1121,6 +1121,10 @@ Appier G|4180|818|+96|+13.30%
     <div class="auto-row"><strong>テキストモデル</strong>
       <select id="usModel" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;min-height:32px;"></select></div>
     <p>台本・サムネ案・X投稿文・一言とまとめを作る AI です。東証版の ⚙設定 の「テキストモデル」と同じ1つの設定で、どちらで変えても両方に反映されます。「自動」は推奨モデル＋混雑時の自動降格です。</p>
+    <div class="auto-row"><strong>読み上げ</strong>
+      声 <select id="usTtsVoice2" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;min-height:32px;"></select>
+      音声モデル <select id="usTtsModel2" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;min-height:32px;"></select></div>
+    <p>動画の読み上げ（③動画の「音声生成」）に使う声と音声モデルです。③動画の上にも同じ欄があります。東証版の ⚙設定 の「声」「モデル」と同じ1つの設定で、どちらで変えても両方に反映されます。</p>
     <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
       <div class="auto-row"><strong>サーバー保存</strong>
         <button class="btn-mini" onclick="usSyncList()" title="一覧を取り直す">↻</button>
@@ -1180,6 +1184,10 @@ Appier G|4180|818|+96|+13.30%
     <div class="auto-row"><strong>サムネの文言</strong>
       <input id="usThumbText" type="text" onchange="usThumbChanged()" style="flex:1;min-width:240px;" placeholder="上段：中段：下段（*赤* #青# %黄%）">
       <span class="mut">横動画の最初に入れます（空欄なら入れない）。初期値は④のサムネ案の最有力。</span></div>
+    <div class="auto-row"><strong>読み上げ</strong>
+      声 <select id="usTtsVoice" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;min-height:32px;"></select>
+      音声モデル <select id="usTtsModel" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;min-height:32px;"></select>
+      <span class="mut">東証版の ⚙設定 の「声」「モデル」と同じ1つの設定です。変えたあとは、下の「音声を再生成」で作り直すと反映します。</span></div>
     <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-top:8px;">
       <div id="usVidControls" style="flex:6 1 420px;min-width:0;background:#fff;color:#1f2937;border-radius:8px;padding:8px 10px;display:none;"></div>
       <div id="usVidPreview" class="vid-preview" style="flex:4 1 320px;min-width:0;"></div>
