@@ -17,6 +17,11 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 22
+      - name: Stamp version (画面右上の版 v日付-時間。main の最新コミットの日時・日本時間)
+        run: |
+          V=$(TZ=Asia/Tokyo git log -1 --format=%cd --date=format-local:%Y%m%d-%H%M)
+          echo "version: $V"
+          sed -i "s/__SSG_VERSION__/$V/g" index.html
       - name: Build (package.json があればビルド)
         run: |
           if [ -f package.json ]; then

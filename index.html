@@ -427,6 +427,9 @@ body.mode-full #vThumbBtn { display:none; }
 </style>
 </head>
 <body>
+<!-- 版（2026-11-16 すみぽん「画面右上に v日付-時間（日本時間）」）。__SSG_VERSION__ はデプロイ（.github/workflows/deploy.yml）で main の最新コミットの日時に置き換わる -->
+<div id="ssgVersion" title="ツールの版（更新した日時・日本時間）" style="position:fixed;top:4px;right:8px;z-index:10001;font-size:11px;color:#94a3b8;background:rgba(15,23,42,.75);padding:1px 6px;border-radius:4px;pointer-events:none;font-family:ui-monospace,monospace;"></div>
+<script>(function(){ const v='__SSG_VERSION__'; const el=document.getElementById('ssgVersion'); if(el) el.textContent=/^\d{8}-\d{4}$/.test(v)?'v'+v:'v開発中（デプロイ前）'; })();</script>
 
 <h1>📊 マーケット振り返り スライド作成</h1>
 <p class="sub">テキストを貼り付けると自動でプレビューを表示します。</p>
