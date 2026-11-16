@@ -761,9 +761,11 @@ ${US_SCRIPT_TAGS.map(t => '[' + t + ']').join(' ')}`;
 const US_SNS_PROMPT = `あなたはYouTube「米国株マーケット振り返り」動画の担当です。資料を基に、サムネ案とX投稿文を作成してください。
 
 【サムネ案（3本＋最有力）】
-・スラッシュ区切りの1行（上段／中段／下段）。上段＝感情・問題提起／中段＝注目銘柄名や注目点／下段＝抽象的な問いかけ。
+・サムネは3段です。上段は、ツールが指数の値動きから決まった形で入れます（例：NYダウは大幅安）。作るのは中段と下段だけです。指数の値動きは中段・下段に書かないでください。
+・スラッシュ区切りの1行（中段／下段）。中段＝注目銘柄名や注目点（全角6〜9文字）／下段＝抽象的な問いかけ（全角8〜10文字）。
 ・「え、なんで？」と思わせるギャップ（例：好決算なのに株価下落、ガイダンスで明暗）を優先。順当な結論は禁止。
-・禁止：！ ？ 数値 株価の方向性（上昇/下落の明示） スペース 引用符。1・3段目は全角8〜10文字、2段目は6〜9文字。
+・強調：下段は、目を引きたい言葉を2か所、記号で挟んで色を付ける。前のほうの言葉を #言葉#（水色）、後ろのほうの言葉を %言葉%（黄色）で挟む（例：#利下げ観測#で%主役交代%）。中段は白地に出るので、記号を付けない。
+・禁止：！ ？ 数値 株価の方向性（上昇/下落の明示） スペース 引用符。強調の記号（# %）は文字数に数えない。
 ・銘柄名はカタカナの社名にする（ティッカーは使わない）。
 
 【X投稿文】
@@ -775,9 +777,9 @@ const US_SNS_PROMPT = `あなたはYouTube「米国株マーケット振り返�
 
 出力は必ず次の形式（区切り「===」を厳守）:
 🎨サムネ案
-①上段／中段／下段
-②上段／中段／下段
-③上段／中段／下段
+①中段／下段
+②中段／下段
+③中段／下段
 最有力：①〜③のいずれか（理由）
 ===
 🕊️X投稿文
@@ -870,12 +872,13 @@ function usVideoData(){
   const pick = (keys) => keys.map(k => m.find(r => r.key === k)).filter(Boolean).map(r => ({ key: r.key, name: r.name, value: r.value, change: r.change, pct: r.pct, changeBp: r.changeBp, unit: r.unit, source: r.source, history: r.history }));
   const sec = usScriptSections();
   const p = US.parsed || { marketNews: [], stockNews: [] };
-  const earn = usPickedEarn().map(r => ({
+  // 決算一覧・個別株・ニュースは、台本で話す順に並べる（話さないものは後ろ。決算はそのあとでページに分ける）
+  const earn = usOrderByMention(usPickedEarn().map(r => ({
     symbol: r.symbol, name: r.nameJa || r.name, timing: usHourJa(r), session: r.session,
     dayPct: r.dayPct, afterPct: r.afterPct, afterTime: r.afterTime,
     revenue: r.revenue.weather, eps: r.eps.weather, guidance: r.guidance, comment: r.comment,
     numbers: { epsEstimate: r.eps.estimate, epsActual: r.eps.actual, revenueEstimate: r.revenue.estimate, revenueActual: r.revenue.actual, aiFilled: r.aiFilled },
-  }));
+  })), sec['決算'], e => [e.name], false);
   const pages = [];
   // 2ページになるとき（9銘柄以上）は、2ページに均等に分ける（10銘柄なら 5・5、11銘柄なら 6・5。2026-11-16 すみぽん。前は 8 と残りで、2ページ目が1〜2銘柄だけになっていた）
   const per = earn.length > US_EARN_PER_PAGE ? Math.min(US_EARN_PER_PAGE, Math.ceil(earn.length / 2)) : US_EARN_PER_PAGE;
@@ -888,8 +891,8 @@ function usVideoData(){
       // 動画では japan と assets を1つの場面（日本への影響・金利・資産）に出す。読み上げは assets に持つ
       japan: { futures: d.markets && d.markets.nikkeiFutures, items: pick(['usdjpy']), narration: '' },
       assets: { items: pick(['us10y', 'gold', 'btc', 'wti']), narration: sec[US_TAG_ASSETS] || '' },
-      news: { items: p.marketNews.slice(0, 5).map(n => ({ title: n.title, detail: n.detail })), narration: sec['ニュース'] || '' },
-      stocks: { items: usStockItems(), narration: sec['個別株'] || '' },
+      news: { items: usOrderByMention(p.marketNews.slice(0, 5).map(n => ({ title: n.title, detail: n.detail })), sec['ニュース'], n => [n.title, n.detail], true), narration: sec['ニュース'] || '' },
+      stocks: { items: usOrderByMention(usStockItems(), sec['個別株'], i => [i.name], false), narration: sec['個別株'] || '' },
       earnings: { pages, narration: sec['決算'] || '' },
     },
     opening: sec['オープニング'] || '', summary: sec['まとめ'] || '',
@@ -966,10 +969,51 @@ function usVidStatus(msg, cls){ usStatus('usVidStatus', msg, cls); }
 
 // 台本の区切り → 動画の場面
 const US_NAR_MAP = { cover: 'オープニング', index: '米国指数', usOthers: 'その他の指数', usAssets: US_TAG_ASSETS, news: 'ニュース', usStocks: '個別株', usEarnings1: '決算', summary: 'まとめ' };
+// 読み上げで読み違える言葉は、ツールが読みがなに置き換えてから場面ごとの台本に入れる（2026-11-16 すみぽん「NYダウ・ラッセル2000・VIX の読みが変。ツール側で制御」）。
+// AI への指示には頼らない。台本の欄（全体）は元の表記のまま、③動画の場面ごとの台本（＝読み上げに渡す文）だけ読みがなにする。足すときはここに並べる
+const US_READINGS = [
+  [/[NＮ][YＹ]\s*ダウ/g, 'ニューヨークダウ'],
+  [/ラッセル\s*(?:2,?000|２[,，]?０００)/g, 'ラッセルにせん'],
+  [/[VＶ][IＩ][XＸ]/g, 'ビックス'],
+];
+function usReading(text){ let t = String(text || ''); for(const [re, to] of US_READINGS) t = t.replace(re, to); return t; }
 function usNarration(){
   const sec = usScriptSections(), out = {};
-  for(const [id, tag] of Object.entries(US_NAR_MAP)){ const v = sec[tag]; if(v) out[id] = { text: v, seconds: null, src: v }; }
+  for(const [id, tag] of Object.entries(US_NAR_MAP)){ const v = sec[tag]; if(v) out[id] = { text: usReading(v), seconds: null, src: v }; }
   return out;
+}
+
+// ---------- 画面の一覧を、台本で話す順に並べる（2026-11-16 すみぽん。東証版の vidOrderNews と同じ考え方）----------
+// 話していないものは後ろ（元の順のまま）。keys(item) は探す言葉の並び（先のものから試す）。
+// slide=true（ニュースの見出し）：4文字ずつずらして探す。
+// false（銘柄名）：まず名前そのもの。無ければ名前の最初の語（「ネビウス・グループ」→「ネビウス」）・先頭4文字・先頭3文字で探すが、
+//   ほかの銘柄の名前そのものが当たった範囲の中なら使わない（「ゴールドX2マイニング」の「ゴールド」が「コンタンゴ・シルバー＆ゴールド」に当たらないように）
+function usOrderByMention(items, text, keys, slide){
+  const norm = x => String(x || '').normalize('NFKC').replace(/[\s、。・,，.:：「」『』（）()]/g, '');
+  const t = norm(text);
+  if(!t || !items || items.length < 2) return items;
+  const INF = Infinity;
+  let pos;
+  if(slide){
+    const hit = (src) => { const w = norm(src); let best = INF; for(let i = 0; i + 4 <= w.length; i++){ const k = t.indexOf(w.slice(i, i + 4)); if(k >= 0 && k < best) best = k; } return best; };
+    pos = items.map(it => { for(const k of keys(it)){ const p = hit(k); if(p < INF) return p; } return INF; });
+  }else{
+    const full = items.map(it => { for(const k of keys(it)){ const w = norm(k); const p = w.length >= 2 ? t.indexOf(w) : -1; if(p >= 0) return [p, p + w.length]; } return null; });
+    pos = items.map((it, i) => {
+      if(full[i]) return full[i][0];
+      for(const k of keys(it)){
+        const head = String(k || '').normalize('NFKC').split(/[\s・&]/)[0];
+        // 最初の語 → 先頭4文字 → 先頭3文字（「シスコシステムズ」を台本が「シスコ」と言うとき）の順に試す
+        const nk = norm(k), nh = norm(head);
+        for(const w of [nh.length >= 3 && nh.length < nk.length ? nh : '', nk.slice(0, 4), nk.slice(0, 3)]){
+          if(w.length < 3) continue;
+          for(let p = t.indexOf(w); p >= 0; p = t.indexOf(w, p + 1)) if(!full.some(f => f && p >= f[0] && p < f[1])) return p;
+        }
+      }
+      return INF;
+    });
+  }
+  return items.map((it, i) => ({ it, i, p: pos[i] })).sort((a, b) => a.p - b.p || a.i - b.i).map(x => x.it);
 }
 
 // 場面のデータ（usVideoData）→ 動画の部品の TseData
@@ -1045,7 +1089,10 @@ async function usVidBuild(btn, quiet){
     if(!Object.keys(narration).length && Object.keys(prevNar).length) narration = prevNar;
     for(const [id, v] of Object.entries(narration)){
       const p0 = prevNar[id]; if(!p0) continue;
-      if(String(p0.src || '').trim() === String(v.src || '').trim()) narration[id] = { text: p0.text, seconds: p0.seconds ?? null, src: v.src };
+      if(String(p0.src || '').trim() !== String(v.src || '').trim()) continue;
+      // 前の文が元の台本のまま（手で直していない）で、読みがなに置き換える言葉があるときは、読みがなにした文に入れ替える（音声は作り直しが要る）
+      const stale = String(p0.text || '').trim() === String(v.src || '').trim() && v.text !== v.src;
+      narration[id] = { text: stale ? v.text : p0.text, seconds: p0.seconds ?? null, src: v.src };
     }
     const settings = Object.assign({}, prev.settings || {}, { narration });
     usVidSave(Object.assign({}, prev, { data, settings, builtAt: new Date().toISOString() }));
@@ -1072,24 +1119,88 @@ async function usVidScreenAi(btn){
   finally{ if(btn) btn.disabled = false; }
 }
 
-// サムネの文言：④のサムネ案の「最有力」の行（上段／中段／下段）を「：」区切りにして初期値にする
+// サムネの文言（2026-11-16 すみぽん「強調の文字がない。全部の文字が変わる必要はない。東証と同様に上段は指数の話にし、それ以外を可変に。縦の2段構成も」）
+// ・上段：ツールが NYダウ の値動きから決める（東証版の「日経平均は*大幅高*」と同じ決まり。thumbMoveWord：2％超＝大幅、0.5％未満＝小幅、0.1％未満＝ほぼ横ばい、前日と逆向きなら反発・反落）
+// ・中段・下段：④のサムネ案の「最有力」の行（中段／下段。下段は #水色# %黄色% の強調つき）
+// ・縦（2段構成）：1段目＝上段、2段目＝中段（東証版の縦型サムネの2段構成と同じ分け方）。縦動画の書き出しで、別の画像として一緒に保存する
+function usThumbTop(){
+  const r = (((US.data || {}).markets || {}).markets || []).find(x => x.key === 'dji');
+  if(!r || usN(r.pct) === null) return '';
+  const h = r.history || [], n = h.length;
+  const prevPct = n >= 3 && h[n - 3].close ? (h[n - 2].close / h[n - 3].close - 1) * 100 : NaN;
+  const word = typeof thumbMoveWord === 'function' ? thumbMoveWord(r.pct, prevPct) : (r.pct > 0 ? '上昇' : '下落');
+  return `NYダウは*${word}*`;
+}
 function usThumbDefault(){
   const t = String(US.snsThumb || '');
   const best = (t.match(/最有力[：:]\s*([①②③])/) || [])[1] || '①';
   const line = t.split(/\r?\n/).find(l => l.trim().startsWith(best)) || '';
-  return line.replace(/^\s*[①②③]\s*/, '').split(/[／/]/).map(x => x.trim()).filter(Boolean).slice(0, 3).join('：');
+  // 前の形（上段／中段／下段）のサムネ案でも、後ろの2つ（中段・下段）だけ使う
+  const rest = line.replace(/^\s*[①②③]\s*/, '').split(/[／/]/).map(x => x.trim()).filter(Boolean).slice(-2);
+  if(!rest.length) return '';
+  return [usThumbTop(), ...rest].filter(Boolean).join('：');
 }
+// 手で直していないあいだは、サムネ案・取得データが変わるたびに初期値を入れ直す
 function usThumbText(){
   const el = document.getElementById('usThumbText');
   const o = usVidLoad() || {};
-  if(el && !el.value.trim() && !o.thumbEdited) el.value = usThumbDefault();
+  if(el && !o.thumbEdited){ const d = usThumbDefault(); if(d && el.value !== d) el.value = d; }
   return el ? el.value.trim() : '';
+}
+// 縦サムネの1段目・2段目。手で直していないあいだは、横のサムネの文言の上段・中段
+function usVThumbTexts(){
+  const o = usVidLoad() || {};
+  const els = [1, 2].map(i => document.getElementById('usVThumb' + i));
+  if(!o.vthumbEdited){
+    const parts = usThumbText().split(/[：:]/).map(x => x.trim());
+    els.forEach((el, i) => { if(el && el.value !== (parts[i] || '')) el.value = parts[i] || ''; });
+  }
+  return els.map(el => (el && el.value || '').trim());
 }
 function usThumbChanged(){
   const o = usVidLoad() || {};
   o.thumbText = (document.getElementById('usThumbText') || {}).value || ''; o.thumbEdited = true;
   usVidSave(o);
   if(usVidHandle) usVidMount(true).catch(e => usVidStatus('❌ ' + e.message, 'error'));
+  else usThumbPreview();
+}
+function usVThumbChanged(){
+  const o = usVidLoad() || {};
+  o.vthumb = [1, 2].map(i => (document.getElementById('usVThumb' + i) || {}).value || ''); o.vthumbEdited = true;
+  usVidSave(o);
+  if(usVidHandle) usVidMount(true).catch(e => usVidStatus('❌ ' + e.message, 'error'));
+  else usThumbPreview();
+}
+// 手で直した文言を捨てて、初期値（上段＝NYダウの値動き、中段・下段＝サムネ案の最有力）に戻す
+function usThumbReset(){
+  const o = usVidLoad() || {};
+  delete o.thumbText; delete o.thumbEdited; delete o.vthumb; delete o.vthumbEdited;
+  usVidSave(o);
+  for(const id of ['usThumbText', 'usVThumb1', 'usVThumb2']){ const el = document.getElementById(id); if(el) el.value = ''; }
+  if(usVidHandle) usVidMount(true).catch(e => usVidStatus('❌ ' + e.message, 'error'));
+  else usThumbPreview();
+}
+// 縦サムネ（9:16・2段構成）を 1080×1920 の画像に。東証版の縦型サムネの描き方（slideVThumb）を、米国版の文言・日付で使う
+async function usVThumbImage(texts, date){
+  if(!texts.some(Boolean) || typeof slideVThumb !== 'function') return null;
+  const box = document.getElementById('renderTarget'); if(!box) return null;
+  const m = String(date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  box.innerHTML = slideVThumb('916', { n: 2, texts, date: m ? `${+m[1]}.${+m[2]}.${+m[3]}` : '', label: '米国マーケット速報' });
+  await new Promise(r => setTimeout(r, 200));
+  try{
+    const c = await html2canvas(box.querySelector('.slide'), { width: 1080, height: 1920, scale: 1, useCORS: true, allowTaint: true, backgroundColor: '#000000', logging: false });
+    return c.toDataURL('image/jpeg', 0.9);
+  }catch(e){ console.warn('米国版の縦サムネの画像化に失敗', e); return null; }
+  finally{ box.innerHTML = ''; }
+}
+// サムネの見本（横・縦）を③動画に出す。imgs を渡さなければ作る（動画のデータがまだ無いとき）
+async function usThumbPreview(imgs){
+  const box = document.getElementById('usThumbPreview'); if(!box) return;
+  if(!imgs){
+    const run = typeof vidQueue === 'function' ? vidQueue : (fn => fn());
+    imgs = await run(async () => ({ h: await usThumbImage(usThumbText()), v: await usVThumbImage(usVThumbTexts(), usSyncDate()) }));
+  }
+  box.innerHTML = [imgs.h && `<img src="${imgs.h}" alt="横のサムネ" title="横のサムネ（横動画の最初に入る）" style="height:150px;border-radius:6px;border:1px solid var(--border);">`, imgs.v && `<img src="${imgs.v}" alt="縦のサムネ" title="縦のサムネ（縦動画の書き出しで、別の画像として一緒に保存）" style="height:150px;border-radius:6px;border:1px solid var(--border);">`].filter(Boolean).join('');
 }
 async function usThumbImage(text){
   if(!text || typeof slideThumb !== 'function') return null;
@@ -1108,11 +1219,20 @@ function usVidMount(force){ return (typeof vidQueue === 'function' ? vidQueue : 
 async function usVidMountNow(force){
   const saved = usVidLoad();
   const el = document.getElementById('usThumbText');
-  if(el && saved && saved.thumbText != null && !el.value) el.value = saved.thumbText;
+  if(el && saved && saved.thumbEdited && saved.thumbText != null && !el.value) el.value = saved.thumbText;
+  if(saved && saved.vthumbEdited && Array.isArray(saved.vthumb)) [1, 2].forEach((i) => { const v = document.getElementById('usVThumb' + i); if(v && !v.value) v.value = saved.vthumb[i - 1] || ''; });
   if(!saved || !saved.data) return;
   if(usVidHandle && !force) return;
   const KV = await vidLoadLib();
-  const data = Object.assign({}, saved.data, { thumbnail: await usThumbImage(usThumbText()), thumbnail_portrait: null });
+  const thumbs = { h: await usThumbImage(usThumbText()), v: await usVThumbImage(usVThumbTexts(), saved.data.date) };
+  usThumbPreview(thumbs);
+  const data = Object.assign({}, saved.data, { thumbnail: thumbs.h, thumbnail_portrait: thumbs.v });
+  // プレビューの初期値は縦（2026-11-16 すみぽん）。その回で最初に開いたときだけ縦にし、あとはプレビューの「横・縦」で選んだほうを覚える
+  if(!saved.orientInit){
+    saved.settings = Object.assign({}, saved.settings || {}, { width: 1080, height: 1920 });
+    saved.orientInit = true;
+    usVidSave(saved);
+  }
   const voice = () => (document.getElementById('autoTtsVoice') || {}).value || 'Erinome';
   const model = () => (document.getElementById('autoTtsModel') || {}).value || undefined;
   const props = {
