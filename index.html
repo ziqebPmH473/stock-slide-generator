@@ -4390,8 +4390,12 @@ async function ssgSyncBaseDateChanged(){
       return 'moved';
     }
     const c=await ssgSyncCollect();
-    if(ssgSyncAmount(c)>0){
+    if(ssgSyncAmount(c)>0 && !SSG_NOSYNC){   // テスト用（?nosync）はサーバーに保存しないので、聞かずに次の日を始める（テスト用の作業だけが消える）
       let saved=false;
+      // 開いた直後でサーバーを確かめている間は、終わるまで待つ（その間に変えると「保存できていない」になっていた）
+      for(let i=0;i<100 && !ssgSyncReady;i++) await ssgSleep(200);
+      // 前に保存を止めていた（データの日の確認など）ときも、基準日を変えたときは前の日への保存をもう一度試す
+      if(ssgSyncOff && !ssgApplying && ssgSyncOff!=='新しい日を始めています' && !/R2|使えません|このURL/.test(ssgSyncOff)) ssgSyncOff='';
       if(ssgSyncReady && !ssgSyncOff){
         const s=ssgSyncGet();
         if(!s.on || s.day!==od) ssgSyncSet(Object.assign(s, s.day!==od ? { day:od, rev:0, parts:[] } : {}, { on:true }));
@@ -4402,18 +4406,42 @@ async function ssgSyncBaseDateChanged(){
         const s2=ssgSyncGet();
         saved = !ssgSyncOff && s2.day===od && (s2.rev||0)>0 && ssgSyncSame(await ssgSyncCollect(), s2);
       }
-      if(!saved && !confirm(`${od} の作業を、${od} の保存としてサーバーに保存できていません${ssgSyncOff?`（${ssgSyncOff}）`:''}。\nOK：${nd} を新しく始める（この端末の ${od} の作業は消えます。残すときはキャンセルして ⚙設定の「💾 出力」）\nキャンセル：基準日を戻す`)){
-        ssgSetBaseInputs(ob); return;
+      // 保存できなかったときは、聞かずにファイル（💾 出力と同じ形）に書き出してから進む（2026-11-16 すみぽん「新規か戻すかしか出てこない」）
+      if(!saved){
+        const why=ssgSyncOff; ssgSyncOff='';
+        try{ await ssgStateExport(null); }catch(e){ console.warn('出力できませんでした', e); }
+        ssgSyncStatus(`☁ ${od} の作業をサーバーに保存できなかったので${why?`（${why}）`:''}、ファイルに出力してから ${nd} に切り替えます`, 'error');
       }
     }
-    // 変えたあとの日の自分の保存があれば開く
-    if(ssgSyncReady && !ssgSyncOff){
-      const lst=await ssgSyncApi('');
-      const d=lst.ok && (lst.days||[]).find(x=>x.date===nd);
-      if(d){ ssgSyncStatus(`☁ ${nd} の保存を開きます`); await ssgSyncLoad(nd); return; }
+    // 変えたあとの日のデータがあれば開く（自分の保存 → ほかのアカウント・共有の保存。中身のデータの日が合わないものは使わない）
+    if(!SSG_NOSYNC){
+      const src=await ssgSyncFindDay(nd);
+      if(src){ ssgSyncStatus(`☁ ${nd} の保存を開きます${src.from?`（${src.from==='_shared'?'前の共有の保存':src.from}から。開いたあとは自分の ${nd} に保存）`:''}`); await ssgSyncLoad(nd, null, src.from||undefined); return; }
     }
     ssgStartDay(nd, nb, od);
   }catch(e){ ssgSyncStatus('☁ '+e.message, 'error'); }
+}
+// その日のデータを探す（2026-11-16）：自分の保存 → ほかのアカウント・共有の保存（新しく保存した順）。
+// 取得したデータの日がその日と違う保存（11/13 の共有の保存＝中身は 16 日 など）は使わない。戻り値 { from:'' | アカウント | '_shared' } か null
+async function ssgSyncFindDay(day){
+  let owners=[];
+  try{ const r=await ssgSyncApi('owners=1'); if(r.ok) owners=r.owners||[]; }catch(e){}
+  if(!owners.length){ try{ const r=await ssgSyncApi(''); if(r.ok) owners=[{ owner:'', me:true, days:r.days||[] }]; }catch(e){} }
+  const cands=[];
+  for(const o of owners){ const d=(o.days||[]).find(x=>x.date===day); if(d) cands.push({ from:o.me?'':o.owner, me:!!o.me, at:d.updatedAt||'' }); }
+  cands.sort((a,b)=>(b.me-a.me)||String(b.at).localeCompare(String(a.at)));
+  for(const c of cands){
+    try{
+      const fq=c.from?`&from=${encodeURIComponent(c.from)}`:'';
+      const m=await ssgSyncApi(`date=${day}${fq}`); if(!m.ok) continue;
+      const res=await fetch(`/api/state?date=${day}&part=${m.manifest.ls}${fq}`,{cache:'no-store'}); if(!res.ok) continue;
+      const ls=await res.json();
+      let dd=null; try{ const a=JSON.parse(ls[SSG_PREFIX+'autostate']||'null'); dd=a&&autoDataDay(a.sources, a.fetchedAt); }catch(e){}
+      if(dd && dd.day!==day){ console.warn('中身のデータの日が違うので開きません', day, c.from||'自分', dd.day); continue; }
+      return c;
+    }catch(e){}
+  }
+  return null;
 }
 // その日を新しく始める：この端末の日ごとの作業を空にし（設定・BGM は残す）、基準日を入れて読み込み直す。前の日の保存はそのまま
 function ssgStartDay(nd, nb, od){
