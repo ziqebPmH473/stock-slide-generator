@@ -2986,9 +2986,12 @@ function autoRenderSources(sources){
     const body = (!s.ok && errMsg ? `<div style="font-size:11px;color:#f87171;margin:4px 0;">⚠ ${autoEsc(errMsg)}</div>` : '')
       + `<pre style="font-size:11px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;margin-top:4px;white-space:pre-wrap;max-height:160px;overflow:auto;">${autoEsc(autoSourceLines(s))}</pre>`;
     const cnt = s.rowCount ? ` ${s.rowCount}行` : '';
+    // ページに出ていたデータの日時（2026-11-16）。読めなかったときは「日付なし」（野村は日付らしい文字を詳細に出す）
+    const asOf = s.ok ? (s.asOf ? ` <span style="color:var(--muted)">📅 ${autoEsc(s.asOf.date.slice(5).replace('-','/'))} ${autoEsc(s.asOf.time)}</span>` : ' <span style="color:var(--muted)">📅 日付なし</span>') : '';
+    const hints = (s.dateHints && s.dateHints.length) ? `<div style="font-size:11px;color:var(--muted);margin:4px 0;">ページ内の日付らしい文字：${autoEsc(s.dateHints.join(' ／ '))}</div>` : '';
     // エラーのソースだけ開いておく
     return `<details ${!s.ok?'open':''} style="margin-top:6px;border:1px solid var(--border);border-radius:6px;padding:6px 8px;">`
-         + `<summary style="font-size:12px;color:var(--text);cursor:pointer;">${badge} ${autoEsc(s.label)}<span style="color:var(--muted)"> (${s.status||'-'}${cnt})</span>${warn}</summary>`
+         + `<summary style="font-size:12px;color:var(--text);cursor:pointer;">${badge} ${autoEsc(s.label)}<span style="color:var(--muted)"> (${s.status||'-'}${cnt})</span>${asOf}${warn}</summary>` + hints
          + body + `</details>`;
   }).join('');
   // 全体：正常時は折りたたむ／エラー時は開く
