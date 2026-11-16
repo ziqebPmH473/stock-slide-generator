@@ -827,14 +827,25 @@ async function usRunAll(btn){
   if(!US.parsed){ alert('②に AI のレポート（JSON）を貼ってください'); return; }
   const o = btn.textContent; btn.disabled = true;
   usStep('v');
+  // 進み具合は③動画の上に出す（押したボタンは②にあり、③に移ると見えないため）
+  const step = (msg) => { btn.textContent = msg; usVidStatus(msg); };
+  const errs = [];
   try{
-    btn.textContent = '生成中…(1/3)'; await usGenScript();
-    btn.textContent = '生成中…(2/3)'; await usGenSns();
+    step('台本を作成中…（1/4）'); await usGenScript();
+    // 台本ができたら、すぐ「動画のデータを作る」（2026-11-17 すみぽん。前は最後にしていて、途中のサムネ案などで失敗すると作られなかった）
+    step('動画のデータを作成中…（2/4）');
+    if(!(await usVidBuild(null, true))) errs.push('動画のデータ');
+    // ここから先は失敗しても止めない（動画のデータは作ってある）
+    step('サムネ案・X投稿文を作成中…（3/4）');
+    try{ await usGenSns(); }catch(e){ errs.push('サムネ案・X投稿文：' + e.message); usStatus('usSnsStatus', '❌ ' + e.message, 'error'); }
     usRenderVideo();
-    // 動画のデータ → 冒頭の一言とまとめ（AI）。東証版の「ファクトチェック完了」と同じ流れ
-    btn.textContent = '生成中…(3/3)'; await usVidBuild(null, true); await usVidScreenAi(null);
-    btn.textContent = '✅ 完了';
-  }catch(e){ btn.textContent = '❌ ' + e.message; usStatus('usScriptStatus', '❌ ' + e.message, 'error'); }
+    step('冒頭の一言とまとめを作成中…（4/4）');
+    await usVidBuild(null, true);   // サムネ案ができたら、サムネの文言を入れ直す
+    await usVidScreenAi(null);
+    if(/^❌/.test((document.getElementById('usVidStatus') || {}).textContent || '')) errs.push('一言・まとめ');
+    btn.textContent = errs.length ? '⚠ 一部失敗' : '✅ 完了';
+    usVidStatus(errs.length ? `⚠ 動画のデータは作りました。うまくいかなかったもの：${errs.join(' ／ ')}（③・④の各ボタンで作り直せます）` : '✅ 台本・動画のデータ・サムネ案・X投稿文・一言とまとめを作りました', errs.length ? 'error' : 'ok');
+  }catch(e){ btn.textContent = '❌ ' + e.message; usStatus('usScriptStatus', '❌ ' + e.message, 'error'); usVidStatus('❌ 台本を作れませんでした：' + e.message, 'error'); }
   finally{ btn.disabled = false; setTimeout(() => { btn.textContent = o; }, 2500); }
 }
 async function usRegen(kind, btn){
