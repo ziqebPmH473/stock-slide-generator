@@ -161,6 +161,7 @@ async function usFetch(btn){
     US.data = { fetchedAt: new Date().toISOString(), targetDate: m.targetDate || e.targetDate, prevDate: m.prevDate || e.prevDate, markets: m.markets || null, earnings: e.earnings || null, movers: v.movers || null };
     await calP;
     usPersist(); usRenderAll();
+    usSyncFetchMark = true;   // 次の保存を「データ取得の直後の版」として送る（取得の前の版と分けて残す。2026-11-16）
     usStatus('usFetchStatus', '日本語の社名を取得中…（株探）');
     await usFetchNames().catch(() => {});
     usRenderAll();
@@ -988,7 +989,7 @@ function usVidOpen(){ usVidMount(!!usVidHandle).catch(e => usVidStatus('❌ ' + 
 // ・変わったら数秒待ってから送る。別の端末が先に送っていたら上書きせず知らせる（「開く」で取り込むか、⚙設定から上書き）。
 // ・開いたとき：この端末に作業が無い、またはサーバーのほうが新しい（rev が進んでいる）なら、サーバーの作業を開く。
 const US_SYNC_KEY = 'ssgus_sync';   // { date, rev }：この端末が最後に送った／開いた回
-let usSyncTimer = null, usSyncBusy = false, usSyncAgain = false, usSyncOff = '';
+let usSyncTimer = null, usSyncBusy = false, usSyncAgain = false, usSyncOff = '', usSyncFetchMark = false;
 function usSyncGet(){ try{ return JSON.parse(localStorage.getItem(US_SYNC_KEY) || 'null') || {}; }catch(e){ return {}; } }
 function usSyncSet(o){ try{ localStorage.setItem(US_SYNC_KEY, JSON.stringify(o || {})); }catch(e){} }
 function usSyncStatus(msg, cls){ usStatus('usSyncStatus', msg, cls); }
@@ -1034,7 +1035,7 @@ async function usSyncPush(force, allowShrink){
     // 中身が何も無いときは保存しない（2026-11-14。数え方はサーバーの functions/api/us-state.js の amount と同じ）
     { let n = 0; for(const v of Object.values(doc.state || {})){ const t = typeof v === 'string' ? v : JSON.stringify(v ?? ''); if(t && t.trim().length >= 50) n++; } if(doc.video) n++; n += Object.keys(audio).length;
       if(n === 0){ usSyncStatus(`☁ ${date} はまだ中身が無いので、保存していません`); return; } }
-    const res = await fetch(`/api/us-state?date=${date}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doc, baseRev: sync.date === date ? (sync.rev || 0) : await usSyncRemoteRev(date), force: !!force, allowShrink: !!allowShrink }) });
+    const res = await fetch(`/api/us-state?date=${date}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doc, baseRev: sync.date === date ? (sync.rev || 0) : await usSyncRemoteRev(date), force: !!force, allowShrink: !!allowShrink, mark: usSyncFetchMark ? 'fetch' : '' }) });
     const d = await res.json().catch(() => ({}));
     if(res.status === 409 && d.shrink){
       // サーバーの作業より中身が大きく減る（空から始めた・読み込み中に操作したなど）。上書きせず、サーバーの作業を残す（2026-11-14）
@@ -1049,6 +1050,7 @@ async function usSyncPush(force, allowShrink){
     if(res.status === 403 || res.status === 503){ usSyncOff = d.error || `HTTP ${res.status}`; usSyncStatus('☁ サーバー保存は使えません（' + usSyncOff + '）'); return; }
     if(!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
     usSyncSet({ date, rev: d.rev, audio });
+    usSyncFetchMark = false;
     usSyncStatus(`☁ ${usSyncHm(d.updatedAt)} にサーバーへ保存しました（${date}）`, 'ok');
   }catch(e){ usSyncStatus('☁ 保存できませんでした：' + e.message, 'error'); }
   finally{ usSyncBusy = false; if(usSyncAgain){ usSyncAgain = false; usSyncKick(); } }

@@ -2901,6 +2901,8 @@ async function autoFetchSources(){
     statusEl.textContent = errN>0 ? `⚠ ${errN}件でエラー（下を確認）` : '';
     resultEl.innerHTML = autoRenderSources(data.sources);
     autoPersistState();
+    // データ取得の直後の版としてすぐ保存する（取得の前の版と分けて残す。過去の日のデータは取り直せないため。2026-11-16）
+    if(okCount>0 && typeof ssgSyncMarkFetch==='function') ssgSyncMarkFetch();
     autoStatusDone(errN>0 ? `⚠ 取得完了（${errN}件エラー）` : '✅ データ取得完了');
   } catch(e){
     statusEl.textContent = '❌ ' + e.message;
@@ -4035,7 +4037,7 @@ async function ssgSyncPush(force, allowShrink){
   const c=await ssgSyncCollect();
   // 中身が何も無いときは保存しない（2026-11-14 すみぽん「空のプロジェクトは保存しないでほしい」）
   if(ssgSyncAmount(c)===0){ ssgSyncStatus(`☁ ${s.day} はまだ中身が無いので、保存していません（データ取得などで中身が入ったら保存します）`); return; }
-  if(!force && !s.force && ssgSyncSame(c, s) && (s.baseDate||'')===c.baseDate) return;
+  if(!force && !s.force && !s.mark && ssgSyncSame(c, s) && (s.baseDate||'')===c.baseDate) return;
   // 違う日の名前で保存しない（2026-11-16。11/13 の保存が 16 日の作業で上書きされた件）
   // ・基準日の営業日が保存先の日と違う → 黙って保存せず聞く。閉じた・キャンセルなら保存を止める（AI のブラウザは確認を自動で閉じるため）
   const nd=c.baseDate ? ssgBizDayOf(c.baseDate) : '';
@@ -4056,7 +4058,7 @@ async function ssgSyncPush(force, allowShrink){
   const have=new Set(s.parts||[]);
   ssgSyncStatus('☁ 保存中…');
   for(const [name, p] of Object.entries(c.parts)) if(!have.has(name)) await ssgSyncPutPart(s.day, name, p);
-  const man={ baseRev:s.rev||0, force:!!(force||s.force), allowShrink:!!allowShrink, baseDate:c.baseDate, step:window.__autoStepK||'1', ls:c.lsName, idb:c.idb };
+  const man={ baseRev:s.rev||0, mark:s.mark||'', force:!!(force||s.force), allowShrink:!!allowShrink, baseDate:c.baseDate, step:window.__autoStepK||'1', ls:c.lsName, idb:c.idb };
   const putMan=()=>ssgSyncApi(`date=${s.day}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(man) });
   let r=await putMan();
   if(r.status===422 && Array.isArray(r.missing)){
@@ -4077,7 +4079,7 @@ async function ssgSyncPush(force, allowShrink){
     return ssgSyncPush(true);
   }
   if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
-  ssgSyncSet(Object.assign(ssgSyncGet(), { day:s.day, rev:r.rev, parts:ssgSyncNames(c), baseDate:c.baseDate, force:false }));
+  ssgSyncSet(Object.assign(ssgSyncGet(), { day:s.day, rev:r.rev, parts:ssgSyncNames(c), baseDate:c.baseDate, force:false, mark:'' }));
   ssgSyncStatus(`☁ ${s.day} を保存しました（${ssgSyncHm(r.updatedAt)}）`, 'ok');
   if(r.rev===1 || man.force) ssgSyncRefreshList();   // 一覧に新しい日が増えたとき
 }
@@ -4090,6 +4092,13 @@ async function ssgSyncTick(force){
   finally{ ssgSyncBusy=false; if(ssgSyncPending){ ssgSyncPending=false; ssgSyncKick(); } }
 }
 function ssgSyncKick(){ clearTimeout(ssgSyncTimer); ssgSyncTimer=setTimeout(()=>ssgSyncTick(), 3000); }
+// データ取得をしたら、その日の保存を始め、すぐに「データ取得の直後の版」として送る（2026-11-16）
+function ssgSyncMarkFetch(){
+  const s=ssgSyncGet();
+  const day=(s.on && s.day)||ssgBizDay();
+  ssgSyncSet(Object.assign(s, day!==s.day ? { day, rev:0, parts:[] } : {}, { on:true, mark:'fetch' }));
+  clearTimeout(ssgSyncTimer); ssgSyncTimer=setTimeout(()=>ssgSyncTick(), 500);
+}
 // プロンプトをコピーしたら、その日の保存を始める（2回目以降は送るきっかけになるだけ）
 function ssgSyncStart(){
   const s=ssgSyncGet();
@@ -4225,7 +4234,7 @@ function ssgSyncRenderDays(days){
     :'<span style="font-size:11px;color:var(--muted);">まだありません</span>';
 }
 // 前の版（2026-11-16）：サーバーは上書きの前の版を1日ごとに5世代（30分ごとに1世代）＋基準日・日が変わったときなどの版を別に3世代残す
-const SSG_GEN_REASON={ time:'30分ごと', first:'最初の版', baseDate:'基準日が変わる前', day:'日が変わる前', force:'別の端末で上書きされる前', shrink:'中身が減る前', restore:'前の版に戻す前' };
+const SSG_GEN_REASON={ fetch:'データ取得の直後', beforeFetch:'データ取得の前', time:'30分ごと', first:'最初の版', baseDate:'基準日が変わる前', day:'日が変わる前', force:'別の端末で上書きされる前', shrink:'中身が減る前', restore:'前の版に戻す前' };
 async function ssgSyncShowGens(day, from){
   const el=document.getElementById('ssgGens-'+(from?from+'-':'')+day); if(!el) return;
   const fq=from?`&from=${encodeURIComponent(from)}`:'';

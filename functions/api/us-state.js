@@ -20,7 +20,7 @@ const PROD_HOST = "ssg-9506afd114d7.pages.dev";
 const KEEP_DAYS = 30;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const AUDIO_RE = /^[A-Za-z0-9:_\-]{1,64}$/;
-const KEEP_GENS = 5, KEEP_PINNED = 3, GEN_MIN_MS = 30 * 60 * 1000;
+const KEEP_GENS = 5, KEEP_PINNED = 3, KEEP_FETCH = 5, GEN_MIN_MS = 30 * 60 * 1000;   // KEEP_FETCH：データ取得の直後の版（2026-11-16）
 const jstDay = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10); };
 async function gens(bucket, date) {
   const objs = await listAll(bucket, `us/${date}/hist/`, ["customMetadata"]);
@@ -30,7 +30,7 @@ async function gens(bucket, date) {
 async function rotate(bucket, date, cur, next) {
   let list = await gens(bucket, date);
   if (cur) {
-    let reason = next.restore ? "restore" : next.force ? "force" : next.allowShrink ? "shrink" : jstDay(cur.updatedAt) !== jstDay(new Date().toISOString()) ? "day" : "";
+    let reason = cur.mark === "fetch" ? "fetch" : next.mark === "fetch" ? "beforeFetch" : next.restore ? "restore" : next.force ? "force" : next.allowShrink ? "shrink" : jstDay(cur.updatedAt) !== jstDay(new Date().toISOString()) ? "day" : "";
     if (!reason) reason = !list[0] ? "first" : (new Date(cur.updatedAt) - new Date(list[0].updatedAt) >= GEN_MIN_MS ? "time" : "");
     if (reason && !list.some((g) => g.rev === Number(cur.rev))) {
       await bucket.put(`us/${date}/hist/${cur.rev}.json`, JSON.stringify(cur), {
@@ -41,7 +41,8 @@ async function rotate(bucket, date, cur, next) {
     }
   }
   const keep = new Set(list.slice(0, KEEP_GENS).map((g) => g.key));
-  for (const g of list.filter((g) => g.pin && !keep.has(g.key)).slice(0, KEEP_PINNED)) keep.add(g.key);
+  for (const g of list.filter((g) => g.reason === "fetch" && !keep.has(g.key)).slice(0, KEEP_FETCH)) keep.add(g.key);
+  for (const g of list.filter((g) => g.pin && g.reason !== "fetch" && !keep.has(g.key)).slice(0, KEEP_PINNED)) keep.add(g.key);
   const drop = list.filter((g) => !keep.has(g.key)).map((g) => g.key);
   if (drop.length) await bucket.delete(drop);
 }
@@ -164,11 +165,11 @@ export async function onRequestPut(context) {
     }
     const now = new Date().toISOString();
     const rev = have + 1;
-    await bucket.put(`us/${date}/state.json`, JSON.stringify({ v: 1, date, rev, updatedAt: now, doc: body.doc }), {
+    await bucket.put(`us/${date}/state.json`, JSON.stringify({ v: 1, date, rev, updatedAt: now, mark: body.mark === "fetch" ? "fetch" : "", doc: body.doc }), {
       httpMetadata: { contentType: "application/json" },
       customMetadata: { rev: String(rev), updatedAt: now },
     });
-    await rotate(bucket, date, cur, { force: !!body.force, allowShrink: !!body.allowShrink });   // 前の作業を前の版に残す（2026-11-16）
+    await rotate(bucket, date, cur, { force: !!body.force, allowShrink: !!body.allowShrink, mark: body.mark === "fetch" ? "fetch" : "" });   // 前の作業を前の版に残す（2026-11-16）
     // 作業の中の音声の一覧に無くなった音声を消す
     const keepAudio = new Set(Object.keys((body.doc && body.doc.audio) || {}).map((k) => `us/${date}/audio/${k}`));
     const olds = (await listAll(bucket, `us/${date}/audio/`)).map((o) => o.key).filter((k) => !keepAudio.has(k));

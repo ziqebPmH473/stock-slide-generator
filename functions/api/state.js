@@ -16,6 +16,8 @@
  * その中身も消さずに残す。1日ごとに新しい順で KEEP_GENS 世代。30分ごとに1世代（続けて保存しても世代を使い切らない）。
  * 基準日が変わる・日が変わる・別の端末からの上書き（force）・中身が大きく減る上書き（allowShrink）・前の版に戻す、のときは
  * 30分たっていなくても残し、これは KEEP_GENS とは別に KEEP_PINNED 世代まで残す（ふつうの保存で押し出されないように）。
+ * データ取得をしたとき（画面が mark:'fetch' を付けて保存する）は、その前の版を残し、取得の直後の版も上書きされるときに必ず残す。
+ * 取得の直後の版は KEEP_FETCH 世代まで別に残す（過去の日のデータは取り直せないため。2026-11-16）。
  *
  * 保存先はアカウントごと（2026-11-16。R2 の u/<アカウント>/ の下。functions/_shared/store.js）。書けるのは自分の保存先だけ。
  * GET に from=<アカウント>（分ける前の共有は from=_shared）を付けると、ほかの保存を読める（読むだけ）。
@@ -35,6 +37,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PART_RE = /^[0-9a-f]{32,64}$/;
 const KEEP_GENS = 5;        // 前の版を残す数（1日ごと）
 const KEEP_PINNED = 3;      // 基準日・日が変わったときなどの前の版を、別に残す数
+const KEEP_FETCH = 5;       // データ取得の直後の版を、別に残す数（過去の日のデータは取り直せないため。2026-11-16）
 const GEN_MIN_MS = 30 * 60 * 1000;   // ふつうの保存で前の版を残す間隔
 const jstDay = iso => { const d = new Date(iso); return isNaN(d) ? '' : new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10); };
 
@@ -85,6 +88,8 @@ async function gens(bucket, date) {
 const manRefs = m => { const out = [m.ls]; for (const rows of Object.values(m.idb || {})) for (const r of (Array.isArray(rows) ? rows : [])) out.push(r && r.part); return out.filter(Boolean); };
 // 今の版 cur を前の版として残すか（残すときは理由）
 function genReason(cur, next, list) {
+  if (cur.mark === 'fetch') return 'fetch';          // データ取得の直後の版（取り直せないので必ず残す）
+  if (next.mark === 'fetch') return 'beforeFetch';   // データ取得の前の版
   if (next.restore) return 'restore';
   if (next.force) return 'force';
   if (next.allowShrink) return 'shrink';
@@ -110,7 +115,8 @@ async function rotate(bucket, date, cur, next, newRefs) {
     }
   }
   const keepGen = new Set(list.slice(0, KEEP_GENS).map(g => g.key));
-  for (const g of list.filter(g => g.pin && !keepGen.has(g.key)).slice(0, KEEP_PINNED)) keepGen.add(g.key);
+  for (const g of list.filter(g => g.reason === 'fetch' && !keepGen.has(g.key)).slice(0, KEEP_FETCH)) keepGen.add(g.key);
+  for (const g of list.filter(g => g.pin && g.reason !== 'fetch' && !keepGen.has(g.key)).slice(0, KEEP_PINNED)) keepGen.add(g.key);
   const drop = list.filter(g => !keepGen.has(g.key)).map(g => g.key);
   if (drop.length) await bucket.delete(drop);
   const keep = new Set(newRefs.map(n => `p/${date}/${n}`));
@@ -233,13 +239,13 @@ export async function onRequestPut(context) {
       }
     }
     const now = new Date().toISOString();
-    const manifest = { v: 1, date, amount: newAmount, rev: have + 1, updatedAt: now, baseDate: String(body.baseDate || ''), step: String(body.step || ''), ls: body.ls, idb: body.idb };
+    const manifest = { v: 1, date, mark: body.mark === 'fetch' ? 'fetch' : '', amount: newAmount, rev: have + 1, updatedAt: now, baseDate: String(body.baseDate || ''), step: String(body.step || ''), ls: body.ls, idb: body.idb };
     await bucket.put(`m/${date}.json`, JSON.stringify(manifest), {
       httpMetadata: { contentType: 'application/json' },
       customMetadata: { rev: String(manifest.rev), updatedAt: now, baseDate: manifest.baseDate, amount: String(newAmount) },
     });
     // 前の目録を前の版として残し（2026-11-16）、今の版にも前の版にも無い中身を消す
-    await rotate(bucket, date, cur, { force: !!body.force, allowShrink: !!body.allowShrink, baseDate: manifest.baseDate }, refs);
+    await rotate(bucket, date, cur, { force: !!body.force, allowShrink: !!body.allowShrink, baseDate: manifest.baseDate, mark: manifest.mark }, refs);
     // 新しい順で KEEP_DAYS 日より前の日を消す
     const all = await days(bucket);
     for (const d of all.slice(KEEP_DAYS)) {
