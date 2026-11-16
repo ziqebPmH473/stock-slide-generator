@@ -4874,18 +4874,16 @@ function wkRepeat(lists){ const m=new Map(); for(const l of lists) for(const x o
 // 前週の最後の営業日の保存が無いときは、日経平均・TOPIX はチャート用の終値の推移から、それも無ければその週の最初の日の「終値−前日比」で出す
 // 前週の最後の営業日（その週の月曜の前の営業日。月曜が休みでも前の週の金曜など）
 function wkPrevWeekEnd(day){ return ssgIso(apPrevBizDayOf(new Date(wkMonday(day)+'T00:00:00'))); }
-// 前週末の値の取り方（2026-11-16 すみぽん「指数はチャート用に取っている日足を使えば？」）：
+// 前週末の値の取り方（2026-11-16 すみぽん「指数はチャート用に取っている日足を使えば？」「前週金曜のデータを使え」）：
 // 1. 日経平均・TOPIX：動画のチャート用に株探から取った日足（points）の、前週の最後の営業日の終値
-// 2. グロース・スタンダードなど（日足が無い）：今週の最初の営業日の「終値−前日比」（その週の初日が保存にあるときだけ）
-// 3. 前週の最後の日の保存（日付が合うときだけ）
+// 2. グロース・スタンダードなど（日足が無い）：前週の最後の営業日の保存（取得したデータの日が合うものだけ。無ければ出さない）
 function wkIndexWeek(ds, prev){
   const last=ds[ds.length-1], first=ds[0];
-  const pe=wkPrevWeekEnd(first.date), firstIsFirst=ssgIso(apPrevBizDayOf(new Date(first.date+'T00:00:00')))===pe;
+  const pe=wkPrevWeekEnd(first.date);
   const all=x=>[...(x.charts||[]), ...(x.others||[])];
   return all(last).filter(x=>x.close!=null).map(x=>{
     let base=null, baseDate=null;
     for(const d of ds.slice().reverse()){ const y=all(d).find(z=>z.name===x.name); const q=y && y.points && y.points.find(pt=>pt.date===pe); if(q && q.close!=null){ base=q.close; baseDate=pe; break; } }
-    if(base==null && firstIsFirst){ const f=all(first).find(y=>y.name===x.name); const ch=f && parseFloat(f.change); if(f && f.close!=null && isFinite(ch)){ base=f.close-ch; baseDate=pe; } }
     const p=prev && prev.date===pe && all(prev).find(y=>y.name===x.name);
     if(base==null && p && p.close!=null){ base=p.close; baseDate=prev.date; }
     if(base==null || !base) return null;
@@ -5023,13 +5021,6 @@ function wkCheckAll(on){
 }
 // その日の動画のデータを読む（サーバーの目録 → 各欄のまとめ → ssg_video）。この端末で作業中の日は、この端末の内容を使う
 // その日の取得データ（全自動版の「データ取得」）から、業種別指数の値を { 業種名: 値 } で取り出す（2026-11-14 から取っている。無ければ null）
-// 業種別指数の前日の値（指数−前日比）。週の初日なら前週末の値になる
-function wkSecPrevVals(autostateText){
-  let o=null; try{ o=JSON.parse(autostateText||'null'); }catch(e){}
-  const src=o && (o.sources||[]).find(x=>x.key==='kabutan_sector_desc');
-  const m={}; for(const r of (src&&src.rows)||[]){ const ch=parseFloat(r&&r.change); if(r && r.name && isFinite(r.value) && r.value>0 && isFinite(ch)) m[r.name]=Math.round((r.value-ch)*100)/100; }
-  return Object.keys(m).length ? m : null;
-}
 function wkSecVals(autostateText){
   let o=null; try{ o=JSON.parse(autostateText||'null'); }catch(e){}
   const src=o && (o.sources||[]).find(x=>x.key==='kabutan_sector_desc');
@@ -5038,7 +5029,7 @@ function wkSecVals(autostateText){
 }
 async function wkLoadDay(day){
   const loc=wkLocalData();
-  if(loc && loc.date===day) return Object.assign({}, loc, { _sec:wkSecVals(localStorage.getItem(SSG_PREFIX+'autostate')), _secPrev:wkSecPrevVals(localStorage.getItem(SSG_PREFIX+'autostate')) });
+  if(loc && loc.date===day) return Object.assign({}, loc, { _sec:wkSecVals(localStorage.getItem(SSG_PREFIX+'autostate')) });
   if(wkData[day]) return wkData[day];
   const fq=wkFrom[day]?`&from=${encodeURIComponent(wkFrom[day])}`:'';
   const r=await ssgSyncApi(`date=${day}${fq}`); if(!r.ok) throw new Error(r.error||`HTTP ${r.status}`);
@@ -5051,15 +5042,14 @@ async function wkLoadDay(day){
   let dd=null; try{ const a=JSON.parse(ls[SSG_PREFIX+'autostate']||'null'); dd=a&&autoDataDay(a.sources, a.fetchedAt); }catch(e){}
   if(dd && dd.day!==day){ wkBad[day]=dd.day; console.warn('週間まとめ：取得したデータの日が保存の日と違うので使いません', day, dd); return null; }
   if(/^\d{4}-\d{2}-\d{2}$/.test(v.data.date||'') && v.data.date!==day){ wkBad[day]=v.data.date; console.warn('週間まとめ：保存の日と中身の日が違うので使いません', day, v.data.date); return null; }
-  return (wkData[day]=Object.assign({}, v.data, { _sec:wkSecVals(ls[SSG_PREFIX+'autostate']), _secPrev:wkSecPrevVals(ls[SSG_PREFIX+'autostate']) }));
+  return (wkData[day]=Object.assign({}, v.data, { _sec:wkSecVals(ls[SSG_PREFIX+'autostate']) }));
 }
 // 業種別の前週末比：前週の最後の営業日と今週の最後の営業日の業種別指数をくらべる。両方そろった業種が30以上のときだけ（そろわなければ null）
-// 業種別の前週末の値：今週の最初の営業日の「指数−前日比」（その週の初日が保存にあるとき）、無ければ前週の最後の日の保存（日付が合うとき）
+// 業種別の前週末の値：前週の最後の営業日の保存（取得したデータの日が合うものだけ。無ければ出さない）
 function wkSectorWeek(ds, prev){
   if(!ds.length) return null;
-  const pe=wkPrevWeekEnd(ds[0].date), firstIsFirst=ssgIso(apPrevBizDayOf(new Date(ds[0].date+'T00:00:00')))===pe;
-  let a=null; if(firstIsFirst && ds[0]._secPrev) { a=ds[0]._secPrev; prev={ date:pe }; }
-  else if(prev && prev.date===pe) a=prev._sec;
+  const pe=wkPrevWeekEnd(ds[0].date);
+  const a=prev && prev.date===pe ? prev._sec : null;
   const b=ds[ds.length-1]._sec;
   if(!a || !b) return null;
   const rows=Object.keys(b).filter(k=>a[k]).map(k=>({ name:k, pct:(b[k]/a[k]-1)*100 }));
@@ -5089,8 +5079,8 @@ async function wkMake(btn){
     let prevDay=null, pdUsed='';
     const wantW=id=>ids.includes(id) && !!(document.getElementById('wkWeekly-'+id)||{checked:true}).checked;
     if(wantW('index') || wantW('sectors')){
-      const pd=[...new Set(wkServerDays)].filter(d=>d<dates[0]).sort().pop();
-      if(pd && wkMonday(pd)!==wkMonday(dates[0])){ pdUsed=pd; try{ prevDay=await wkLoadDay(pd); if(prevDay) prevDay=Object.assign({}, prevDay, { date:pd }); }catch(e){ console.warn('週間まとめ：前週のデータが読めませんでした', pd, e); } }
+      const pd=wkPrevWeekEnd(dates[0]);   // 前週の最後の営業日（金曜。休みなら前の営業日）の保存だけを使う
+      if(wkServerDays.includes(pd) || (wkLocalData()||{}).date===pd){ pdUsed=pd; try{ prevDay=await wkLoadDay(pd); if(prevDay) prevDay=Object.assign({}, prevDay, { date:pd }); }catch(e){ console.warn('週間まとめ：前週のデータが読めませんでした', pd, e); } }
     }
     const plan=[]; const specs=[];
     for(const t of KV.tse.weekThemes.filter(t=>ids.includes(t.id))){
