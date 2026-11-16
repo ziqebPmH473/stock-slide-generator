@@ -4869,6 +4869,7 @@ function wkTikTok(id, ds, week){
 }
 // 週の一覧を作り直す（サーバーの保存＋この端末で作業中の日）
 let wkFrom={};   // 日 → 読む保存先（'' は自分）
+let wkBad={};    // 日 → 中身のデータの日（保存の日と違うので使わなかった日）
 async function wkRefresh(){
   const sel=document.getElementById('wkWeek'); if(!sel) return;
   wkServerDays=[];
@@ -4931,6 +4932,8 @@ async function wkLoadDay(day){
   const ls=await res.json();
   let v=null; try{ v=JSON.parse(ls[VID_KEY]||'null'); }catch(e){}
   if(!v || !v.data) return null;
+  // 保存の日と中身のデータの日が違うものは使わない（11/13 の保存が 16 日の作業で上書きされた件。前週末比などがずれるため。2026-11-16）
+  if(/^\d{4}-\d{2}-\d{2}$/.test(v.data.date||'') && v.data.date!==day){ wkBad[day]=v.data.date; console.warn('週間まとめ：保存の日と中身の日が違うので使いません', day, v.data.date); return null; }
   return (wkData[day]=Object.assign({}, v.data, { _sec:wkSecVals(ls[SSG_PREFIX+'autostate']) }));
 }
 // 業種別の前週末比：前週の最後の営業日と今週の最後の営業日の業種別指数をくらべる。両方そろった業種が30以上のときだけ（そろわなければ null）
@@ -4961,10 +4964,10 @@ async function wkMake(btn){
     // その場面のデータが無い日は外す
     const has={ index:x=>(x.charts||[]).length+(x.others||[]).length>0, contrib:x=>x.contrib && (x.contrib.plus||[]).length+(x.contrib.minus||[]).length>0, sectors:x=>x.sectors && (x.sectors.up||[]).length+(x.sectors.down||[]).length>0, rise:x=>(x.rise||[]).length>0, fall:x=>(x.fall||[]).length>0, trading:x=>(x.trading||[]).length>0 };
     // 前週の最後の営業日（主要株価指数の前週末比に使う）
-    let prevDay=null;
+    let prevDay=null, pdUsed='';
     if(ids.includes('index') || ids.includes('sectors')){
       const pd=[...new Set(wkServerDays)].filter(d=>d<dates[0]).sort().pop();
-      if(pd && wkMonday(pd)!==wkMonday(dates[0])){ try{ prevDay=await wkLoadDay(pd); if(prevDay) prevDay=Object.assign({}, prevDay, { date:pd }); }catch(e){ console.warn('週間まとめ：前週のデータが読めませんでした', pd, e); } }
+      if(pd && wkMonday(pd)!==wkMonday(dates[0])){ pdUsed=pd; try{ prevDay=await wkLoadDay(pd); if(prevDay) prevDay=Object.assign({}, prevDay, { date:pd }); }catch(e){ console.warn('週間まとめ：前週のデータが読めませんでした', pd, e); } }
     }
     const plan=[]; const specs=[];
     for(const t of KV.tse.weekThemes.filter(t=>ids.includes(t.id))){
@@ -4990,7 +4993,9 @@ async function wkMake(btn){
     // 画像と投稿文の数値は同じ集計（p.week）から出す
     wkOut={ week:wkMonday(dates[0]), last:dates[dates.length-1], themes:plan.map(p=>({ id:p.id, title:p.title, caption:wkCaption(p.id, p.dates, p.id==='sectors' ? !!p.week : !!(p.week&&p.week.length), p.ds), tiktok:wkTikTok(p.id, p.ds, p.week), files:p.names.map((name,i)=>{ const blob=blobs[p.from+i]; return { name, blob, url:URL.createObjectURL(blob) }; }) })) };
     wkRenderResult();
-    wkStatus(`✅ ${specs.length}枚できました`+(skipped.length?`（動画のデータが無い日：${skipped.map(wkMd).join('・')}）`:''), 'ok');
+    const bad=Object.keys(wkBad).filter(d=>skipped.includes(d) || d===pdUsed);
+    wkStatus(`✅ ${specs.length}枚できました`+(skipped.length?`（動画のデータが無い日：${skipped.map(wkMd).join('・')}）`:'')
+      +(bad.length?`（⚠ 保存の日と中身の日が違うので使っていない日：${bad.map(d=>`${wkMd(d)}（中身は ${wkMd(wkBad[d])}）`).join('・')}${bad.includes(pdUsed)?'。前週末比は出していません':''}）`:''), bad.length?'':'ok');
   }catch(e){ wkStatus('❌ '+e.message,'error'); }
   finally{ btn.disabled=false; }
 }
