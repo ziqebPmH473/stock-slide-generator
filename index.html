@@ -1597,6 +1597,13 @@ function apInit(){
   try{
     const rd=localStorage.getItem(SSG_PREFIX+'restoreBaseDate');
     if(rd){ localStorage.removeItem(SSG_PREFIX+'restoreBaseDate'); if(/^\d{4}-\d{2}-\d{2}$/.test(rd)){ if(dateInput) dateInput.value=rd; if(autoDate) autoDate.value=rd; apUpdateDates(rd); } }
+    // それ以外：この端末の作業が別の日のもの（今日 13 日の作業を開いた など）なら、基準日をその作業の基準日に戻す（2026-11-16）。
+    // 開き直すたびに基準日が今日に戻り、作業の日（保存先）とずれるのを防ぐ
+    else{
+      const sy=JSON.parse(localStorage.getItem(SSG_PREFIX+'sync')||'null')||{};
+      const bd=/^\d{4}-\d{2}-\d{2}$/.test(sy.baseDate||'') ? sy.baseDate : sy.day;
+      if(sy.day && /^\d{4}-\d{2}-\d{2}$/.test(bd||'') && ssgEffDayOf(iso)!==sy.day && ssgEffDayOf(bd)===sy.day){ if(dateInput) dateInput.value=bd; if(autoDate) autoDate.value=bd; apUpdateDates(bd); }
+    }
   }catch(e){}
   if (typeof autoRestoreState === 'function') autoRestoreState();
   if (typeof debouncedPreview === 'function') debouncedPreview();
@@ -2896,6 +2903,13 @@ async function autoFetchSources(){
   const resultEl = document.getElementById('autoFetchResult');
   // 基準日の回（実際に取得する日）と、今取れるデータの日が違えば取得しない（ページは今の内容しか出さないため。2026-11-16）
   const want=ssgBizDay(), now=ssgEffDayOf(ssgToday());
+  // 基準日の回と、この端末の作業の日（保存先）が違えば、取得せずに先に日を切り替える（前の日を保存 → その日を開く／新しく始める。2026-11-16）
+  const cur=(ssgSyncGet()||{}).day||'';
+  if(cur && cur!==want){
+    statusEl.textContent=`📅 この端末の作業は ${cur} のものなので、先に ${want} に切り替えます。切り替わったら、もう一度データ取得を押してください`;
+    await ssgSyncBaseDateChanged();
+    return;
+  }
   if(want!==now){
     statusEl.textContent=`❌ 基準日の回は ${want} ですが、今取れるのは ${now} のデータなので、取得しません（過去の日のデータは取り直せません）`;
     autoStatusDone('❌ 基準日が違うので取得しませんでした');
@@ -4356,7 +4370,8 @@ let ssgSyncBaseOverride='', ssgDayShown='', ssgBaseShown='';
 const ssgSleep=ms=>new Promise(r=>setTimeout(r,ms));
 function ssgSetBaseInputs(v){ for(const id of ['apBaseDate','autoBaseDate']){ const el=document.getElementById(id); if(el) el.value=v; } try{ apUpdateDates(v); }catch(e){} }
 async function ssgSyncBaseDateChanged(){
-  const nb=ssgBaseValue(), nd=ssgBizDay(), od=ssgDayShown, ob=ssgBaseShown;
+  // 変える前の日は、この端末の作業の日（保存先）。無ければ開いたときの基準日の回
+  const sy=ssgSyncGet(), nb=ssgBaseValue(), nd=ssgBizDay(), od=sy.day||ssgDayShown, ob=(sy.day&&sy.baseDate)||ssgBaseShown||sy.day||'';
   if(!od || nd===od){ ssgBaseShown=nb; ssgDayShown=nd; return; }
   try{
     const c=await ssgSyncCollect();
