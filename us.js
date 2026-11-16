@@ -140,15 +140,148 @@ function usSaneActual(act, est, kind){
   return kind === 'rev' ? (r > 0.5 && r < 2) : Math.abs(act - est) <= Math.max(1, Math.abs(est) * 2);
 }
 
+// ---------- 対象日（2026-11-16 すみぽん「対象日はタブを開いた瞬間に更新して」「対象日と当日の日付ずれチェックを米国版にも」）----------
+// ・直近の日＝いま取引が終わっている最後の米国の取引日。米国版のタブを開くたびに、対象日の欄をこの日にする。
+//   まずこの端末で計算してすぐ入れ（休みのカレンダー US.cal。無ければ土日だけ）、サーバー（/api/us-sources?part=target。S&P500 の日足）の答えで直す。
+// ・ブラウザのタブに戻ってきたときは、直近の日が変わっていたとき（開いたまま日が変わった）か、欄を手で変えていないときだけ入れ直す。
+// ・この端末の作業の日（US.data.targetDate＝保存先の日）と直近の日・欄の日が違えば、欄の下に知らせる（usDateNote）。
+let usLatest = '';     // いま分かっている直近の日
+let usDateAuto = '';   // 欄に自動で入れた日（手で変えたかどうかの見分け）
+function usNowTarget(at){
+  const t = usLocal(at || Date.now(), 'America/New_York');
+  let d = t.date;
+  if(!(usNyDay(d) && t.min >= 960)) d = usAddDays(d, -1);   // 16:00（ニューヨーク）の引けの前は、前の日
+  for(let i = 0; i < 10 && !usNyDay(d); i++) d = usAddDays(d, -1);
+  return d;
+}
+// サーバーに対象日を聞く。wanted が空なら直近の日。戻り値 { targetDate, latestDate, inSession }
+async function usTarget(wanted){
+  const r = await fetch('/api/us-sources?part=target' + (wanted ? '&date=' + encodeURIComponent(wanted) : ''), { cache: 'no-store' });
+  const j = await r.json().catch(() => ({}));
+  if(!j.targetDate) throw new Error(j.error || `対象日を確かめられませんでした（HTTP ${r.status}）`);
+  return j;
+}
+let usDateSeq = 0;
+async function usDateRefresh(always){
+  const el = document.getElementById('usDate'); if(!el) return;
+  const seq = ++usDateSeq;
+  const apply = (d) => {
+    if(!d || seq !== usDateSeq) return;
+    const manual = el.value && el.value !== usDateAuto;
+    if(always || !manual || d !== usLatest){ el.value = d; usDateAuto = d; }
+    usLatest = d; usDateNote();
+  };
+  try{ apply(usNowTarget()); }catch(e){ console.warn(e); }
+  try{ apply((await usTarget('')).latestDate); }catch(e){ console.warn('対象日を確かめられませんでした', e); }
+}
+// 欄の下の知らせ：この端末の作業の日・欄の日・直近の日のずれ
+function usDateNote(){
+  const el = document.getElementById('usDateWarn'); if(!el) return;
+  const want = (document.getElementById('usDate') || {}).value || '', work = usSyncDate(), L = [];
+  if(usLatest && want && want !== usLatest) L.push(`⚠ 対象日の欄（${usDateJa(want)}）が、取引が終わっている直近の日（${usDateJa(usLatest)}）と違います。`);
+  const to = want || usLatest;
+  if(work && to && work !== to) L.push(`⚠ この端末の作業は ${usDateJa(work)} の回です。「データ取得」を押すと、${usDateJa(work)} の作業を保存してから ${usDateJa(to)} の回に切り替えます（${usDateJa(to)} の保存があれば開き、無ければ新しく始めます）。${usDateJa(work)} の続きをするなら、データ取得は押さずにそのまま作業してください。`);
+  el.textContent = L.join('\n');
+  el.style.display = L.length ? '' : 'none';
+}
+
+// ---------- 日の切り替え（2026-11-16。東証版の「基準日を変えたとき」と同じ考え方）----------
+// データ取得で対象日が、この端末の作業の日と違うとき：
+//   1. 前の日の作業を、前の日の自分の保存に送る（送れなければ、聞かずにファイルに出力してから進む）
+//   2. 変えたあとの日の保存があれば開く（自分の保存 → ほかのアカウント・共有の保存。中身の対象日が違うものは使わない）
+//   3. 無ければ、その日を新しく始める（レポート・台本・投稿文・動画のデータを空にする。前の日の保存は消さない）
+// こうしないと、新しい日の取得データに前の日のレポート・台本が付いたまま、新しい日の名前で保存されてしまう。
+// 戻り値：'opened'（保存を開いた）・'new'（新しく始めた）・'stay'（読み込みを取りやめた。前の日のまま）
+const usSleep = (ms) => new Promise(r => setTimeout(r, ms));
+function usHasWork(){ return !!(US.report || US.script || US.snsThumb || US.snsX || localStorage.getItem('ssgus_video')); }
+function usExportFile(date){
+  const out = { app: 'stock-slide-generator', kind: 'us', exportedAt: new Date().toISOString(), date, state: JSON.parse(localStorage.getItem(US_STATE_KEY) || 'null'), video: JSON.parse(localStorage.getItem('ssgus_video') || 'null') };
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(out)], { type: 'application/json' }));
+  a.download = `ssgus_state_${String(date).replace(/-/g, '')}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+async function usSyncFindDay(day){
+  let owners = [];
+  try{ const r = await (await fetch('/api/us-state?owners=1', { cache: 'no-store' })).json(); if(r.ok) owners = r.owners || []; }catch(e){}
+  const cands = [];
+  for(const o of owners){ const d = (o.days || []).find(x => x.date === day); if(d) cands.push({ from: o.me ? '' : o.owner, me: !!o.me, at: d.updatedAt || '' }); }
+  cands.sort((a, b) => (b.me - a.me) || String(b.at).localeCompare(String(a.at)));
+  for(const c of cands){
+    try{
+      const r = await (await fetch(`/api/us-state?date=${day}${c.from ? `&from=${encodeURIComponent(c.from)}` : ''}`, { cache: 'no-store' })).json();
+      const td = r.ok && r.doc && r.doc.state && r.doc.state.data && r.doc.state.data.targetDate;
+      if(!r.ok) continue;
+      if(td && td !== day){ console.warn('中身の対象日が違うので開きません', day, c.from || '自分', td); continue; }
+      return c;
+    }catch(e){}
+  }
+  return null;
+}
+async function usSwitchDay(nd, od){
+  const nosync = typeof SSG_NOSYNC !== 'undefined' && SSG_NOSYNC;
+  // 1. 前の日を保存（テスト用（?nosync）はサーバーに保存しないので、そのまま進む）
+  if(!nosync && (US.data || usHasWork())){
+    usStatus('usFetchStatus', `📅 ${usDateJa(od)} の作業を保存しています…`);
+    clearTimeout(usSyncTimer);
+    for(let i = 0; i < 150 && usSyncBusy; i++) await usSleep(200);
+    usSyncAgain = false;
+    const saved = usSyncOff ? false : await usSyncPush(false);
+    if(saved !== true && saved !== 'empty'){
+      try{ usExportFile(od); }catch(e){ console.warn('出力できませんでした', e); }
+      usSyncStatus(`☁ ${od} の作業をサーバーに保存できなかったので、ファイルに出力してから ${nd} に切り替えます`, 'error');
+    }
+  }
+  // 2. 変えたあとの日の保存があれば開く
+  if(!nosync && !usSyncOff){
+    const src = await usSyncFindDay(nd);
+    if(src){
+      await usSyncOpen(nd, true, src.from || undefined);
+      if(usSyncDate() !== nd) return 'stay';
+      usSyncStatus(`☁ ${nd} の保存を開きました${src.from ? `（${src.from === '_shared' ? '前の共有の保存' : src.from}から。開いたあとは自分の ${nd} に保存）` : ''}`, 'ok');
+      return 'opened';
+    }
+  }
+  // 3. 新しく始める
+  clearTimeout(usSyncTimer);
+  const cal = US.cal || null;
+  US = { data: null, report: '', parsed: null, script: '', snsThumb: '', snsX: '', step: '1', cal };
+  try{ localStorage.removeItem('ssgus_video'); }catch(e){}
+  if(typeof usVidHandle !== 'undefined' && usVidHandle){ try{ usVidHandle.unmount(); }catch(e){} usVidHandle = null; }
+  usSyncSet({});
+  usPersist(); usRenderAll(); usStep('1');
+  return 'new';
+}
+
 // ---------- ① 取得 ----------
+// 取得の前に確かめること（2026-11-16）：
+// ・対象日（欄が空なら直近の日。休場日を入れたらその前の取引日）をサーバーに聞いてから、その日を指定して取る
+// ・対象日が直近の日と違うときは確かめる（値上がり・値下がりの一覧と時間外の値動きは、今の値しか取れないため）。閉じた・キャンセルなら取らない
+// ・対象日がこの端末の作業の日と違うときは、先に日を切り替える（usSwitchDay）
+// ・取れたデータの対象日が違えば使わない
 async function usFetch(btn){
   const s = usSettings();
   const date = (document.getElementById('usDate') || {}).value || '';
-  const q = (o) => new URLSearchParams(Object.assign(date ? { date } : {}, o)).toString();
   const must = String(s.must || '').split(/[\s,、]+/).filter(Boolean).join(',');
   if(btn) btn.disabled = true;
-  usStatus('usFetchStatus', '取得中…（指数・決算・変動率の高い銘柄）');
+  usStatus('usFetchStatus', '対象日を確かめています…');
   try{
+    const tg = await usTarget(date);
+    const td = tg.targetDate, latest = tg.latestDate || td;
+    usLatest = latest; usDateNote();
+    if(td !== latest){
+      if(!confirm(`対象日 ${usDateJa(td)} は、取引が終わっている直近の日（${usDateJa(latest)}）と違います。\n指数と決算は ${usDateJa(td)} のものを取りますが、値上がり・値下がりの一覧と時間外の値動きは「今」の値になります。\nOK：${usDateJa(td)} で取得する\nキャンセル：取得しない`)){
+        usStatus('usFetchStatus', `❌ 対象日（${usDateJa(td)}）が直近の日（${usDateJa(latest)}）と違うので、取得しませんでした。対象日の欄を直してください`, 'error');
+        return;
+      }
+    }
+    const od = usSyncDate();
+    let switched = '';
+    if(od && od !== td){
+      switched = await usSwitchDay(td, od);
+      if(switched === 'opened'){ usStatus('usFetchStatus', `📅 この端末の作業は ${usDateJa(od)} の回だったので、${usDateJa(td)} の保存を開きました（${usDateJa(od)} の作業は ${usDateJa(od)} の保存に残っています）。データを取り直すときは、もう一度データ取得を押してください`, 'ok'); return; }
+      if(switched === 'stay'){ usStatus('usFetchStatus', `📅 ${usDateJa(td)} の読み込みを取りやめたので、取得していません（この端末の作業は ${usDateJa(od)} の回のまま）`); return; }
+    }
+    usStatus('usFetchStatus', '取得中…（指数・決算・変動率の高い銘柄）');
+    const q = (o) => new URLSearchParams(Object.assign({ date: td }, o)).toString();
     const get = async (o) => { const r = await fetch('/api/us-sources?' + q(o), { cache: 'no-store' }); const j = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` })); if(!r.ok && !j.error) j.error = `HTTP ${r.status}`; return j; };
     const calP = usFetchCalendar();   // 休みのカレンダー（確定／取引中の判定に使う）
     const [m, e, v] = await Promise.all([
@@ -158,18 +291,23 @@ async function usFetch(btn){
     ]);
     const err = [m, e, v].filter(x => !x.ok).map(x => x.error).filter(Boolean);
     if(!m.markets && !e.earnings) throw new Error(err.join(' / ') || '取得できませんでした');
-    US.data = { fetchedAt: new Date().toISOString(), targetDate: m.targetDate || e.targetDate, prevDate: m.prevDate || e.prevDate, markets: m.markets || null, earnings: e.earnings || null, movers: v.movers || null };
+    // 取れたデータの対象日が違えば使わない（いまの取得データはそのまま）
+    const got = [...new Set([m.markets && m.targetDate, e.earnings && e.targetDate].filter(Boolean))];
+    if(got.length !== 1 || got[0] !== td) throw new Error(`取れたのは ${got.map(usDateJa).join('・') || '日付不明'} のデータで、対象日 ${usDateJa(td)} と違うので使いません。もう一度データ取得を押してください`);
+    US.data = { fetchedAt: new Date().toISOString(), targetDate: td, prevDate: m.prevDate || e.prevDate, markets: m.markets || null, earnings: e.earnings || null, movers: v.movers || null };
     await calP;
     usPersist(); usRenderAll();
     usSyncFetchMark = true;   // 次の保存を「データ取得の直後の版」として送る（取得の前の版と分けて残す。2026-11-16）
     usStatus('usFetchStatus', '日本語の社名を取得中…（株探）');
     await usFetchNames().catch(() => {});
     usRenderAll();
-    const warn = [...err, ...((m.markets || {}).errors || []), ...((e.earnings || {}).errors || []), ...((v.movers || {}).errors || [])];
-    usStatus('usFetchStatus', (warn.length ? '⚠ ' + warn.join(' / ') : '✅ 取得しました') + `（対象日 ${usDateJa(US.data.targetDate)}）`, warn.length ? '' : 'ok');
+    // 対象日の値が無く、前の日の値になっている指数など
+    const stale = (((m.markets || {}).markets) || []).filter(r => r.date && r.date !== td).map(r => `${r.name}は ${usDateJa(r.date)} の値`);
+    const warn = [...err, ...stale, ...((m.markets || {}).errors || []), ...((e.earnings || {}).errors || []), ...((v.movers || {}).errors || [])];
+    usStatus('usFetchStatus', (warn.length ? '⚠ ' + warn.join(' / ') : '✅ 取得しました') + `（対象日 ${usDateJa(td)}${switched === 'new' ? `。${usDateJa(od)} の作業は ${usDateJa(od)} の保存に残し、${usDateJa(td)} を新しく始めました` : ''}）`, warn.length ? '' : 'ok');
   }catch(err){
     usStatus('usFetchStatus', '❌ ' + err.message, 'error');
-  }finally{ if(btn) btn.disabled = false; }
+  }finally{ if(btn) btn.disabled = false; usDateNote(); }
 }
 
 function usRenderAll(){
@@ -180,6 +318,7 @@ function usRenderAll(){
   const fc = document.getElementById('usReport'); if(fc && fc.value !== US.report) fc.value = US.report || '';
   const info = document.getElementById('usDateInfo');
   if(info) info.textContent = US.data ? `対象日：${usDateJa(US.data.targetDate)}（米国）・取得 ${new Date(US.data.fetchedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '';
+  usDateNote();
 }
 
 function usRenderMarkets(){
@@ -789,12 +928,22 @@ function usModelInit(){
 
 // ---------- 起動 ----------
 let _usReady = false;
+// 米国版のタブを開くたびに呼ばれる（index.html の switchTab）。準備は最初の1回だけ、対象日の欄は開くたびに直近の日にする（2026-11-16）
 function usInit(){
-  if(_usReady) return; _usReady = true;
-  usRestore(); usFillSettings(); usModelInit(); usRenderAll();
-  usStep(US.step || '1');
-  usSyncBoot().then(() => usSyncList());
-  if(US.script) usStatus('usScriptStatus', `${usScriptChars()}文字（約${Math.round(usScriptChars() / 7)}秒）`);
+  if(!_usReady){
+    _usReady = true;
+    usRestore(); usFillSettings(); usModelInit(); usRenderAll();
+    usStep(US.step || '1');
+    usSyncBoot().then(() => usSyncList());
+    if(US.script) usStatus('usScriptStatus', `${usScriptChars()}文字（約${Math.round(usScriptChars() / 7)}秒）`);
+    if(!US.cal) usFetchCalendar().then(() => usDateRefresh(false));   // 休みのカレンダーがまだ無い端末（直近の日の計算に使う）
+    // ブラウザのタブに戻ってきたとき（開いたまま日が変わっていないか）
+    document.addEventListener('visibilitychange', () => {
+      const tab = document.getElementById('tabUs');
+      if(document.visibilityState === 'visible' && tab && tab.classList.contains('active')) usDateRefresh(false);
+    });
+  }
+  usDateRefresh(true);
 }
 
 // ---------- ③ 動画：動画の部品（KessanViz.tse）で米国の場面を描く（2026-11-14）----------
@@ -1013,10 +1162,11 @@ async function usAudioPut(date, key, value){
   finally { db.close(); }
 }
 // 送る（変わったときに呼ぶ）。音声は、前に送ったものと text・seconds・大きさが違うものだけ送る
+// 戻り値：true（保存した）・'empty'（中身が無いので保存しなかった）・false（保存していない）
 function usSyncKick(){ clearTimeout(usSyncTimer); usSyncTimer = setTimeout(() => usSyncPush(false), 4000); }
 async function usSyncPush(force, allowShrink){
-  const date = usSyncDate(); if(!date || usSyncOff) return;
-  if(usSyncBusy){ usSyncAgain = true; return; }
+  const date = usSyncDate(); if(!date || usSyncOff) return false;
+  if(usSyncBusy){ usSyncAgain = true; return false; }
   usSyncBusy = true;
   try{
     const sync = usSyncGet();
@@ -1034,7 +1184,7 @@ async function usSyncPush(force, allowShrink){
     const doc = { state: JSON.parse(localStorage.getItem(US_STATE_KEY) || 'null'), video: JSON.parse(localStorage.getItem('ssgus_video') || 'null'), audio };
     // 中身が何も無いときは保存しない（2026-11-14。数え方はサーバーの functions/api/us-state.js の amount と同じ）
     { let n = 0; for(const v of Object.values(doc.state || {})){ const t = typeof v === 'string' ? v : JSON.stringify(v ?? ''); if(t && t.trim().length >= 50) n++; } if(doc.video) n++; n += Object.keys(audio).length;
-      if(n === 0){ usSyncStatus(`☁ ${date} はまだ中身が無いので、保存していません`); return; } }
+      if(n === 0){ usSyncStatus(`☁ ${date} はまだ中身が無いので、保存していません`); return 'empty'; } }
     const res = await fetch(`/api/us-state?date=${date}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doc, baseRev: sync.date === date ? (sync.rev || 0) : await usSyncRemoteRev(date), force: !!force, allowShrink: !!allowShrink, mark: usSyncFetchMark ? 'fetch' : '' }) });
     const d = await res.json().catch(() => ({}));
     if(res.status === 409 && d.shrink){
@@ -1042,17 +1192,18 @@ async function usSyncPush(force, allowShrink){
       // 確認を閉じた・キャンセルしたときは上書きしない（AI が操作するブラウザは確認を自動で閉じることがあるため）
       usSyncStatus(`☁ サーバーの ${date} の作業のほうが中身が多いので、上書きしていません`, 'error');
       const ok = confirm(`米国版：サーバーの ${date} の作業（${d.curAmount}項目）より、この端末の作業（${d.newAmount}項目）がかなり少ないので、上書きしていません。\nOK：この端末の作業でサーバーを上書きする（サーバーの作業は消えます）\nキャンセル：上書きしない（サーバーの作業はそのまま。読み込むときは ⚙設定の一覧の「開く」）`);
-      if(ok) setTimeout(() => usSyncPush(true, true), 0);
+      if(ok){ usSyncBusy = false; return await usSyncPush(true, true); }   // この回の保存は終わり。上書きで送り直して、その結果を返す
       else usSyncStatus(`☁ サーバーの ${date} の作業のほうが中身が多いので、上書きしていません（読み込むときは ⚙設定の一覧の「開く」）`, 'error');
-      return;
+      return false;
     }
-    if(res.status === 409){ usSyncStatus(`⚠ 別の端末が ${usSyncHm(d.updatedAt)} に保存しています。上書きしていません（⚙設定の「サーバー保存」で開くか上書きを選んでください）`, 'error'); return; }
-    if(res.status === 403 || res.status === 503){ usSyncOff = d.error || `HTTP ${res.status}`; usSyncStatus('☁ サーバー保存は使えません（' + usSyncOff + '）'); return; }
+    if(res.status === 409){ usSyncStatus(`⚠ 別の端末が ${usSyncHm(d.updatedAt)} に保存しています。上書きしていません（⚙設定の「サーバー保存」で開くか上書きを選んでください）`, 'error'); return false; }
+    if(res.status === 403 || res.status === 503){ usSyncOff = d.error || `HTTP ${res.status}`; usSyncStatus('☁ サーバー保存は使えません（' + usSyncOff + '）'); return false; }
     if(!res.ok || !d.ok) throw new Error(d.error || `HTTP ${res.status}`);
     usSyncSet({ date, rev: d.rev, audio });
     usSyncFetchMark = false;
     usSyncStatus(`☁ ${usSyncHm(d.updatedAt)} にサーバーへ保存しました（${date}）`, 'ok');
-  }catch(e){ usSyncStatus('☁ 保存できませんでした：' + e.message, 'error'); }
+    return true;
+  }catch(e){ usSyncStatus('☁ 保存できませんでした：' + e.message, 'error'); return false; }
   finally{ usSyncBusy = false; if(usSyncAgain){ usSyncAgain = false; usSyncKick(); } }
 }
 function usSyncHm(iso){ const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
@@ -1104,11 +1255,40 @@ async function usSyncList(){
     if(!r.ok){ box.innerHTML = `<span class="mut">${autoEsc(r.error || '')}</span>`; return; }
     const cur = usSyncDate();
     box.innerHTML = (r.owners || []).map(o => {
-      const rows = (o.days || []).slice(0, 10).map(d => `<div class="auto-row"><span>${autoEsc(usDateJa(d.date))}</span><span class="mut">${autoEsc(usSyncHm(d.updatedAt))} 保存</span>${o.me && d.date === cur ? '<span class="mut">（いま開いている回）</span>' : ''}<button class="btn-mini" onclick="usSyncOpenBtn('${d.date}'${o.me ? '' : `,'${autoEsc(o.owner)}'`})">${o.me ? '開く' : '読み込む'}</button></div>`).join('');
+      const rows = (o.days || []).slice(0, 10).map(d => `<div class="auto-row"><span>${autoEsc(usDateJa(d.date))}</span><span class="mut">${autoEsc(usSyncHm(d.updatedAt))} 保存</span>${o.me && d.date === cur ? '<span class="mut">（いま開いている回）</span>' : ''}<button class="btn-mini" onclick="usSyncOpenBtn('${d.date}'${o.me ? '' : `,'${autoEsc(o.owner)}'`})">${o.me ? '開く' : '読み込む'}</button>${o.me ? `<button class="btn-mini" onclick="usSyncShowGens('${d.date}')" title="上書きされる前の版の一覧">前の版</button>` : ''}</div>${o.me ? `<div id="usGens-${d.date}" class="mut" style="margin:0 0 4px 14px;"></div>` : ''}`).join('');
       if(o.me) return rows || '<span class="mut">自分の保存はまだありません</span>';
       return `<div class="mut" style="margin-top:6px;">${autoEsc(o.shared ? '共有（11/16 にアカウントごとに分ける前の保存）' : o.owner)}（読み込むだけ。読み込んだ内容は自分の保存先に入ります）</div>` + rows;
     }).join('');
   }catch(e){ box.innerHTML = '<span class="mut">一覧を取れませんでした</span>'; }
+}
+// 前の版（2026-11-16。東証版と同じ）：サーバーは上書きの前の版を1日ごとに5世代（30分ごとに1世代）＋データ取得の直後などの版を別に残す
+const US_GEN_REASON = { fetch: 'データ取得の直後', beforeFetch: 'データ取得の前', time: '30分ごと', first: '最初の版', day: '日が変わる前', force: '別の端末で上書きされる前', shrink: '中身が減る前', restore: '前の版に戻す前' };
+async function usSyncShowGens(date){
+  const el = document.getElementById('usGens-' + date); if(!el) return;
+  if(el.dataset.open === '1'){ el.dataset.open = ''; el.innerHTML = ''; return; }
+  el.dataset.open = '1'; el.textContent = '読み込み中…';
+  try{
+    const r = await (await fetch(`/api/us-state?date=${date}&history=1`, { cache: 'no-store' })).json();
+    if(!r.ok) throw new Error(r.error || '一覧を取れませんでした');
+    el.innerHTML = (r.history || []).length
+      ? r.history.map(g => `<div class="auto-row"><span>${autoEsc(usSyncHm(g.updatedAt))} の版</span><span class="mut">${Number(g.amount) || 0}項目・${autoEsc(US_GEN_REASON[g.reason] || g.reason || '')}</span><button class="btn-mini" onclick="usSyncRestoreGen('${date}',${Number(g.rev)},'${autoEsc(usSyncHm(g.updatedAt))}')">この版に戻す</button></div>`).join('')
+      : '前の版はまだありません（2026-11-16 から残し始めました）';
+  }catch(e){ el.textContent = '❌ ' + e.message; }
+}
+async function usSyncRestoreGen(date, rev, label){
+  if(!confirm(`サーバーの ${usDateJa(date)} の作業を、${label} の版に戻します。
+（いまの ${usDateJa(date)} の作業も「前の版」として残るので、あとから戻せます）
+戻したあと、その作業をこの端末に読み込みます（いまこの端末にある米国版の作業は置き換わります）。よろしいですか？`)) return;
+  try{
+    clearTimeout(usSyncTimer);
+    await usSyncPush(false);   // この端末の未送信の変更を先に送る（今の版として残る）
+    const res = await fetch(`/api/us-state?date=${date}&restore=${rev}`, { method: 'PUT' });
+    const r = await res.json().catch(() => ({}));
+    if(!res.ok || !r.ok) throw new Error(r.error || `HTTP ${res.status}`);
+    await usSyncOpen(date, true);
+    usSyncStatus(`☁ ${date} を ${label} の版に戻しました`, 'ok');
+    usSyncList();
+  }catch(e){ usSyncStatus('☁ 戻せませんでした：' + e.message, 'error'); }
 }
 async function usSyncOpenBtn(date, from){
   if(!confirm(`${from ? (from === '_shared' ? '前の共有の保存' : from + ' の保存') : '自分のサーバー保存'}の ${usDateJa(date)} の作業を開きます。いまこの端末にある米国版の作業は置き換わります。よろしいですか？`)) return;

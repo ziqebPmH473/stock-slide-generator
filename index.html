@@ -1127,7 +1127,7 @@ Appier G|4180|818|+96|+13.30%
         <button class="btn-mini" onclick="usSyncForce()" title="別の端末の保存を、この端末の作業で上書きする">この端末で上書き</button>
         <span id="usSyncStatus" class="mut"></span></div>
       <div id="usSyncList" style="margin-top:4px;"></div>
-      <p>米国版の作業（取得データ・レポート・台本・投稿文・動画のデータと読み上げの音声）は、米国の対象日ごとにサーバーへ自動で保存します。別の端末で開くと、いちばん新しい回の続きから開きます。直近30日分が残り、「開く」で前の回に戻せます。</p>
+      <p>米国版の作業（取得データ・レポート・台本・投稿文・動画のデータと読み上げの音声）は、米国の対象日ごとにサーバーへ自動で保存します。保存先はアカウントごとに分かれていて（2026-11-16 から）、ほかのアカウント（AI など）の保存で上書きされることはありません。<strong>開いたときに自動で読み込むことはしません。</strong>別の端末で続きをするときは、この一覧の「開く」（自分の保存）か「読み込む」（ほかのアカウント・前の共有の保存）を押してください。直近30日分と、1日ごとに前の版（5世代＋データ取得の直後などを別に）が残り、「前の版」→「この版に戻す」で戻せます。データ取得で対象日が変わったときは、前の日の作業を前の日の保存に送ってから、その日の保存を開くか、新しく始めます。</p>
     </div>
     <div class="auto-row" style="margin-top:6px;"><button class="btn-sm" onclick="usReset()">🗑 米国版の作業を消す</button>
       <a class="btn-sm admin-only" href="/admin" target="_blank" rel="noopener" style="display:none;text-decoration:none;">👤 管理画面を開く</a></div>
@@ -1137,10 +1137,11 @@ Appier G|4180|818|+96|+13.30%
     <h2>① データ取得・抽出（米国）</h2>
     <div class="auto-row">
       <label>対象日（米国）</label>
-      <input type="date" id="usDate" title="空欄なら、取引が終わった直近の日">
+      <input type="date" id="usDate" onchange="usDateNote()" title="米国版のタブを開くたびに、取引が終わっている直近の日が入ります。空欄でも直近の日">
       <button class="btn-sm" data-btn="米国版 ① データ取得" onclick="usFetch(this)">🔄 データ取得</button>
       <span id="usDateInfo" class="mut"></span>
     </div>
+    <div id="usDateWarn" style="display:none;white-space:pre-line;font-size:12px;color:#fbbf24;margin:2px 0 4px;"></div>
     <div id="usFetchStatus" class="mut"></div>
     <details open style="margin-top:8px;"><summary class="us-sum">指数・為替・金利・商品（場面1〜4）</summary><div id="usMarkets"></div></details>
     <details open style="margin-top:8px;"><summary class="us-sum">決算一覧（場面7。候補の中から AI が選んだ銘柄を載せる）</summary><div id="usEarnings"></div></details>

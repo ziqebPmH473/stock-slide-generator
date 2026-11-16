@@ -415,7 +415,10 @@ export async function onRequestGet({ request, env }) {
     // 対象日はどの part でも S&P500 の日足から決める
     const spx = await yahooDaily("^GSPC", "1mo");
     const td = decideTargetDate(spx, wanted);
-    Object.assign(out, { targetDate: td.target, prevDate: td.prev, inSession: td.inSession });
+    // latestDate：日付の指定に関係なく、いま取引が終わっている直近の日（画面が「対象日と直近の日のずれ」を確かめるのに使う。2026-11-16）
+    Object.assign(out, { targetDate: td.target, prevDate: td.prev, inSession: td.inSession, latestDate: decideTargetDate(spx, "").target });
+    // part=target：対象日だけ返す（米国版のタブを開いたとき・データ取得の前に確かめる用。指数などは取らない）
+    if (part === "target") return json({ ...out, ok: true });
 
     const jobs = {};
     if (part === "all" || part === "markets") jobs.markets = partMarkets(td.target, Math.min(12, Math.max(1, fnum("months", 3))));
