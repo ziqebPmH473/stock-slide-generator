@@ -106,6 +106,24 @@ function parseNikkei(html) {
   }));
 }
 
+// ページに出ている「何日何時のデータか」（2026-11-16）。株探「株価：2026年11月16日 16:00現在」、日経「2026年11月16日 15:50 更新」。
+// 年月日＋時刻のすぐ後に「現在・更新・時点」があるものだけを読む（ニュースなどの日付と取り違えないように）。
+// 野村は日付の出方を確かめていないので、見つからなかったときに備えて、日付らしい文字を dateHints に少し残す
+const AS_OF_RE = /(\d{4})\s*[年/.]\s*(\d{1,2})\s*[月/.]\s*(\d{1,2})\s*日?\s*(?:\([月火水木金土日]\)|（[月火水木金土日]）)?\s*(\d{1,2}):(\d{2})(?::\d{2})?\s*(?:現在|更新|時点)/;
+function parseAsOf(text) {
+  const m = text.match(AS_OF_RE);
+  if (!m) return null;
+  const p2 = (n) => String(n).padStart(2, "0");
+  return { date: `${m[1]}-${p2(m[2])}-${p2(m[3])}`, time: `${p2(m[4])}:${m[5]}`, text: m[0] };
+}
+function dateHints(text) {
+  const out = [];
+  const re = /(\d{4}[年/.]\d{1,2}[月/.]\d{1,2}日?|\d{1,2}\/\d{1,2})[^\n]{0,24}/g;
+  let m;
+  while ((m = re.exec(text)) && out.length < 6) out.push(text.slice(Math.max(0, m.index - 16), m.index + m[0].length));
+  return out;
+}
+
 async function fetchOne(src) {
   const out = { key: src.key, label: src.label, url: src.url };
   try {
@@ -118,7 +136,12 @@ async function fetchOne(src) {
     out.bytes = html.length;
     const httpOk = res.status >= 200 && res.status < 300;
     // 生テキスト（AIバックアップ用）
-    out.text = htmlToText(html).slice(0, 12000);
+    const fullText = htmlToText(html);
+    out.text = fullText.slice(0, 12000);
+    // 何日何時のデータか（ページの表示から）
+    const asOf = parseAsOf(fullText);
+    if (asOf) out.asOf = asOf;
+    else if (src.key === "nomura_index") out.dateHints = dateHints(fullText);
     // 構造化パース
     if (src.key === "nomura_index") { out.kind = "index"; out.rows = parseNomuraIndex(html); out.volumes = parseNomuraVolume(html); }
     else if (src.key.startsWith("kabutan_contrib")) { out.kind = "contrib"; out.rows = parseKabutanContrib(html); }

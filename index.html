@@ -2912,6 +2912,39 @@ async function autoFetchSources(){
   }
 }
 
+// ===== 取得したデータは何日のデータか（2026-11-16）=====
+// 1. ページの表示（株探「株価：2026年11月16日 16:00現在」・日経「2026年11月16日 15:50 更新」。サーバーが asOf に入れる）。いちばん多い日を使う
+// 2. ページに日付が無いとき（野村・前の版で取ったデータ）は、取得した時刻（日本時間）から：
+//    営業日の 15:30 以降＝その日の終値／営業日の 9:00〜15:30＝その日の取引中の値／それ以外（朝・休みの日）＝直前の営業日の終値
+// 戻り値 { day, time, trading, by:'page'|'time', odd:[日付が違うページ] } か null
+const AUTO_CLOSE_HM = '15:30', AUTO_OPEN_HM = '09:00';
+function autoJst(iso){ const d=new Date(iso); if(isNaN(d)) return null; const j=new Date(d.getTime()+9*3600e3); const p=n=>String(n).padStart(2,'0'); return { date:`${j.getUTCFullYear()}-${p(j.getUTCMonth()+1)}-${p(j.getUTCDate())}`, hm:`${p(j.getUTCHours())}:${p(j.getUTCMinutes())}`, local:new Date(j.getUTCFullYear(), j.getUTCMonth(), j.getUTCDate()) }; }
+function autoDataDay(sources, fetchedAt){
+  const list=(sources||[]).filter(s=>s && s.ok && s.asOf && /^\d{4}-\d{2}-\d{2}$/.test(s.asOf.date));
+  if(list.length){
+    const cnt={}; for(const s of list) cnt[s.asOf.date]=(cnt[s.asOf.date]||0)+1;
+    const day=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]||b.localeCompare(a))[0];
+    const time=list.filter(s=>s.asOf.date===day).map(s=>s.asOf.time).sort().pop()||'';
+    return { day, time, trading:!!time && time<AUTO_CLOSE_HM, by:'page', odd:list.filter(s=>s.asOf.date!==day).map(s=>`${s.label}：${s.asOf.date} ${s.asOf.time}`) };
+  }
+  const j=fetchedAt && autoJst(fetchedAt); if(!j) return null;
+  const biz=apIsBusinessDay(j.local);
+  if(biz && j.hm>=AUTO_CLOSE_HM) return { day:j.date, time:j.hm, trading:false, by:'time', odd:[] };
+  if(biz && j.hm>=AUTO_OPEN_HM) return { day:j.date, time:j.hm, trading:true, by:'time', odd:[] };
+  return { day:ssgIso(biz ? apPrevBizDayOf(j.local) : apMostRecentBizDay(j.local)), time:'', trading:false, by:'time', odd:[] };
+}
+function autoDataDayHtml(sources, fetchedAt){
+  const dd=autoDataDay(sources, fetchedAt); if(!dd) return '';
+  const j=fetchedAt&&autoJst(fetchedAt);
+  const base=(typeof ssgBizDay==='function')?ssgBizDay():'';
+  const warn=[];
+  if(dd.trading) warn.push(`取引中の値です（${dd.time} 時点）`);
+  if(base && dd.day!==base) warn.push(`基準日の回（${base}）と違う日のデータです`);
+  if(dd.odd.length) warn.push('ほかの日付のページ：'+dd.odd.join('、'));
+  const how=dd.by==='page' ? `ページの表示 ${dd.time}` : `取得した時刻 ${j?j.date.slice(5).replace('-','/')+' '+j.hm:''} から判定`;
+  return `<div style="font-size:12px;margin-top:6px;color:${warn.length?'#fbbf24':'var(--muted)'};">📅 データの日：<strong>${autoEsc(dd.day)}</strong>（${autoEsc(how)}）${warn.length?' ⚠ '+autoEsc(warn.join(' ／ ')):''}</div>`;
+}
+
 // ソースの構造化行を人が読める1行へ（種別ごと）
 function autoSourceLines(s){
   if(!s.rows || !s.rows.length) return (s.text||'').slice(0,300);
@@ -2938,7 +2971,7 @@ function autoRenderSources(sources){
          + body + `</details>`;
   }).join('');
   // 全体：正常時は折りたたむ／エラー時は開く
-  return `<details ${anyErr?'open':''} style="margin-top:8px;">`
+  return autoDataDayHtml(sources, AutoState.fetchedAt) + `<details ${anyErr?'open':''} style="margin-top:8px;">`
        + `<summary style="font-size:12px;color:${anyErr?'#f87171':'var(--muted)'};cursor:pointer;">`
        + (anyErr ? `⚠ 取得結果 ${okCount}/${sources.length} 件（${sources.length-okCount}件エラー）` : `取得結果 ${okCount}/${sources.length} 件 正常（クリックで詳細）`)
        + `</summary>${items}</details>`;
@@ -4047,6 +4080,18 @@ async function ssgSyncPush(force, allowShrink){
     }
     ssgSyncOff=`保存先（${s.day}）と基準日の回（${nd}）が違うので止めています`; ssgSyncStatus('☁ '+ssgSyncOff+'。ページを読み込み直すと、また確かめます', 'error'); return;
   }
+  // ・取得したデータの日が保存先の日と違う（13 日のデータを開いたまま基準日を 16 日にした など）→ 黙って保存せず聞く（2026-11-16）
+  //   閉じた・キャンセルなら保存を止める。OK なら、同じ取得・同じ保存先の日のあいだは聞き直さない
+  try{
+    const dd=autoDataDay(AutoState.sources, AutoState.fetchedAt);
+    const ack=`${AutoState.fetchedAt}|${s.day}`;
+    if(dd && dd.day!==s.day && s.ddAck!==ack){
+      if(!confirm(`取得したデータは ${dd.day} のデータです（${dd.by==='page'?'ページの表示':'取得した時刻から判定'}）が、サーバー保存の日は ${s.day} です。\nOK：${s.day} の作業として保存する\nキャンセル：保存しない（${s.day} を上書きしないよう、サーバー保存を止めます。データ取得をし直すか、基準日を ${dd.day} にしてください）`)){
+        ssgSyncOff=`取得したデータの日（${dd.day}）と保存先（${s.day}）が違うので止めています`; ssgSyncStatus('☁ '+ssgSyncOff+'。データ取得をし直すか、基準日を直してから、ページを読み込み直してください', 'error'); return;
+      }
+      ssgSyncSet(Object.assign(ssgSyncGet(), { ddAck:ack }));
+    }
+  }catch(e){}
   // ・ページを開いたまま営業日が変わった（週末から開いたままのタブで月曜の作業をするなど）→ 前の日の名前で保存し続けてよいか聞く
   const lastDay=localStorage.getItem(SSG_PREFIX+'lastDate')||'';
   if(lastDay && lastDay!==ssgWorkDay() && s.day<ssgWorkDay()){
@@ -4933,6 +4978,9 @@ async function wkLoadDay(day){
   let v=null; try{ v=JSON.parse(ls[VID_KEY]||'null'); }catch(e){}
   if(!v || !v.data) return null;
   // 保存の日と中身のデータの日が違うものは使わない（11/13 の保存が 16 日の作業で上書きされた件。前週末比などがずれるため。2026-11-16）
+  // 取得したデータの日（ページの表示か取得した時刻から）が保存の日と違うものも使わない
+  let dd=null; try{ const a=JSON.parse(ls[SSG_PREFIX+'autostate']||'null'); dd=a&&autoDataDay(a.sources, a.fetchedAt); }catch(e){}
+  if(dd && dd.day!==day){ wkBad[day]=dd.day; console.warn('週間まとめ：取得したデータの日が保存の日と違うので使いません', day, dd); return null; }
   if(/^\d{4}-\d{2}-\d{2}$/.test(v.data.date||'') && v.data.date!==day){ wkBad[day]=v.data.date; console.warn('週間まとめ：保存の日と中身の日が違うので使いません', day, v.data.date); return null; }
   return (wkData[day]=Object.assign({}, v.data, { _sec:wkSecVals(ls[SSG_PREFIX+'autostate']) }));
 }
