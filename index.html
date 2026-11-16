@@ -2910,7 +2910,8 @@ async function autoFetchSources(){
   const cur=(ssgSyncGet()||{}).day||'';
   if(cur && cur!==want){
     statusEl.textContent=`📅 この端末の作業は ${cur} のものなので、先に ${want} に切り替えます。切り替わったら、もう一度データ取得を押してください`;
-    await ssgSyncBaseDateChanged();
+    const r=await ssgSyncBaseDateChanged();
+    if(r==='moved') statusEl.textContent=`📅 この端末の作業を ${want} の作業にしました。もう一度データ取得を押すと取り直します`;
     return;
   }
   if(want!==now){
@@ -4377,6 +4378,17 @@ async function ssgSyncBaseDateChanged(){
   const sy=ssgSyncGet(), nb=ssgBaseValue(), nd=ssgBizDay(), od=sy.day||ssgDayShown, ob=(sy.day&&sy.baseDate)||ssgBaseShown||sy.day||'';
   if(!od || nd===od){ ssgBaseShown=nb; ssgDayShown=nd; return; }
   try{
+    // この端末の取得データが、変えたあとの日のものなら、作業はもともとその日のもの（13 日の保存先のまま 16 日に取得した AI の端末 など。2026-11-16）。
+    // 前の日には保存せず、作業ごと変えたあとの日に移す（その日の自分の保存があれば上書きし、上書きされる前の版は前の版として残る）
+    let dd=null; try{ dd=autoDataDay(AutoState.sources, AutoState.fetchedAt); }catch(e){}
+    if(dd && dd.day===nd){
+      let rev=0; if(ssgSyncReady && !ssgSyncOff){ const lst=await ssgSyncApi(''); const d=lst.ok && (lst.days||[]).find(x=>x.date===nd); if(d) rev=d.rev; }
+      ssgSyncSet(Object.assign(ssgSyncGet(), { day:nd, rev, parts:[], force:!!rev, on:true, baseDate:nb }));
+      ssgDayShown=nd; ssgBaseShown=nb;
+      ssgSyncStatus(`☁ 取得したデータは ${nd} のものなので、この端末の作業を ${nd} の作業として保存します（${od} の保存はそのまま）`, 'ok');
+      ssgSyncKick();
+      return 'moved';
+    }
     const c=await ssgSyncCollect();
     if(ssgSyncAmount(c)>0){
       let saved=false;
