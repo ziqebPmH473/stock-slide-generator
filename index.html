@@ -1186,9 +1186,9 @@ Appier G|4180|818|+96|+13.30%
       <button class="btn-mini" onclick="usThumbReset()" title="手で直した文言を捨てて、初期値に戻す（上段＝NYダウの値動き、中段・下段＝④のサムネ案の最有力）">↺ 初期値</button>
       <span class="mut">横動画の最初に入れます（空欄なら入れない）。上段はツールが NYダウ の値動きから入れ、中段・下段は④のサムネ案の最有力。</span></div>
     <div class="auto-row"><strong>縦サムネ（2段）</strong>
-      1段目 <input id="usVThumb1" type="text" onchange="usVThumbChanged()" style="flex:1;min-width:150px;">
-      2段目 <input id="usVThumb2" type="text" onchange="usVThumbChanged()" style="flex:1;min-width:150px;">
-      <span class="mut">縦動画の書き出しで、別の画像として一緒に保存します。初期値は上の上段・中段。</span></div>
+      1段目 <textarea id="usVThumb1" rows="2" onchange="usVThumbChanged()" style="flex:1;min-width:150px;min-height:44px;margin-top:0;"></textarea>
+      2段目 <textarea id="usVThumb2" rows="2" onchange="usVThumbChanged()" style="flex:1;min-width:150px;min-height:44px;margin-top:0;"></textarea>
+      <span class="mut">縦動画の書き出しで、別の画像として一緒に保存します。欄の中の改行が、そのまま改行の位置になります。初期値は上の上段・中段で、「は」「の」のあとで改行します。</span></div>
     <div id="usThumbPreview" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:4px 0;"></div>
     <div class="auto-row"><strong>読み上げ</strong>
       声 <select id="usTtsVoice" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;min-height:32px;"></select>

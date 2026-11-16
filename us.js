@@ -762,8 +762,10 @@ const US_SNS_PROMPT = `あなたはYouTube「米国株マーケット振り返�
 
 【サムネ案（3本＋最有力）】
 ・サムネは3段です。上段は、ツールが指数の値動きから決まった形で入れます（例：NYダウは大幅安）。作るのは中段と下段だけです。指数の値動きは中段・下段に書かないでください。
-・スラッシュ区切りの1行（中段／下段）。中段＝注目銘柄名や注目点（全角6〜9文字）／下段＝抽象的な問いかけ（全角8〜10文字）。
-・「え、なんで？」と思わせるギャップ（例：好決算なのに株価下落、ガイダンスで明暗）を優先。順当な結論は禁止。
+・スラッシュ区切りの1行（中段／下段）。中段＝その日の相場を動かした注目点（材料・テーマ。全角6〜9文字）／下段＝抽象的な問いかけ（全角8〜10文字）。
+・サムネは、その日の米国市場全体の話にしてください。個別銘柄の話を中心にしないでください。
+・個別銘柄を出すなら、どちらか1段だけにし、その1段の中で「どの銘柄が・どうなったか（何が起きたか）」を言い切ってください（例：エヌビディアに後継不安）。中段と下段の両方を使って1つの銘柄のことを書かないでください。もう1段は、市場全体の材料・テーマにします。
+・「え、なんで？」と思わせるギャップ（例：好材料なのに売られた、同じ材料で明暗）を優先。順当な結論は禁止。
 ・強調：下段は、目を引きたい言葉を2か所、記号で挟んで色を付ける。前のほうの言葉を #言葉#（水色）、後ろのほうの言葉を %言葉%（黄色）で挟む（例：#利下げ観測#で%主役交代%）。中段は白地に出るので、記号を付けない。
 ・禁止：！ ？ 数値 株価の方向性（上昇/下落の明示） スペース 引用符。強調の記号（# %）は文字数に数えない。
 ・銘柄名はカタカナの社名にする（ティッカーは使わない）。
@@ -1147,12 +1149,30 @@ function usThumbText(){
   if(el && !o.thumbEdited){ const d = usThumbDefault(); if(d && el.value !== d) el.value = d; }
   return el ? el.value.trim() : '';
 }
-// 縦サムネの1段目・2段目。手で直していないあいだは、横のサムネの文言の上段・中段
+// 縦サムネの初期値の改行（2026-11-16 すみぽん「〜は・〜の で改行。初期値なので必ずそこで改行でなくてよい」）：
+// 「は」「の」のあとで1回だけ改行する（「NYダウは／*小幅反発*」「金利上昇の／震源」）。2つ以上あれば、まん中に近いほう。
+// 強調の記号（* # %）で挟んだ言葉の中・文の最後・前後が1文字だけになる位置では切らない。欄で直せば、直した改行のまま
+function usVThumbBreak(text){
+  const t = String(text || ''); if(!t || t.includes('\n')) return t;
+  const plain = t.replace(/[*#%]/g, '').length;
+  let open = '', seen = 0, best = -1, bestGap = Infinity;
+  for(let i = 0; i < t.length; i++){
+    const c = t[i];
+    if('*#%'.includes(c)){ open = open === c ? '' : (open || c); continue; }
+    seen++;
+    if((c === 'は' || c === 'の') && !open && seen >= 2 && plain - seen >= 2){
+      const gap = Math.abs(seen - plain / 2);
+      if(gap < bestGap){ bestGap = gap; best = i; }
+    }
+  }
+  return best < 0 ? t : t.slice(0, best + 1) + '\n' + t.slice(best + 1);
+}
+// 縦サムネの1段目・2段目。手で直していないあいだは、横のサムネの文言の上段・中段（「は」「の」のあとで改行）
 function usVThumbTexts(){
   const o = usVidLoad() || {};
   const els = [1, 2].map(i => document.getElementById('usVThumb' + i));
   if(!o.vthumbEdited){
-    const parts = usThumbText().split(/[：:]/).map(x => x.trim());
+    const parts = usThumbText().split(/[：:]/).map(x => usVThumbBreak(x.trim()));
     els.forEach((el, i) => { if(el && el.value !== (parts[i] || '')) el.value = parts[i] || ''; });
   }
   return els.map(el => (el && el.value || '').trim());
