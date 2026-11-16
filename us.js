@@ -840,7 +840,11 @@ async function usRunAll(btn){
 async function usRegen(kind, btn){
   btn.disabled = true;
   try{
-    if(kind === 'script'){ await usGenScript(btn); await usScriptApply(); } else await usGenSns(btn);
+    if(kind === 'script'){
+      await usGenScript(btn); await usScriptApply();
+      // 台本を作り直したら、画面に出す冒頭の一言とまとめ（AI）も新しい台本に合わせて作り直す（動画のデータがあるときだけ）
+      if(typeof usVidLoad === 'function' && (usVidLoad() || {}).data) await usVidScreenAi(null);
+    } else await usGenSns(btn);
     usRenderVideo();
   }
   catch(e){ usStatus(kind === 'script' ? 'usScriptStatus' : 'usSnsStatus', '❌ ' + e.message, 'error'); }
@@ -1088,6 +1092,14 @@ async function usVidBuild(btn, quiet){
     const prev = usVidLoad() || {};
     if(prev.data && prev.data.date === data.date){ data.headline = prev.data.headline || ''; data.summary = prev.data.summary || null; }
     if(!data.headline) data.headline = (usScriptSections()['オープニング'] || '').split(/[。\n]/)[0];
+    // まとめの画面のデータ（AI が作る一言・注目点）がまだ無くても、台本に【まとめ】があれば、仮のまとめ（冒頭の一言だけ）で場面を出す。
+    // データが無いと場面ごと出ず、まとめの台本に音声が入らなかった（2026-11-16 すみぽん「まとめに音声が入らない」）。
+    // 「一言・まとめを AI で作る」を押せば、AI が作ったまとめに入れ替わる
+    if(data.summary && data.summary.auto) data.summary = null;   // 仮のまとめは、いまの台本から作り直す
+    if(!data.summary){
+      const feature = data.headline || (usScriptSections()['まとめ'] || '').split(/[。\n]/)[0];
+      if((usScriptSections()['まとめ'] || '').trim() && feature) data.summary = { feature, closing: null, points: [], auto: true };
+    }
     let narration = usNarration();
     const prevNar = (prev.settings && prev.settings.narration) || {};
     if(!Object.keys(narration).length && Object.keys(prevNar).length) narration = prevNar;
@@ -1101,7 +1113,7 @@ async function usVidBuild(btn, quiet){
     const settings = Object.assign({}, prev.settings || {}, { narration });
     usVidSave(Object.assign({}, prev, { data, settings, builtAt: new Date().toISOString() }));
     await usVidMount(true);
-    if(!quiet) usVidStatus('✅ 動画のデータを作りました' + (data.summary ? '' : '（まとめはまだありません。「一言・まとめを AI で作る」で作れます）'), 'ok');
+    if(!quiet) usVidStatus('✅ 動画のデータを作りました' + (data.summary && !data.summary.auto ? '' : data.summary ? '（まとめの画面は仮のもの（冒頭の一言だけ）です。「一言・まとめを AI で作る」で注目点を入れられます）' : '（まとめはまだありません。「一言・まとめを AI で作る」で作れます）'), 'ok');
     return true;
   }catch(e){ usVidStatus('❌ ' + e.message, 'error'); return false; }
   finally{ if(btn) btn.disabled = false; }
