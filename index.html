@@ -2893,6 +2893,13 @@ async function autoFetchSources(){
   const btn = document.getElementById('autoFetchBtn');
   const statusEl = document.getElementById('autoFetchStatus');
   const resultEl = document.getElementById('autoFetchResult');
+  // 基準日の回（実際に取得する日）と、今取れるデータの日が違えば取得しない（ページは今の内容しか出さないため。2026-11-16）
+  const want=ssgBizDay(), now=ssgEffDayOf(ssgToday());
+  if(want!==now){
+    statusEl.textContent=`❌ 基準日の回は ${want} ですが、今取れるのは ${now} のデータなので、取得しません（過去の日のデータは取り直せません）`;
+    autoStatusDone('❌ 基準日が違うので取得しませんでした');
+    return;
+  }
   btn.disabled = true;
   statusEl.textContent = '';
   autoStatus('データ取得中…（8ページ）');
@@ -2901,6 +2908,9 @@ async function autoFetchSources(){
     const res = await fetch('/api/fetch-sources');
     if(!res.ok) throw new Error('サーバー応答エラー: ' + res.status);
     const data = await res.json();
+    // 取れたデータの日（ページの表示から）が基準日の回と違えば、使わない（いまの取得データはそのまま。2026-11-16）
+    const dd=autoDataDay(data.sources, data.fetchedAt);
+    if(dd && dd.by==='page' && dd.day!==want) throw new Error(`取れたのは ${dd.day} のデータ（ページの表示 ${dd.time}）で、基準日の回 ${want} と違うので使いません`);
     AutoState.sources = data.sources;
     AutoState.fetchedAt = data.fetchedAt;
     const okCount = data.sources.filter(s=>s.ok).length;
