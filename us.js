@@ -877,7 +877,9 @@ function usVideoData(){
     numbers: { epsEstimate: r.eps.estimate, epsActual: r.eps.actual, revenueEstimate: r.revenue.estimate, revenueActual: r.revenue.actual, aiFilled: r.aiFilled },
   }));
   const pages = [];
-  for(let i = 0; i < earn.length && pages.length < 2; i += US_EARN_PER_PAGE) pages.push(earn.slice(i, i + US_EARN_PER_PAGE));
+  // 2ページになるとき（9銘柄以上）は、2ページに均等に分ける（10銘柄なら 5・5、11銘柄なら 6・5。2026-11-16 すみぽん。前は 8 と残りで、2ページ目が1〜2銘柄だけになっていた）
+  const per = earn.length > US_EARN_PER_PAGE ? Math.min(US_EARN_PER_PAGE, Math.ceil(earn.length / 2)) : US_EARN_PER_PAGE;
+  for(let i = 0; i < earn.length && pages.length < 2; i += per) pages.push(earn.slice(i, i + per));
   return {
     market: 'us', date: d.targetDate, prevDate: d.prevDate,
     scenes: {
