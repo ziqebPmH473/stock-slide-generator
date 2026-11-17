@@ -709,7 +709,7 @@ Appier G|4180|818|+96|+13.30%
         <label class="btn-sm" style="cursor:pointer;">📁 Excel/CSV取込<input type="file" accept=".xls,.xlsx,.csv" style="display:none" onchange="autoImportMeigaraCsv(this)"></label>
         <span style="font-size:10px;color:var(--muted);">現在：<span id="autoDictInfo2">-</span></span>
       </div>
-      <p style="margin-bottom:0;">JPXの最新data_j（Excel .xls/.xlsx またはCSV）を取り込むと辞書を更新（ブラウザに保存・次回以降有効）。</p>
+      <p style="margin-bottom:0;">JPXの最新data_j（Excel .xls/.xlsx またはCSV）を取り込むと辞書を更新（サーバーに保存。どのブラウザ・アカウントでも同じ一覧を使います）。</p>
     </div>
   </div>
 
@@ -3092,12 +3092,39 @@ function autoConvertNames(){
   autoPersistState();
 }
 
-// ブラウザに保存済みの銘柄辞書があれば同梱版より優先して使う
+// 銘柄辞書：サーバー（/api/meigara-dict、全アカウント共通の1つ）に取り込んだものがあれば同梱版より優先して使う（2026-11-17）
+// ・まずブラウザに残した写し（前に読んだサーバーのもの）ですぐ使い、サーバーから読めたら置き換える
+// ・サーバーにまだ無く、このブラウザに前の取込（ブラウザ保存だった頃のもの）があれば、それをサーバーに上げる
 function autoLoadCustomDict(){
+  let local=null;
   try{
     const d=localStorage.getItem(SSG_PREFIX+'meigara_dict');
-    if(d){ window.MEIGARA_DICT=JSON.parse(d); const m=localStorage.getItem(SSG_PREFIX+'meigara_meta'); if(m) window.MEIGARA_META=JSON.parse(m); }
+    if(d){ local={dict:JSON.parse(d), meta:JSON.parse(localStorage.getItem(SSG_PREFIX+'meigara_meta')||'null')}; window.MEIGARA_DICT=local.dict; if(local.meta) window.MEIGARA_META=local.meta; }
   }catch(e){}
+  autoLoadServerDict(local);
+}
+function autoKeepDictCopy(dict, meta){
+  try{ localStorage.setItem(SSG_PREFIX+'meigara_dict', JSON.stringify(dict)); localStorage.setItem(SSG_PREFIX+'meigara_meta', JSON.stringify(meta)); }catch(e){}
+}
+async function autoLoadServerDict(local){
+  try{
+    const res=await fetch('/api/meigara-dict',{cache:'no-store'});
+    const d=await res.json().catch(()=>null);
+    if(!res.ok || !d || !d.ok) return;
+    if(d.none){
+      if(local && local.dict && Object.keys(local.dict).length>=1000) await autoSaveServerDict(local.dict, local.meta||{}).catch(()=>{});
+      return;
+    }
+    window.MEIGARA_DICT=d.dict; window.MEIGARA_META=Object.assign({}, d.meta||{}, {count:(d.meta&&d.meta.count)||Object.keys(d.dict).length});
+    autoKeepDictCopy(window.MEIGARA_DICT, window.MEIGARA_META);
+    autoInitDict();
+  }catch(e){}
+}
+async function autoSaveServerDict(dict, meta){
+  const res=await fetch('/api/meigara-dict',{method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({dict, meta})});
+  const d=await res.json().catch(()=>null);
+  if(!res.ok || !d || !d.ok) throw new Error((d&&d.error)||('HTTP '+res.status));
+  return d.meta;
 }
 function autoInitDict(){
   const txt = (autoDictReady() && window.MEIGARA_META) ? `${window.MEIGARA_META.count}銘柄 / 基準日 ${window.MEIGARA_META.date}` : '⚠ 辞書未読込';
@@ -3108,7 +3135,7 @@ function autoInitDict(){
     thumbEl.value = (cur && cur.trim()) ? cur : thumbDefault();
   }
 }
-// 東証data_j（Excel .xls/.xlsx またはCSV/Shift-JIS）を取り込んで辞書を更新（localStorage保存）
+// 東証data_j（Excel .xls/.xlsx またはCSV/Shift-JIS）を取り込んで辞書を更新（サーバーに保存。全アカウント共通）
 function autoImportMeigaraCsv(input){
   const file=input.files && input.files[0]; if(!file) return;
   const isExcel=/\.(xlsx?|xlsm)$/i.test(file.name);
@@ -3130,12 +3157,13 @@ function autoImportMeigaraCsv(input){
       if(cnt<1000){ alert('銘柄が少なすぎます（'+cnt+'件）。東証data_j（銘柄一覧）のファイルか確認してください。'); input.value=''; return; }
       const date=String((rows[1]&&rows[1][0])||'').trim();
       window.MEIGARA_DICT=map; window.MEIGARA_META={source:isExcel?'取込Excel':'取込CSV', date, count:cnt};
-      localStorage.setItem(SSG_PREFIX+'meigara_dict', JSON.stringify(map));
-      localStorage.setItem(SSG_PREFIX+'meigara_meta', JSON.stringify(window.MEIGARA_META));
+      autoKeepDictCopy(map, window.MEIGARA_META);
       autoInitDict();
-      alert('銘柄一覧を更新しました（'+cnt+'件 / 基準日 '+date+'）。');
-    }catch(err){ alert('取込に失敗: '+err.message); }
-    finally{ input.value=''; }
+      autoSaveServerDict(map, window.MEIGARA_META)
+        .then(()=>alert('銘柄一覧を更新して、サーバーに保存しました（'+cnt+'件 / 基準日 '+date+'）。ほかのブラウザ・アカウントでも、次に開いたときからこの一覧になります。'))
+        .catch(err=>alert('銘柄一覧はこのブラウザでは更新しましたが、サーバーに保存できませんでした（'+err.message+'）。もう一度取り込んでください。'))
+        .finally(()=>{ input.value=''; });
+    }catch(err){ alert('取込に失敗: '+err.message); input.value=''; }
   };
   r.readAsArrayBuffer(file);
 }
@@ -4059,7 +4087,7 @@ async function ssgStateImport(file){
 //   今日の保存が無ければ（日が変わった）、今までどおり新しく始める。別の端末から戻ってきたとき（画面が表に出たとき）も同じ確かめをする。
 // ・この端末の状態は localStorage の ssg_sync に持つ（{day, rev, parts, baseDate, on, force}）。保存・取込の対象には入れない。
 const SSG_SYNC_KEY = SSG_PREFIX+'sync';
-const SSG_SYNC_SKIP = ['sync','lastDate','restoreBaseDate','restoreStep'].map(k=>SSG_PREFIX+k);
+const SSG_SYNC_SKIP = ['sync','lastDate','restoreBaseDate','restoreStep','meigara_dict','meigara_meta'].map(k=>SSG_PREFIX+k);   // 銘柄一覧はサーバー共通の別保存（日ごとの作業には入れない）
 let ssgSyncReady=false, ssgSyncBusy=false, ssgSyncOff='', ssgSyncTimer=null, ssgSyncPending=false;
 function ssgSyncGet(){ try{ return JSON.parse(localStorage.getItem(SSG_SYNC_KEY)||'null')||{}; }catch(e){ return {}; } }
 function ssgSyncSet(o){ try{ localStorage.setItem(SSG_SYNC_KEY, JSON.stringify(o||{})); }catch(e){} }
