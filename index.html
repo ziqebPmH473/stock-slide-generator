@@ -654,6 +654,7 @@ Appier G|4180|818|+96|+13.30%
         <option value="claude-opus-5-5">Claude Opus 5.5</option>
       </select>
     </div>
+    <div class="ai-claude-err" style="display:none;margin:4px 0 6px;padding:6px 8px;border:1px solid #c98a00;border-radius:5px;background:rgba(201,138,0,.12);font-size:12px;line-height:1.6;color:var(--text);"></div>
     <p>モデルを固定するとそのモデルで実行（テスト用）。「自動」で各工程の推奨モデル＋上限時の自動降格になります。</p>
     <div class="auto-row" style="margin-top:6px;flex-wrap:wrap;">
       <strong style="font-size:12px;color:var(--text);">固定ハッシュタグ</strong>
@@ -1120,6 +1121,7 @@ Appier G|4180|818|+96|+13.30%
     <p>X投稿文の末尾に付けます。</p>
     <div class="auto-row"><strong>テキストモデル</strong>
       <select id="usModel" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;min-height:32px;"></select></div>
+    <div class="ai-claude-err" style="display:none;margin:4px 0 6px;padding:6px 8px;border:1px solid #c98a00;border-radius:5px;background:rgba(201,138,0,.12);font-size:12px;line-height:1.6;color:var(--text);"></div>
     <p>台本・サムネ案・X投稿文・一言とまとめを作る AI です。東証版の ⚙設定 の「テキストモデル」と同じ1つの設定で、どちらで変えても両方に反映されます。「自動」は推奨モデル＋混雑時の自動降格です。</p>
     <div class="auto-row"><strong>読み上げ</strong>
       声 <select id="usTtsVoice2" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px;min-height:32px;"></select>
@@ -2694,7 +2696,7 @@ async function aiFetch(url, init){
   if(!keys.gemini&&!keys.claude){
     // サーバー（/api/analyze）経由：Claude で失敗して次へ回ったときは claudeError が付いてくる
     const res=await fetch(url, init);
-    try{ const d=await res.clone().json(); if(d&&d.claudeError) aiResetModelToAuto(d.claudeError.model, d.claudeError.error); }catch(e){}
+    try{ const d=await res.clone().json(); if(d&&d.claudeError) aiResetModelToAuto(d.claudeError.model, d.claudeError.error); else if(d&&d.ok&&aiIsClaude(d.model)) aiClaudeErrClear(); }catch(e){}
     return res;
   }
   const out=(obj,status=200)=>new Response(JSON.stringify(obj),{status,headers:{'Content-Type':'application/json'}});
@@ -2734,6 +2736,7 @@ async function aiFetch(url, init){
           if(data.stop_reason==='refusal'){ lastErr='Claude が回答を断りました'+(data.stop_details&&data.stop_details.explanation?'：'+data.stop_details.explanation:''); clFail(i,m,lastErr,true); break; }
           const text=(data.content||[]).filter(x=>x.type==='text').map(x=>x.text||'').join('').trim();
           const u=data.usage||{}; const inTok=(u.input_tokens||0)+(u.cache_read_input_tokens||0)+(u.cache_creation_input_tokens||0);
+          aiClaudeErrClear();   // Claude で実行できたので、エラーの記録は消す
           return out({ok:true,text,usage:{promptTokenCount:inTok,candidatesTokenCount:u.output_tokens||0,totalTokenCount:inTok+(u.output_tokens||0)},model:m,fellBack:i>0});
         }
         if(res.ok){
@@ -2775,12 +2778,45 @@ function autoModelChain(cls){
 }
 // Claude で失敗したとき：「テキストモデル」を自動に戻し（米国版の欄・保存にも反映）、画面の上にそのことを出す
 function aiResetModelToAuto(model, why){
+  aiClaudeErrAdd(model, why);
   const el=document.getElementById('autoModelOverride');
   if(el && aiIsClaude(el.value)){
-    el.value=''; el.dispatchEvent(new Event('change',{bubbles:true})); el.dispatchEvent(new Event('input',{bubbles:true}));
+    _aiResetting=true;
+    try{ el.value=''; el.dispatchEvent(new Event('change',{bubbles:true})); el.dispatchEvent(new Event('input',{bubbles:true})); }
+    finally{ _aiResetting=false; }
   }
   aiNotice(`⚠ ${model} でエラーになったため、テキストモデルを「自動」に戻して Gemini でやり直しました。（${String(why||'').slice(0,160)}）`);
 }
+// Claude のエラーの記録（2026-11-17 すみぽん「設定タブにエラーだったこと、回数、日時を残して。リロードしても残るように」）
+// ・ブラウザに残す（ssg_claudeErr）：{ model, count, first, last, reason }。東証版・米国版の ⚙設定 の「テキストモデル」の下に出す
+// ・消すのは：自分でテキストモデルを Claude 以外に変えたとき／Claude でエラーにならずに実行できたとき（自動に戻したとき・Claude を選び直したときは消さない）
+const AI_CLAUDE_ERR=SSG_PREFIX+'claudeErr';
+let _aiResetting=false;
+function aiClaudeErrGet(){ try{ return JSON.parse(localStorage.getItem(AI_CLAUDE_ERR)||'null'); }catch(e){ return null; } }
+function aiClaudeErrAdd(model, why){
+  const now=new Date().toISOString(), o=aiClaudeErrGet()||{count:0, first:now};
+  o.count=(o.count||0)+1; o.last=now; o.model=model; o.reason=String(why||'').slice(0,300);
+  try{ localStorage.setItem(AI_CLAUDE_ERR, JSON.stringify(o)); }catch(e){}
+  aiClaudeErrRender();
+}
+function aiClaudeErrClear(){ try{ localStorage.removeItem(AI_CLAUDE_ERR); }catch(e){} aiClaudeErrRender(); }
+function aiClaudeErrRender(){
+  const o=aiClaudeErrGet();
+  const fmt=t=>{ try{ return new Date(t).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return t||''; } };
+  document.querySelectorAll('.ai-claude-err').forEach(el=>{
+    if(!o){ el.style.display='none'; el.textContent=''; return; }
+    el.style.display='';
+    el.innerHTML=`⚠ <b>${autoEsc(o.model||'Claude')}</b> がエラーになり、テキストモデルを「自動」に戻しました。<br>`
+      +`回数：<b>${o.count}回</b>　最後：${autoEsc(fmt(o.last))}${o.count>1?`　最初：${autoEsc(fmt(o.first))}`:''}<br>`
+      +`<span style="color:var(--muted);">理由：${autoEsc(o.reason||'')}</span>`;
+  });
+}
+document.addEventListener('DOMContentLoaded', ()=>{
+  aiClaudeErrRender();
+  const el=document.getElementById('autoModelOverride');
+  // Claude を選び直したとき（もう一度試す）は消さずに回数を数え続ける。Claude 以外に自分で変えたら消す
+  if(el) el.addEventListener('change', ()=>{ if(!_aiResetting && !aiIsClaude(el.value)) aiClaudeErrClear(); });
+});
 function aiNotice(msg){
   let b=document.getElementById('aiNoticeBar');
   if(!b){
@@ -4123,7 +4159,7 @@ async function ssgStateImport(file){
 //   今日の保存が無ければ（日が変わった）、今までどおり新しく始める。別の端末から戻ってきたとき（画面が表に出たとき）も同じ確かめをする。
 // ・この端末の状態は localStorage の ssg_sync に持つ（{day, rev, parts, baseDate, on, force}）。保存・取込の対象には入れない。
 const SSG_SYNC_KEY = SSG_PREFIX+'sync';
-const SSG_SYNC_SKIP = ['sync','lastDate','restoreBaseDate','restoreStep','meigara_dict','meigara_meta'].map(k=>SSG_PREFIX+k);   // 銘柄一覧はサーバー共通の別保存（日ごとの作業には入れない）
+const SSG_SYNC_SKIP = ['sync','lastDate','restoreBaseDate','restoreStep','meigara_dict','meigara_meta','claudeErr'].map(k=>SSG_PREFIX+k);   // 銘柄一覧はサーバー共通の別保存（日ごとの作業には入れない）
 let ssgSyncReady=false, ssgSyncBusy=false, ssgSyncOff='', ssgSyncTimer=null, ssgSyncPending=false;
 function ssgSyncGet(){ try{ return JSON.parse(localStorage.getItem(SSG_SYNC_KEY)||'null')||{}; }catch(e){ return {}; } }
 function ssgSyncSet(o){ try{ localStorage.setItem(SSG_SYNC_KEY, JSON.stringify(o||{})); }catch(e){} }
