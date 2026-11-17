@@ -74,9 +74,13 @@ export async function onRequestPost(context) {
   const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
   let lastErr = "";
+  // Claude で失敗して次のモデルへ回したとき（断られたとき以外）、画面が「テキストモデル」を自動に戻せるように返事に付ける（2026-11-17）
+  let claudeError = null;
+  const clFail = (i, m, err, refused) => { if (i < models.length - 1 && !refused && !claudeError) claudeError = { model: m, error: String(err || "").slice(0, 300) }; };
+  const ok = (o) => json(claudeError ? { ...o, claudeError } : o);
   for (let i = 0; i < models.length; i++) {
     const m = models[i], cl = isClaude(m);
-    if (cl && !claudeKey) { lastErr = "Claude のAPIキーが未設定です（ANTHROPIC_API_KEY）"; continue; }
+    if (cl && !claudeKey) { lastErr = "Claude のAPIキーが未設定です（ANTHROPIC_API_KEY）"; clFail(i, m, lastErr); continue; }
     if (!cl && !geminiKey) { lastErr = "Gemini のAPIキーが未設定です"; continue; }
     for (let attempt = 0; attempt < 2; attempt++) {   // 各モデル最大2回（一時エラー時に1回リトライ）
       try {
@@ -96,36 +100,41 @@ export async function onRequestPost(context) {
           // 安全側で断られたとき（stop_reason: refusal）は、このモデルを諦めて次へ
           if (data.stop_reason === "refusal") {
             lastErr = "Claude が回答を断りました" + (data.stop_details && data.stop_details.explanation ? "：" + data.stop_details.explanation : "");
+            clFail(i, m, lastErr, true);
             break;
           }
           const text = (data.content || []).filter((x) => x.type === "text").map((x) => x.text || "").join("").trim();
           const u = data.usage || {};
           const inTok = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
           const usage = { promptTokenCount: inTok, candidatesTokenCount: u.output_tokens || 0, totalTokenCount: inTok + (u.output_tokens || 0) };
-          return json({ ok: true, text, usage, model: m, fellBack: i > 0 });
+          return ok({ ok: true, text, usage, model: m, fellBack: i > 0 });
         }
         if (res.ok) {
           const text =
             (data.candidates && data.candidates[0] && data.candidates[0].content &&
              data.candidates[0].content.parts || [])
               .map((p) => p.text || "").join("").trim();
-          return json({ ok: true, text, usage: data.usageMetadata || null, model: m, fellBack: i > 0 });
+          return ok({ ok: true, text, usage: data.usageMetadata || null, model: m, fellBack: i > 0 });
         }
         const raw = data && data.error && data.error.message ? data.error.message : `HTTP ${res.status}`;
         lastErr = raw;
-        // 一時エラー以外（認証ミス等）は即中断
-        if (!isTransient(res.status, raw)) return json({ ok: false, error: (cl ? "Claude API エラー: " : "Gemini API エラー: ") + raw, model: m }, 502);
+        // 一時エラー以外（認証ミス等）は即中断。ただし Claude は（キーの期限切れ・残高切れなど）あとに別のモデルがあればそちらでやり直す
+        if (!isTransient(res.status, raw)) {
+          if (cl && i < models.length - 1) { lastErr = "Claude API エラー: " + raw; clFail(i, m, lastErr); break; }
+          return json({ ok: false, error: (cl ? "Claude API エラー: " : "Gemini API エラー: ") + raw, model: m }, 502);
+        }
         if (attempt === 0) { await delay(800); continue; }  // 同モデルで1回リトライ
       } catch (e) {
         lastErr = (e && e.message) ? e.message : String(e);
         if (attempt === 0) { await delay(800); continue; }
       }
+      if (cl) clFail(i, m, lastErr);
       break;   // このモデルは諦めて次モデルへ
     }
   }
   // 1つだけ選んだモデルが「キー未設定」「断られた」で止まったときは、混雑と言わずにその理由をそのまま返す（画面の aiFetch と同じ）
   const plain = models.length === 1 && /未設定|断りました/.test(lastErr);
-  return json({ ok: false, error: plain ? lastErr : "全モデルが混雑/上限のようです。少し待って再試行してください（最後のエラー: " + lastErr + "）", triedModels: models }, 502);
+  return json({ ok: false, claudeError: claudeError || undefined, error: plain ? lastErr : "全モデルが混雑/上限のようです。少し待って再試行してください（最後のエラー: " + lastErr + "）", triedModels: models }, 502);
 }
 
 export async function onRequestGet() {

@@ -2691,7 +2691,12 @@ const aiIsClaude=m=>/^claude-/.test(String(m||''));
 const aiName=()=>aiIsClaude((document.getElementById('autoModelOverride')||{}).value)?'Claude':'Gemini';
 async function aiFetch(url, init){
   const keys=await aiKeys();
-  if(!keys.gemini&&!keys.claude) return fetch(url, init);
+  if(!keys.gemini&&!keys.claude){
+    // サーバー（/api/analyze）経由：Claude で失敗して次へ回ったときは claudeError が付いてくる
+    const res=await fetch(url, init);
+    try{ const d=await res.clone().json(); if(d&&d.claudeError) aiResetModelToAuto(d.claudeError.model, d.claudeError.error); }catch(e){}
+    return res;
+  }
   const out=(obj,status=200)=>new Response(JSON.stringify(obj),{status,headers:{'Content-Type':'application/json'}});
   let p; try{ p=JSON.parse(init.body); }catch(e){ return out({ok:false,error:'リクエストの解析に失敗しました'},400); }
   const prompt=(p&&p.prompt||'').trim();
@@ -2707,9 +2712,11 @@ async function aiFetch(url, init){
   const isTransient=(st,raw)=>st===429||st>=500||/quota|rate|exhaust|limit:\s*0|overload|high demand|unavailable|temporarily|try again|resource has been exhausted/i.test(raw||'');
   const delay=ms=>new Promise(r=>setTimeout(r,ms));
   let lastErr='';
+  // Claude で失敗して、あとに別のモデルがあるとき：自動に戻して続きのモデルでやり直す（断られた＝内容のせいのときは、設定は戻さない）
+  const clFail=(i,m,err,refused)=>{ if(i<models.length-1 && !refused) aiResetModelToAuto(m, err); };
   for(let i=0;i<models.length;i++){
     const m=models[i], cl=aiIsClaude(m);
-    if(cl&&!keys.claude){ lastErr='Claude のAPIキーが未設定です（Cloudflare の環境変数 ANTHROPIC_API_KEY）'; continue; }
+    if(cl&&!keys.claude){ lastErr='Claude のAPIキーが未設定です（Cloudflare の環境変数 ANTHROPIC_API_KEY）'; clFail(i,m,lastErr); continue; }
     if(!cl&&!keys.gemini){ lastErr='Gemini のAPIキーが未設定です'; continue; }
     for(let attempt=0;attempt<2;attempt++){   // 各モデル最大2回（一時エラー時に1回リトライ）
       try{
@@ -2724,7 +2731,7 @@ async function aiFetch(url, init){
         let data; try{ data=JSON.parse(raw0); }catch(e){ throw new Error(`HTTP ${res.status} 応答がJSONではありません: ${raw0.slice(0,80)}`); }
         if(res.ok&&cl){
           // 安全側で断られたとき（stop_reason: refusal）は、このモデルを諦めて次へ
-          if(data.stop_reason==='refusal'){ lastErr='Claude が回答を断りました'+(data.stop_details&&data.stop_details.explanation?'：'+data.stop_details.explanation:''); break; }
+          if(data.stop_reason==='refusal'){ lastErr='Claude が回答を断りました'+(data.stop_details&&data.stop_details.explanation?'：'+data.stop_details.explanation:''); clFail(i,m,lastErr,true); break; }
           const text=(data.content||[]).filter(x=>x.type==='text').map(x=>x.text||'').join('').trim();
           const u=data.usage||{}; const inTok=(u.input_tokens||0)+(u.cache_read_input_tokens||0)+(u.cache_creation_input_tokens||0);
           return out({ok:true,text,usage:{promptTokenCount:inTok,candidatesTokenCount:u.output_tokens||0,totalTokenCount:inTok+(u.output_tokens||0)},model:m,fellBack:i>0});
@@ -2736,12 +2743,17 @@ async function aiFetch(url, init){
         }
         const raw=data&&data.error&&data.error.message?data.error.message:`HTTP ${res.status}`;
         lastErr=raw;
-        if(!isTransient(res.status,raw)) return out({ok:false,error:(cl?'Claude API エラー: ':'Gemini API エラー: ')+raw,model:m},502);   // 認証ミス等は即中断
+        // 認証ミス等は即中断。ただし Claude は（キーの期限切れ・残高切れなど）あとに別のモデルがあれば、自動に戻してそちらでやり直す
+        if(!isTransient(res.status,raw)){
+          if(cl && i<models.length-1){ lastErr='Claude API エラー: '+raw; clFail(i,m,lastErr); break; }
+          return out({ok:false,error:(cl?'Claude API エラー: ':'Gemini API エラー: ')+raw,model:m},502);
+        }
         if(attempt===0){ await delay(800); continue; }
       }catch(e){
         lastErr=(e&&e.message)?e.message:String(e);
         if(attempt===0){ await delay(800); continue; }
       }
+      if(cl) clFail(i,m,lastErr);
       break;   // このモデルは諦めて次モデルへ
     }
   }
@@ -2750,12 +2762,36 @@ async function aiFetch(url, init){
 
 // テキストモデルの優先チェーン。cls: 'high'(思考系④⑤) / 'low'(その他)。
 // セレクタでモデル固定時はその1つだけ（テスト用）。
+// Claude を選んでいるときは、Claude のあとに「自動」の並びを付ける（2026-11-17 すみぽん「Claude が上限・APIの有効期限切れでエラーになったら、モデルを自動に戻して再実行」）。
+//   Claude で失敗したら aiFetch が「テキストモデル」を自動に戻し、同じ頼みごとを続きの「自動」の並びでやり直す。
 function autoModelChain(cls){
   const ov=(document.getElementById('autoModelOverride')||{}).value||'';
-  if(ov) return [ov];
-  return cls==='high'
+  const auto=cls==='high'
     ? ['gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3-flash-preview','gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-2.5-flash']
     : ['gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3-flash-preview','gemini-2.5-flash-lite','gemini-2.5-flash'];
+  if(ov && aiIsClaude(ov)) return [ov].concat(auto);
+  if(ov) return [ov];
+  return auto;
+}
+// Claude で失敗したとき：「テキストモデル」を自動に戻し（米国版の欄・保存にも反映）、画面の上にそのことを出す
+function aiResetModelToAuto(model, why){
+  const el=document.getElementById('autoModelOverride');
+  if(el && aiIsClaude(el.value)){
+    el.value=''; el.dispatchEvent(new Event('change',{bubbles:true})); el.dispatchEvent(new Event('input',{bubbles:true}));
+  }
+  aiNotice(`⚠ ${model} でエラーになったため、テキストモデルを「自動」に戻して Gemini でやり直しました。（${String(why||'').slice(0,160)}）`);
+}
+function aiNotice(msg){
+  let b=document.getElementById('aiNoticeBar');
+  if(!b){
+    b=document.createElement('div'); b.id='aiNoticeBar';
+    b.style.cssText='position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:9999;max-width:min(92vw,720px);background:#7a4b00;color:#fff;padding:8px 34px 8px 12px;border-radius:6px;font-size:12px;line-height:1.5;box-shadow:0 2px 8px rgba(0,0,0,.3);';
+    const x=document.createElement('button'); x.textContent='×'; x.title='閉じる';
+    x.style.cssText='position:absolute;right:6px;top:4px;background:none;border:none;color:#fff;font-size:16px;cursor:pointer;';
+    x.onclick=()=>b.remove();
+    b.appendChild(document.createElement('span')); b.appendChild(x); document.body.appendChild(b);
+  }
+  b.firstChild.textContent=msg;
 }
 // 使用モデル/降格の表示用サフィックス
 function autoModelNote(data){
