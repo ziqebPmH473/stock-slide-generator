@@ -1167,7 +1167,7 @@ Appier G|4180|818|+96|+13.30%
     <textarea id="usReport" placeholder="AI の回答（JSON）を貼付" oninput="usReportChanged()" style="min-height:140px;"></textarea>
     <div class="auto-row" style="margin-top:6px;">
       <button class="btn-copy" data-btn="米国版 ✅ CK" onclick="usCopyFactCheck(this)">✅ CK</button>
-      <button class="btn-copy" onclick="autoClip('修正後内容が正しいか確認して', this)">🔍 FCCK</button>
+      <button class="btn-copy" onclick="autoClip(AP_VERIFY_PROMPT, this)">🔍 FCCK</button>
       <button class="btn-copy" onclick="autoClip(AP_FIX_PROMPT, this)">🔧 修正</button>
     </div>
     <div id="usReportView"></div>
@@ -1348,6 +1348,9 @@ const AP_COPY_TEXTS = {
 const AP_CODEBLOCK_NOTE = `\n\n【出力形式】\n・回答全体を1つのコードブロック（\`\`\`）で囲んで出力してください。\n・コードブロックの外には何も書かないでください。\n・太字（**）、見出し（#）などのマークダウン記法は使わないでください。`;
 const AP_CODEBLOCK_NOTE_SNS = `\n\n【出力形式】\n・サムネイルの文字とXへの投稿文は、それぞれ別のコードブロック（\`\`\`）で囲んで出力してください。\n・コードブロックの中では、太字（**）、見出し（#）などのマークダウン記法は使わないでください。`;
 const AP_CODEBLOCK_IDS = { rank: AP_CODEBLOCK_NOTE, top10ReasonNewsNG: AP_CODEBLOCK_NOTE, presen1: AP_CODEBLOCK_NOTE, reportKk: AP_CODEBLOCK_NOTE, xNotify: AP_CODEBLOCK_NOTE_SNS };
+const AP_VERIFY_PROMPT = `指摘箇所、指摘内容から指摘箇所の修正を行うことが妥当か、修正後内容が正しいか確認してください。
+正しくない場合には、不明点や確認点があればすべて調査し、レポートに記載できる形式で修正後内容を提示してください。
+結果はそのまま読むので、コードブロックには入れないでください。引用・出典・脚注も付けないでください。`;
 const AP_FIX_PROMPT = `指摘箇所を指示の内容に沿って修正し、全文出力してください。\nただし、指摘していない箇所は一切変更しないでください。` + AP_CODEBLOCK_NOTE;
 
 const AP_INTRO = "今日の東京株式市場を振り返る";
@@ -1449,7 +1452,7 @@ function apFactCheck(btn){
 }
 
 function apFactCheckVerify(btn){
-  apCopyWithFeedback(`修正後内容が正しいか確認して`, btn);
+  apCopyWithFeedback(AP_VERIFY_PROMPT, btn);
 }
 
 function apFactCheckFix(btn){
@@ -3389,7 +3392,7 @@ function autoCopyFactCheck(btn){
   const final=`以下のレポートは、以下の指示でAIが生成したものです。\nレポートのファクトチェックを行い、誤っている個所と指示に沿っていない箇所のみを指摘してください。\n指摘は件数が多くても構わないので、すべて指摘してください。\n指摘がある場合には、指摘箇所、指摘内容、修正後内容を記載してください。\nレイアウトや出力形式に関する指摘は不要です。\n\n--指示--\n${base}\n\n--レポート--\n\n${report}`;
   autoClip(final, btn);
 }
-function autoCopyFactCheckVerify(btn){ autoClip(`修正後内容が正しいか確認して`, btn); }
+function autoCopyFactCheckVerify(btn){ autoClip(AP_VERIFY_PROMPT, btn); }
 function autoCopyFactCheckFix(btn){ autoClip(AP_FIX_PROMPT, btn); }
 
 // ===== AIバックアップ（生ページをAIに読ませて分析RANK・名称RANKを再生成）=====
