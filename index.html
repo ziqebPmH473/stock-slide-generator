@@ -5484,6 +5484,29 @@ wkBoot();
     return true;
   }
   AiBridge.init('tosho',apply,{onStep:step});
+  // ---- SNS の投稿の準備（段5。2026-11-19）：④ SNS に「📤 SNS の投稿画面に入れる」を出す。
+  // YouTube：このタブで書き出した最新の横動画（タイトル・説明は YouTube で入れる）。X：X の投稿文。投稿のボタンは押さない
+  function snsGo(btn){
+    const st=btn.nextElementSibling,d=day();
+    const v=id=>((document.getElementById(id)||{}).value||'').trim();
+    const items=[
+      {sns:'youtube',video:'landscape'},
+      {sns:'x',text:v('autoSnsX')}
+    ].map(it=>Object.assign(it,{label:'東証 ④SNS（'+d+'）',ref:'tosho:'+d+':'+it.sns}));
+    st.textContent='拡張に渡しています…（動画が大きいと少しかかります）';btn.disabled=true;
+    AiBridge.snsSend(items).then(r=>{
+      st.textContent=(r.sent.length?'拡張に渡しました：'+r.sent.join('・')+'（入れ終わると、拡張の一覧に「投稿待ち」と出ます）':'')+(r.skipped.length?(r.sent.length?'　':'')+'入れなかったもの：'+r.skipped.join('、'):'');
+    },e=>{st.textContent='渡せませんでした：'+(e&&e.message||e);}).finally(()=>{btn.disabled=false;});
+  }
+  setInterval(()=>{
+    if(!AiBridge.connected)return;
+    const slot=document.getElementById('vidExportSlot'),card=slot&&slot.closest('.card');
+    if(!card||card.querySelector('.tosho-sns-bar'))return;
+    const bar=document.createElement('div');bar.className='tosho-sns-bar auto-row';bar.style.cssText='margin:4px 0 8px;';
+    bar.innerHTML='<button type="button" class="btn-sm" style="background:#0f766e;color:#fff;border:none;" title="YouTube と X の投稿画面を拡張が裏で開いて、このタブで書き出した最新の横動画と X の投稿文を入れます。投稿のボタンは押しません">📤 SNS の投稿画面に入れる</button><span style="font-size:11px;color:var(--muted);"></span>';
+    bar.firstChild.onclick=function(){snsGo(this);};
+    const h=card.querySelector('h2');if(h)h.insertAdjacentElement('afterend',bar);else card.insertBefore(bar,card.firstChild);
+  },2000);
   // 動画の書き出し中は拡張に知らせる（そのあいだ、拡張はタブを切り替えない）
   let busy=false;
   setInterval(()=>{
