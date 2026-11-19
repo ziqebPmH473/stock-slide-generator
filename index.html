@@ -5354,5 +5354,144 @@ async function wkZip(btn){
 function wkBoot(){ wkRenderThemes(); let n=0; const t=setInterval(()=>{ if(ssgSyncReady || ssgSyncOff || ++n>20){ clearInterval(t); wkRefresh(); } }, 500); }
 wkBoot();
 </script>
+<script src="assets/ai-bridge.js"></script>
+<script>
+/*
+ * AI ブリッジ（2026-11-19。Chrome 拡張。リポジトリ xppen-shortcut-tool の段3）。拡張が無ければ何もしない。
+ * ChatGPT 用のボタンでプロンプトをコピーすると、拡張の一覧に「準備」として渡す（ACK05 の送るボタンで送る）。
+ * 返答は、そのボタンの「📋 貼付」を、返答の文で押したのと同じ処理で入れる（送ったときと同じ日を開いているときだけ）。
+ *   ② ChatGPT分析 … 作成の会話。返答は ② の 📋 貼付（レポート）へ
+ *   ✅ CK … FC の新しい会話。🔍 FCCK・🔧 修正 はその続き。修正の返答は ② の 📋 貼付へ（全自動・繰り返しは次の周の ✅ CK へ）
+ *   ChatGPTで手動 ①台本〜④スライド文章 … それぞれ新しい会話。返答は、その 📥 貼付へ（貼付のあと、次の工程のプロンプトも「準備」になる）
+ *   米国版 … 東証版と同じ並び（📋 AI収集プロンプト → 📋 貼付、✅ CK・🔍 FCCK・🔧 修正）
+ *   📋 ニュース画像 … 画像としてためる。できた画像はニュース画像の欄へ。📋 まとめ画像 … 作るだけ（入れ先の欄が無い）
+ */
+(function(){
+  if(!window.AiBridge) return;
+  const MLABEL={script:'①台本',fullinfo:'②全情報',sns:'③サムネ/X',slide:'④スライド文章'};
+  // 関数の名前 → どの欄のどの段か
+  const SPEC={
+    autoCopyReasonNews:{sec:'jp',step:'make',paste:'autoPasteFc',label:'② ChatGPT分析'},
+    autoCopyFactCheck:{sec:'jp',step:'fc',label:'② CK'},
+    autoCopyFactCheckVerify:{sec:'jp',step:'ck',label:'② FCCK'},
+    autoCopyFactCheckFix:{sec:'jp',step:'fix',paste:'autoPasteFc',label:'② 修正'},
+    usCopyCollect:{sec:'us',step:'make',paste:'usPasteReport',label:'米国 AI収集'},
+    usCopyFactCheck:{sec:'us',step:'fc',label:'米国 CK'},
+    autoCopySummaryImagePrompt:{image:'',label:'まとめ画像'},
+  };
+  const manualSpec=k=>({sec:'m-'+k,step:'make',paste:'autoManualPaste',arg:k,label:'手動 '+(MLABEL[k]||k)});
+  let ctx=null;        // いま動いている ChatGPT 用のボタンの処理
+  let after=null;      // 貼付のあと、続けてコピーされるプロンプト（手動ルートの次の工程）。{spec, at}
+  let quiet=0;         // この時刻までは、コピーを拡張に渡さない（全自動の途中の貼付が、続けてコピーするもの）
+  const day=()=>{try{return ssgBizDay();}catch(e){return '';}};
+
+  function offer(text,spec){
+    if(!AiBridge.connected||!text||Date.now()<quiet) return;
+    const d=day();
+    if(spec.image!=null){
+      AiBridge.job({kind:'image',newChat:true,project:'make',prompt:text,label:'東証 '+spec.label+'（'+d+'）',
+        returnTo:spec.image?{image:true,target:spec.image,day:d}:null});
+      return;
+    }
+    const step=spec.step;
+    AiBridge.job({
+      thread:'tosho:'+spec.sec+':'+d+':'+(step==='make'?'make':'fc'),
+      newChat:step==='make'||step==='fc',
+      project:step==='make'?'make':'fc',
+      step,
+      stepRef:{sec:spec.sec,day:d,fcable:spec.sec==='jp'||spec.sec==='us'},
+      prompt:text,
+      label:'東証 '+spec.label+'（'+d+'）',
+      extract:'auto',
+      returnTo:spec.paste?{sec:spec.sec,day:d,paste:spec.paste,arg:spec.arg||null}:null
+    });
+  }
+  function wrap(name,specOf){
+    const f=window[name];if(typeof f!=='function'||f.__aib)return;
+    const w=function(){
+      const prev=ctx;ctx={spec:specOf(arguments)};
+      try{return f.apply(this,arguments);}finally{ctx=prev;}
+    };
+    w.__aib=true;window[name]=w;
+  }
+  Object.keys(SPEC).forEach(n=>wrap(n,()=>SPEC[n]));
+  wrap('autoManualCopy',a=>manualSpec(a[0]));
+  // コピーの口はここ1つ（autoClip）。FCCK・修正は、東証版・米国版とも文で見分ける
+  const clip0=window.autoClip;
+  if(typeof clip0==='function'){
+    window.autoClip=function(text,btn){
+      let spec=ctx&&ctx.spec;
+      if(!spec&&after&&Date.now()-after.at<8000){spec=after.spec;after=null;}
+      if(!spec&&(text===AP_VERIFY_PROMPT||text===AP_FIX_PROMPT)){
+        const us=!!(btn&&btn.closest&&btn.closest('.us-step'));
+        spec=text===AP_VERIFY_PROMPT?{sec:us?'us':'jp',step:'ck',label:(us?'米国 ':'② ')+'FCCK'}
+          :{sec:us?'us':'jp',step:'fix',paste:us?'usPasteReport':'autoPasteFc',label:(us?'米国 ':'② ')+'修正'};
+      }
+      if(spec) offer(text,spec);
+      return clip0.apply(this,arguments);
+    };
+  }
+  // ニュース画像は autoClip を通らずにコピーするので、同じ文を作って渡す
+  const img0=window.autoCopyImagePrompt;
+  if(typeof img0==='function'){
+    window.autoCopyImagePrompt=function(){
+      const r=img0.apply(this,arguments);
+      try{offer(autoBuildImagePrompt(),{image:'news',label:'ニュース画像'});}catch(e){}
+      return r;
+    };
+  }
+  // 貼付のボタンに、クリップボードの代わりに返答の文を渡す
+  function withClip(text,fn){
+    const c=navigator.clipboard;if(!c){fn();return;}
+    const own=Object.prototype.hasOwnProperty.call(c,'readText'),orig=c.readText;
+    let done=false;
+    const restore=()=>{if(done)return;done=true;if(own)c.readText=orig;else delete c.readText;};
+    c.readText=function(){restore();return Promise.resolve(text);};
+    try{fn();}finally{setTimeout(restore,3000);}
+  }
+  function apply(job){
+    const r=job&&job.returnTo;if(!r)return false;
+    if(r.day&&r.day!==day())return false;   // 別の日を開いている（その日を開いたら入れる）
+    if(r.image){
+      const f=job.images&&job.images[0];if(!f||typeof setImg!=='function')return false;
+      setImg(f,r.target==='cover'?'cover':'news');
+      return true;
+    }
+    const fn=window[r.paste];if(typeof fn!=='function')return false;
+    if(job.auto)quiet=Date.now()+4000;   // 全自動：貼付が続けてコピーする FC のプロンプトは渡さない（拡張が次の段のボタンを押す）
+    if(r.paste==='autoManualPaste'){
+      const i=AUTO_MANUAL_STEPS.indexOf(r.arg),next=AUTO_MANUAL_STEPS[i+1];
+      if(next)after={spec:manualSpec(next),at:Date.now()};
+      const btn=document.querySelector('[onclick="autoManualPaste(\''+r.arg+'\',this)"]');
+      withClip(String(job.text||''),()=>fn(r.arg,btn));
+      return true;
+    }
+    const btn=document.querySelector('[onclick^="'+r.paste+'("]');
+    withClip(String(job.text||''),()=>fn(btn));
+    return true;
+  }
+  // 拡張から「FC の次の段」を頼まれた：✅ CK／🔍 FCCK／🔧 修正 を押す
+  const STEP_BTN={
+    jp:{fc:'#autoFcCkBtn',ck:'[onclick^="autoCopyFactCheckVerify"]',fix:'[onclick^="autoCopyFactCheckFix"]'},
+    us:{fc:'[onclick^="usCopyFactCheck"]',ck:'.us-step [onclick="autoClip(AP_VERIFY_PROMPT, this)"]',fix:'.us-step [onclick="autoClip(AP_FIX_PROMPT, this)"]'}
+  };
+  function step(ref,st){
+    const m=STEP_BTN[ref&&ref.sec];if(!m||!m[st])return false;
+    if(ref.day&&ref.day!==day())return '別の日（'+ref.day+'）を開いています。その日を開くと進みます';
+    const b=document.querySelector(m[st]);
+    if(!b)return 'ボタンが見つかりません';
+    b.click();
+    return true;
+  }
+  AiBridge.init('tosho',apply,{onStep:step});
+  // 動画の書き出し中は拡張に知らせる（そのあいだ、拡張はタブを切り替えない）
+  let busy=false;
+  setInterval(()=>{
+    const t=['vidPreview','vidControls','vidExportSlot','vidExportSlotV'].map(id=>{const e=document.getElementById(id);return e?e.textContent:'';}).join(' ');
+    const b=t.indexOf('書き出し中')>=0;
+    if(b!==busy){busy=b;AiBridge.busy(b);}
+  },2000);
+})();
+</script>
 </body>
 </html>
