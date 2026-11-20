@@ -696,15 +696,6 @@ Appier G|4180|818|+96|+13.30%
     </div>
     <pre id="autoTestResult" style="font-size:12px;color:#cbd5e1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;white-space:pre-wrap;display:none;margin-top:4px;"></pre>
     <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
-      <div class="auto-row"><strong style="font-size:11px;color:var(--text);">全情報（画像/サムネ用データ）</strong>
-        <button class="btn-sm" id="autoFullInfoBtn" data-btn="全情報の再生成" onclick="autoGenerateFullInfo(this)">🔁 再生成</button>
-        <button class="btn-mini" onclick="autoCopyEl('autoFullInfo',this)">📋</button>
-        <span id="autoFullInfoStatus" style="font-size:11px;color:var(--muted);"></span></div>
-      <details><summary style="font-size:11px;color:var(--muted);cursor:pointer;">全情報テキストを開く</summary>
-        <textarea id="autoFullInfo"></textarea>
-      </details>
-    </div>
-    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
       <div class="auto-row">
         <strong style="font-size:11px;color:var(--text);">銘柄一覧（東証data_j）</strong>
         <label class="btn-sm" style="cursor:pointer;">📁 Excel/CSV取込<input type="file" accept=".xls,.xlsx,.csv" style="display:none" onchange="autoImportMeigaraCsv(this)"></label>
@@ -772,7 +763,7 @@ Appier G|4180|818|+96|+13.30%
     <!-- ChatGPT手動ルート：APIが遅い/混んでいるとき、同じ4つの生成を ChatGPT に貼って回答を戻す -->
     <details id="autoManualWrap" style="margin-top:8px;">
       <summary style="font-size:11px;color:var(--muted);cursor:pointer;">▼ ChatGPTで手動（APIが遅いとき）</summary>
-      <p style="margin:6px 0 4px;">📋 でプロンプトをコピー → ChatGPT に貼る → 回答をコピー → 📥 で貼付。貼付すると、その組の ✅ CK も自動でコピーします（新しい会話に貼る）。🔍 FCCK・🔧 修正 はその続き。🔧 修正の回答も同じ 📥 で貼付。①台本の FC が終わったら、②〜④へ。</p>
+      <p style="margin:6px 0 4px;">📋 でプロンプトをコピー → ChatGPT に貼る → 回答をコピー → 📥 で貼付。貼付すると、その組の ✅ CK も自動でコピーします（新しい会話に貼る）。🔍 FCCK・🔧 修正 はその続き。🔧 修正の回答も同じ 📥 で貼付。①台本の FC が終わったら、②③へ。</p>
       <div class="auto-row">
         <b style="min-width:7em;">①台本</b>
         <button class="btn-copy" onclick="autoManualCopy('script',this)">📋 作成</button><button class="btn-sm" data-btn="📥 貼付（①台本）" onclick="autoManualPaste('script',this)">📥 貼付</button>
@@ -782,8 +773,8 @@ Appier G|4180|818|+96|+13.30%
         <button class="btn-copy" onclick="autoManualFix('script',this)">🔧 修正</button>
       </div>
       <div class="auto-row">
-        <b style="min-width:7em;">②全情報・③サムネ/X・④スライド文章</b>
-        <button class="btn-copy" onclick="autoManualCopy('rest',this)">📋 作成</button><button class="btn-sm" data-btn="📥 貼付（②〜④）" onclick="autoManualPaste('rest',this)">📥 貼付</button>
+        <b style="min-width:7em;">②サムネ/X・③スライド文章</b>
+        <button class="btn-copy" onclick="autoManualCopy('rest',this)">📋 作成</button><button class="btn-sm" data-btn="📥 貼付（②③）" onclick="autoManualPaste('rest',this)">📥 貼付</button>
         <span style="color:var(--muted)">→</span>
         <button class="btn-copy" onclick="autoManualCk('rest',this)">✅ CK</button>
         <button class="btn-copy" onclick="autoManualVerify('rest',this)">🔍 FCCK</button>
@@ -1481,7 +1472,7 @@ async function apPasteTextbox(id){
 function apClearTextarea(id){ apSetValue(id, ''); }
 
 const AP_STORAGE_IDS = ['apTextbox1','apFcReport','apTextbox2','mainInput','thumbInput',
-  'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoFullInfo','autoSnsThumb','autoSnsX','autoScriptOut','autoScriptOut2','autoThumbInput','autoScriptFinal','vThumbL1','vThumbL2','vThumbL3'];
+  'autoFcReport','autoRankOut','autoMeigaraIn','autoMeigaraOut','autoSlideText','autoSnsThumb','autoSnsX','autoScriptOut','autoScriptOut2','autoThumbInput','autoScriptFinal','vThumbL1','vThumbL2','vThumbL3'];
 // 設定系（テキスト一括リセットの対象外・常時保持）
 const AP_SETTING_IDS = ['autoFixedHashtags','autoModelOverride','autoTtsVoice','autoTtsModel','autoTtsClarity','autoTtsGap','autoTtsFormat'];   // 読み上げの補正・間・形式も保持（読み込み直し・取込で音が変わらないように）
 const THUMB_DEFAULT = '日経平均は*大幅高*：半導体の強気相場：#日米合意#で%主役交代%';
@@ -2868,8 +2859,8 @@ function autoRestoreState(){
   }catch(e){}
 }
 
-// ②ファクトチェック完了＝台本→スライド文章（全自動版は続けて動画のデータ・一言まとめ）→（全情報）→サムネ案&X投稿文 の順で一括生成
-// サムネ案・X投稿文は同じ「全情報」を材料に1回でまとめて生成するため、材料の全情報を必要となる前に生成しておく
+// ②ファクトチェック完了＝台本→スライド文章（全自動版は続けて動画のデータ・一言まとめ）→サムネ案&X投稿文 の順で一括生成
+// （2026-11-21 すみぽん：「全情報」は資料の書き直しなのでやめた。サムネ案・X投稿文にも資料を直接渡す）
 async function autoRunAll(realBtn){
   if(!AutoState.sources){ alert('先に①データ取得を実行してください'); return; }
   const o=realBtn.textContent; realBtn.disabled=true;
@@ -2878,7 +2869,7 @@ async function autoRunAll(realBtn){
     // 1. 台本（取得データ＋ファクトチェックのみで生成可能・他工程に依存しない）
     autoStatus('台本を生成中…（1/3）'); realBtn.textContent='生成中…(1/3)'; await autoRunScript({});
     try{ vidScriptEarlyRender(); }catch(e){}   // 動画タブに、できた台本をすぐ出す（場面ごとの表はスライド文章のあと）
-    // 2. スライド文章（動画の場面はこの数字から作るので、台本の次に作り、動画の表を先に出す。全情報・サムネ/X には依存しない）
+    // 2. スライド文章（動画の場面はこの数字から作るので、台本の次に作り、動画の表を先に出す。サムネ/X には依存しない）
     autoStatus('スライド文章を生成中…（2/3）'); realBtn.textContent='生成中…(2/3)'; await autoGenerateSlideText();
     if(autoIsFull()){
       autoStatus('動画のデータを作成中…'); realBtn.textContent='生成中…(動画)';
@@ -2887,11 +2878,8 @@ async function autoRunAll(realBtn){
       await vidScreenAi(document.getElementById('vidAiBtn'));
       autoStep('v');
     }
-    // サムネ案・X投稿文の材料となる「全情報」を先に生成（順序考慮）
-    autoStatus('全情報を生成中…（サムネ/X用の材料）'); realBtn.textContent='生成中…(全情報)'; await autoGenerateFullInfo({});
-    const fullInfo=(document.getElementById('autoFullInfo')||{}).value||'';
-    // 3. サムネ案＆X投稿文（全情報を材料にまとめて生成。動画には使わないので最後）
-    autoStatus('サムネ案・X投稿文を生成中…（3/3）'); realBtn.textContent='生成中…(3/3)'; await autoGenerateSns({}, fullInfo);
+    // 3. サムネ案＆X投稿文（資料を直接渡して生成。動画には使わないので最後）
+    autoStatus('サムネ案・X投稿文を生成中…（3/3）'); realBtn.textContent='生成中…(3/3)'; await autoGenerateSns({});
     if(autoIsFull()) try{ vidEnsureThumbs(); }catch(e){}   // サムネの文言が変わっていれば動画のサムネも作り直す
     autoStatusDone('✅ 一括生成が完了しました'); realBtn.textContent='✅ 完了';
   }catch(e){ autoStatusDone('❌ '+e.message); realBtn.textContent='❌ '+e.message; }
@@ -2899,31 +2887,27 @@ async function autoRunAll(realBtn){
 }
 
 // ===== ChatGPT手動ルート（APIが遅い/混んでいるとき）=====
-// 「ファクトチェック完了」と同じ4つの生成（台本→全情報→サムネ/X→スライド文章）を、
+// 「ファクトチェック完了」と同じ生成（台本→サムネ/X→スライド文章）を、
 // プロンプトをコピーして ChatGPT に貼り、回答を貼り付けて戻す形で行う。
 // ・送る文は API に送るのと同じ組み立て（autoFmtPayload）＋コードブロック指定
 // ・貼り付けた回答は API の結果と同じ後処理（空行除去・前後半分割・ＨＤ略称・プレビュー）を通す
-// ・2026-11-21 すみぽん：①台本 と ②全情報・③サムネ/X・④スライド文章（まとめて1回）の2組にし、それぞれに ✅ CK → 🔍 FCCK → 🔧 修正 をかける
+// ・2026-11-21 すみぽん：①台本 と ②サムネ/X・③スライド文章（まとめて1回）の2組にし、それぞれに ✅ CK → 🔍 FCCK → 🔧 修正 をかける（全情報はやめた）
 // ・貼付したら、その組の ✅ CK を自動でコピーする（②ファクトチェックの「貼付→CK」と同じ流れ）。🔧 修正の回答も同じ 📥 貼付で入れる
 const AUTO_MANUAL_STEPS=['script','rest'];
-const AUTO_MANUAL_LABEL={script:'①台本', rest:'②〜④'};
-// ②〜④の返答の区切りの行（この順で1行ずつ）
-const AUTO_MANUAL_REST_MARKS=['■全情報','■サムネ/X','■スライド文章'];
+const AUTO_MANUAL_LABEL={script:'①台本', rest:'②③'};
+// ②③の返答の区切りの行（この順で1行ずつ）
+const AUTO_MANUAL_REST_MARKS=['■サムネ/X','■スライド文章'];
 function autoManualRestPrompt(){
-  return `以下の【作業1】〜【作業3】を順に行い、3つの結果を続けて出力してください。
-・【作業2】は、【作業1】で書いた全情報を材料にしてください。
+  return `以下の【作業1】【作業2】を順に行い、2つの結果を続けて出力してください。
 ・それぞれの作業の指示は、その作業の中だけに当てはめてください。
 ・各結果の前に、次の区切りの行を1行だけ書いてください。区切りの行は書き換えないでください。
 ${AUTO_MANUAL_REST_MARKS.join('\n')}
 
-【作業1】全情報
-${autoFullInfoPrompt()}
-
-【作業2】サムネ/X
+【作業1】サムネ/X
 ${autoSnsPrompt()}
 ・サムネ案とX投稿文の間の区切りの「===」は、そのまま書いてください。
 
-【作業3】スライド文章
+【作業2】スライド文章
 ${autoSlidePrompt()}`;
 }
 // 作成のプロンプト（出力形式の指定は付けない。✅ CK の「指示」にもこれを使う）
@@ -2945,7 +2929,7 @@ function autoManualReport(k){
   if(k==='script') return autoScriptFull();
   if(k==='rest'){
     const M=AUTO_MANUAL_REST_MARKS;
-    return `${M[0]}\n${v('autoFullInfo')}\n${M[1]}\n${v('autoSnsThumb')}\n===\n${v('autoSnsX')}\n${M[2]}\n${v('autoSlideText')}`;
+    return `${M[0]}\n${v('autoSnsThumb')}\n===\n${v('autoSnsX')}\n${M[1]}\n${v('autoSlideText')}`;
   }
   return '';
 }
@@ -2961,15 +2945,15 @@ function autoManualCk(k, btn){
 }
 function autoManualVerify(k, btn){ autoClip(AP_VERIFY_PROMPT, btn); }
 function autoManualFix(k, btn){ autoClip(AP_FIX_PROMPT, btn); }
-// ②〜④の返答を区切りの行で3つに分ける。区切りが欠けていたら止める（欄には入れない）
+// ②③の返答を区切りの行で2つに分ける。区切りが欠けていたら止める（欄には入れない）
 function autoManualSplitRest(text){
   const lines=String(text||'').split('\n');
   const at=AUTO_MANUAL_REST_MARKS.map(m=>lines.findIndex(l=>l.replace(/[*#\s]/g,'')===m.replace(/\s/g,'')));
   const miss=AUTO_MANUAL_REST_MARKS.filter((m,i)=>at[i]<0);
   if(miss.length) throw new Error('区切りの行が見つかりません：'+miss.join('・')+'（欄には入れていません）');
-  if(!(at[0]<at[1]&&at[1]<at[2])) throw new Error('区切りの行の順番が違います（欄には入れていません）');
+  if(!(at[0]<at[1])) throw new Error('区切りの行の順番が違います（欄には入れていません）');
   const part=(a,b)=>lines.slice(a+1,b).join('\n').trim();
-  return { fullinfo:part(at[0],at[1]), sns:part(at[1],at[2]), slide:part(at[2],lines.length) };
+  return { sns:part(at[0],at[1]), slide:part(at[1],lines.length) };
 }
 // ChatGPTの回答からコードブロック（\`\`\`）を外す。{text: 外した文, blocks: 各ブロックの中身}
 // ブロックが無ければそのまま（ChatGPTのコピーボタンで中身だけ写した場合もそのまま通る）
@@ -2990,8 +2974,6 @@ function autoManualApply(k, text, blocks){
     const st=document.getElementById('autoScriptStatus'); if(st) st.textContent='✅ ChatGPTの回答を反映';
   }else if(k==='rest'){
     const p=autoManualSplitRest(text);   // 区切りが欠けていたらここで止まり、どの欄も変えない
-    document.getElementById('autoFullInfo').value=p.fullinfo;
-    const s1=document.getElementById('autoFullInfoStatus'); if(s1) s1.textContent='✅ ChatGPTの回答を反映';
     autoApplySnsText(p.sns, []);
     const s2=document.getElementById('autoSnsStatus'); if(s2) s2.textContent='✅ ChatGPTの回答を反映';
     const t=autoApplyRankAbbrev(p.slide);   // ランキングの銘柄名をＨＤ/ＦＧ/Ｇへ確実に変換（APIと同じ）
@@ -3014,7 +2996,7 @@ async function autoManualPaste(k, btn){
     autoFlash(btn);
     autoPersistState();
     autoManualCk(k, btn);   // 続けて、その組の ✅ CK をコピー
-    st.textContent=`✅ ${AUTO_MANUAL_LABEL[k]} を反映。続けて ✅ CK をコピーしました → ChatGPT の新しい会話に貼ってください（FC が済んだら${k==='script'?' ②〜④ へ':'「ChatGPT完了（次へ）」へ'}）`;
+    st.textContent=`✅ ${AUTO_MANUAL_LABEL[k]} を反映。続けて ✅ CK をコピーしました → ChatGPT の新しい会話に貼ってください（FC が済んだら${k==='script'?' ②③ へ':'「ChatGPT完了（次へ）」へ'}）`;
   }catch(e){ st.textContent='❌ '+e.message; }
 }
 // 4つがそろったら「ファクトチェック完了」の残り（全自動版：動画のデータ作成＋冒頭/まとめのAI）を実行し、次の工程へ
@@ -3023,9 +3005,8 @@ async function autoManualFinish(btn){
   const val=id=>((document.getElementById(id)||{}).value||'').trim();
   const missing=[];
   if(!autoScriptFull()) missing.push('①台本');
-  if(!val('autoFullInfo')) missing.push('②全情報');
-  if(!val('autoSnsThumb')) missing.push('③サムネ/X');
-  if(!val('autoSlideText')) missing.push('④スライド文章');
+  if(!val('autoSnsThumb')) missing.push('②サムネ/X');
+  if(!val('autoSlideText')) missing.push('③スライド文章');
   if(missing.length){ st.textContent='❌ まだ貼り付けていません：'+missing.join('・'); return; }
   const o=btn.textContent; btn.disabled=true;
   try{
@@ -3789,7 +3770,6 @@ function autoScriptSections(text){
   }
   return out;
 }
-function autoFullInfoPrompt(){ return apReplaceVariables(AP_COPY_TEXTS.reportKk, autoVars()); }
 const AUTO_SNS_PROMPT = `あなたはYouTube「東証マーケット振り返り」動画の担当です。本日のデータ（資料）を基に、サムネ案とX投稿文を作成してください。
 
 【サムネ案（3本＋最有力）】
@@ -3815,11 +3795,10 @@ const AUTO_SNS_PROMPT = `あなたはYouTube「東証マーケット振り返り
 ===
 🕊️X投稿文
 （本文・絵文字あり。末尾のハッシュタグは、足すときだけ書く）`;
-function autoSnsMaterial(){
-  let m=(AutoState.slideText||'').trim();
-  if(!m) m=(document.getElementById('autoFullInfo')||{}).value.trim();
-  if(!m && AutoState.sources) m=autoBuildResources().map(r=>`【${r.label}】\n${r.text}`).join('\n\n');
-  return m;
+// 資料（台本・スライド文章と同じもの）を1つの文にしたもの。ChatGPT に貼るプロンプト（自動版のサムネ/X・まとめ画像）に使う
+function autoResourcesText(){
+  if(!AutoState.sources) return '（※先に①データ取得を実行してください）';
+  return autoBuildResources().map(r=>`【${r.label}】\n${r.text}`).join('\n\n');
 }
 function autoShowPayload(title, text){
   document.getElementById('autoPayloadTitle').textContent=title;
@@ -3828,13 +3807,12 @@ function autoShowPayload(title, text){
 }
 function autoClosePayload(){ document.getElementById('autoPayloadModal').style.display='none'; }
 function autoPreviewSlide(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload('④ スライド文章 → AIに送る全文', autoFmtPayload(autoSlidePrompt(), autoBuildResources())); }
-function autoPreviewFullInfo(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload("④' 全情報 → AIに送る全文", autoFmtPayload(autoFullInfoPrompt(), autoBuildResources())); }
 function autoPreviewScript(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload('⑦ 台本 → AIに送る全文', autoFmtPayload(autoScriptPrompt(), autoBuildResources({noVolume: autoIsFull()}))); }
 // 全自動版の X投稿文だけに足す1行（自動版のプロンプトは変えない）
 const AUTO_SNS_FULL_NOTE = '\n・「東証相場」や「東証」と書く必要はありません。';
 // 【X投稿文】の決まりの中（出力の形より前）に入れる
 function autoSnsPrompt(){ return autoIsFull() ? AUTO_SNS_PROMPT.replace('煽り・断定は避ける。', '煽り・断定は避ける。' + AUTO_SNS_FULL_NOTE) : AUTO_SNS_PROMPT; }
-function autoPreviewSns(){ const m=autoSnsMaterial(); if(!m){alert("先に④スライドか④'全情報を生成してください");return;} autoShowPayload('⑤ サムネ・X(直接生成) → AIに送る全文', autoFmtPayload(autoSnsPrompt(), [{label:'本日の東証マーケットのデータ・サマリ', text:m}])); }
+function autoPreviewSns(){ if(!AutoState.sources){alert('先に①データ取得を実行してください');return;} autoShowPayload('⑤ サムネ・X(直接生成) → AIに送る全文', autoFmtPayload(autoSnsPrompt(), autoBuildResources())); }
 
 async function autoGenerateSlideText(){
   const btn=document.getElementById('autoSlideBtn');
@@ -3875,35 +3853,12 @@ function autoCopySlideText(btn){
   if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(()=>apFallbackCopy(t, done)); else apFallbackCopy(t, done);
 }
 
-// ==================== 自動版：④' 全情報 ====================
-async function autoGenerateFullInfo(btn){
-  const st=document.getElementById('autoFullInfoStatus');
-  if(!AutoState.sources){ st.textContent='先に①データ取得を実行してください'; return; }
-  const prompt=autoFullInfoPrompt();
-  const resources=autoBuildResources();  // 構造化データ＋銘柄名一覧表＋ChatGPTレポート
-  const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…'; st.textContent='全情報を生成中…';
-  try{
-    const res=await aiFetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({prompt,resources,temperature:0.3,models:autoModelChain('low')})});
-    const data=await res.json();
-    if(!data.ok) throw new Error(data.error||'不明なエラー');
-    document.getElementById('autoFullInfo').value=data.text;
-    autoPersistState();
-    st.textContent='✅ 完了'+autoModelNote(data);
-  }catch(e){ st.textContent='❌ '+e.message; }
-  finally{ btn.disabled=false; btn.textContent=old; }
-}
-function autoFullInfoOrHint(){
-  const v=(document.getElementById('autoFullInfo')||{}).value||'';
-  return v.trim() ? v : '（※先に④\'「全情報を生成」を押してください。ここに全情報が入ります）';
-}
-
-// ⑤ ChatGPT(Gem)に投げる用プロンプト（全情報を埋め込み）
+// ⑤ ChatGPT(Gem)に投げる用プロンプト（資料を埋め込み）
 function autoCopySnsXPrompt(btn){
-  const t=apReplaceVariables(AP_COPY_TEXTS.xNotify, { intro: AP_INTRO, textbox: autoFullInfoOrHint() }) + AP_CODEBLOCK_NOTE_SNS;
+  const t=apReplaceVariables(AP_COPY_TEXTS.xNotify, { intro: AP_INTRO, textbox: autoResourcesText() }) + AP_CODEBLOCK_NOTE_SNS;
   autoClip(t, btn);
 }
-// ⑥ まとめ画像プロンプト（ユーザー指定フォーマット＋全情報）
+// ⑥ まとめ画像プロンプト（ユーザー指定フォーマット＋資料）
 const AUTO_SUMMARY_IMG_PROMPT = `@画像を作成する 以下の内容を基に、この日の東証マーケットを振り返る動画の最後に「まとめ」として表示する、東証マーケットのまとめ画像を作成してください。
 この日のマーケットの特長がわかるようにしてください。
 禁止事項）全ての情報を記載してはいけません。
@@ -3911,10 +3866,10 @@ const AUTO_SUMMARY_IMG_PROMPT = `@画像を作成する 以下の内容を基に
 背景は白を基調としてください。
 画像は必ず16:9の横長（例：1920×1080）で作成してください。
 
-＜全情報の内容＞
+＜本日のデータ＞
 `;
 function autoCopySummaryImagePrompt(btn){
-  autoClip(AUTO_SUMMARY_IMG_PROMPT + autoFullInfoOrHint(), btn);
+  autoClip(AUTO_SUMMARY_IMG_PROMPT + autoResourcesText(), btn);
 }
 // 表紙画像プロンプト（photoTop・現行と同一）
 function autoCopyCoverImagePrompt(btn){ autoClip(AP_COPY_TEXTS.photoTop, btn); }
@@ -3940,12 +3895,11 @@ function autoApplySnsText(text, blocks){
   document.getElementById('autoSnsX').value = autoAppendFixedHashtags(autoStripBlankLines(x));
 }
 // ⑤ Geminiで直接生成（サムネ／X投稿文を別々の欄へ）
-async function autoGenerateSns(btn, materialOverride){
+async function autoGenerateSns(btn){
   const st=document.getElementById('autoSnsStatus');
-  const material=(materialOverride && materialOverride.trim()) ? materialOverride.trim() : autoSnsMaterial();
-  if(!material){ st.textContent='先に④スライド文章か④\'全情報を生成してください'; return; }
+  if(!AutoState.sources){ st.textContent='先に①データ取得を実行してください'; return; }
   const prompt = autoSnsPrompt();
-  const resources=[{label:'本日の東証マーケットのデータ・サマリ', text: material}];
+  const resources=autoBuildResources();   // 台本・スライド文章と同じ資料（データ＋銘柄名一覧表＋FC済みのレポート）
   const old=btn.textContent; btn.disabled=true; btn.textContent='生成中…'; st.textContent=aiName()+'が生成中…';
   try{
     const res=await aiFetch('/api/analyze',{
@@ -5415,13 +5369,13 @@ wkBoot();
  * 返答は、そのボタンの「📋 貼付」を、返答の文で押したのと同じ処理で入れる（送ったときと同じ日を開いているときだけ）。
  *   ② ChatGPT分析 … 作成の会話。返答は ② の 📋 貼付（レポート）へ
  *   ✅ CK … FC の新しい会話。🔍 FCCK・🔧 修正 はその続き。修正の返答は ② の 📋 貼付へ（全自動・繰り返しは次の周の ✅ CK へ）
- *   ChatGPTで手動 ①台本・②〜④ … 作成はそれぞれ新しい会話。返答は、その 📥 貼付へ。✅ CK（FC の新しい会話）・🔍 FCCK・🔧 修正 は ② と同じ。修正の返答もその 📥 貼付へ
+ *   ChatGPTで手動 ①台本・②③ … 作成はそれぞれ新しい会話。返答は、その 📥 貼付へ。✅ CK（FC の新しい会話）・🔍 FCCK・🔧 修正 は ② と同じ。修正の返答もその 📥 貼付へ
  *   米国版 … 東証版と同じ並び（📋 AI収集プロンプト → 📋 貼付、✅ CK・🔍 FCCK・🔧 修正）
  *   📋 ニュース画像 … 画像としてためる。できた画像はニュース画像の欄へ。📋 まとめ画像 … 作るだけ（入れ先の欄が無い）
  */
 (function(){
   if(!window.AiBridge) return;
-  const MLABEL={script:'①台本',rest:'②〜④'};
+  const MLABEL={script:'①台本',rest:'②③'};
   // 関数の名前 → どの欄のどの段か
   const SPEC={
     autoCopyReasonNews:{sec:'jp',step:'make',paste:'autoPasteFc',label:'② ChatGPT分析'},
