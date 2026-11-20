@@ -3945,8 +3945,16 @@ function snsJoinQuestion(x, q){
   let k=lines.length;
   while(k>0 && (!lines[k-1].trim() || /^([#＃][^\s#＃　]+[\s　]*)+$/.test(lines[k-1].trim()))) k--;
   if(k===0) return q+(x?'\n'+x:'');
-  const last=lines[k-1].replace(/\s+$/,'');
+  let last=lines[k-1].replace(/\s+$/,'');
+  // 文の終わり（。！？）のあとに同じ行で付いている末尾のハッシュタグは、問いの後ろ（いちばん最後）へ移す（2026-11-21 すみぽん）
+  const tail=last.match(/([。！？!?])((?:[\s　]*[#＃][^\s#＃　]+)+)$/);
+  let moved='';
+  if(tail){ moved=tail[2].trim().replace(/[\s　]+/g,' '); last=last.slice(0, last.length-tail[2].length); }
   lines[k-1]=last+(/[#＃][^\s#＃　]+$/.test(last)?' ':'')+q;   // 本文がハッシュタグで終わっていたら、タグに続かないよう空ける
+  if(moved){
+    const t=lines.findIndex((l,i)=>i>=k && l.trim());   // もともと末尾にあるハッシュタグの行
+    if(t>=0) lines[t]=moved+' '+lines[t].trim(); else lines.splice(k,0,moved);
+  }
   return lines.join('\n');
 }
 // ⑤ Geminiで直接生成（サムネ／X投稿文を別々の欄へ）
