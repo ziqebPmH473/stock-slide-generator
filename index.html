@@ -3940,6 +3940,7 @@ function snsCloseQuestion(part){
 // X投稿文の本文の後ろ（末尾のハッシュタグだけの行より前）に、締めの問いをつなげる
 function snsJoinQuestion(x, q){
   if(!q) return x;
+  q=String(q).replace(/[Ａ-Ｚａ-ｚ０-９]/g, c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));   // 問いの全角の英数字は半角に（本文の「AI」とそろえる）
   const lines=String(x||'').split('\n');
   let k=lines.length;
   while(k>0 && (!lines[k-1].trim() || /^([#＃][^\s#＃　]+[\s　]*)+$/.test(lines[k-1].trim()))) k--;
