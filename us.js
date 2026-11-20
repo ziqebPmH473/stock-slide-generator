@@ -793,8 +793,7 @@ const US_SNS_PROMPT = `あなたはYouTube「米国株マーケット振り返�
 最有力：①〜③のいずれか（理由）
 ===
 🕊️X投稿文
-（本文・絵文字あり）
-#ハッシュタグ`;
+（本文・絵文字あり。末尾のハッシュタグは、足すときだけ書く）`;
 
 async function usAi(prompt, resources, cls){
   const res = await aiFetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, resources, temperature: 0.3, models: autoModelChain(cls || 'high') }) });

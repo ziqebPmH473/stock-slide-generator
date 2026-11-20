@@ -2921,7 +2921,7 @@ ${autoFullInfoPrompt()}
 
 【作業2】サムネ/X
 ${autoSnsPrompt()}
-・サムネ案とX投稿文の間の区切りの「===」と、末尾の「#ハッシュタグ」はそのまま書いてください。
+・サムネ案とX投稿文の間の区切りの「===」は、そのまま書いてください。
 
 【作業3】スライド文章
 ${autoSlidePrompt()}`;
@@ -3814,8 +3814,7 @@ const AUTO_SNS_PROMPT = `あなたはYouTube「東証マーケット振り返り
 最有力：①〜③のいずれか（理由）
 ===
 🕊️X投稿文
-（本文・絵文字あり）
-#ハッシュタグ`;
+（本文・絵文字あり。末尾のハッシュタグは、足すときだけ書く）`;
 function autoSnsMaterial(){
   let m=(AutoState.slideText||'').trim();
   if(!m) m=(document.getElementById('autoFullInfo')||{}).value.trim();
