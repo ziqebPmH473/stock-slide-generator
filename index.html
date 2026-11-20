@@ -772,15 +772,22 @@ Appier G|4180|818|+96|+13.30%
     <!-- ChatGPT手動ルート：APIが遅い/混んでいるとき、同じ4つの生成を ChatGPT に貼って回答を戻す -->
     <details id="autoManualWrap" style="margin-top:8px;">
       <summary style="font-size:11px;color:var(--muted);cursor:pointer;">▼ ChatGPTで手動（APIが遅いとき）</summary>
-      <p style="margin:6px 0 4px;">📋 でプロンプトをコピー → ChatGPT に貼る → 回答をコピー → 📥 で貼付。貼付すると次のプロンプトも自動でコピーします。順番：①台本 → ②全情報 → ③サムネ/X → ④スライド文章。</p>
+      <p style="margin:6px 0 4px;">📋 でプロンプトをコピー → ChatGPT に貼る → 回答をコピー → 📥 で貼付。貼付すると、その組の ✅ CK も自動でコピーします（新しい会話に貼る）。🔍 FCCK・🔧 修正 はその続き。🔧 修正の回答も同じ 📥 で貼付。①台本の FC が終わったら、②〜④へ。</p>
       <div class="auto-row">
-        <button class="btn-copy" onclick="autoManualCopy('script',this)">📋 ①台本</button><button class="btn-sm" data-btn="📥 貼付（①台本）" onclick="autoManualPaste('script',this)">📥 貼付</button>
+        <b style="min-width:7em;">①台本</b>
+        <button class="btn-copy" onclick="autoManualCopy('script',this)">📋 作成</button><button class="btn-sm" data-btn="📥 貼付（①台本）" onclick="autoManualPaste('script',this)">📥 貼付</button>
         <span style="color:var(--muted)">→</span>
-        <button class="btn-copy" onclick="autoManualCopy('fullinfo',this)">📋 ②全情報</button><button class="btn-sm" data-btn="📥 貼付（②全情報）" onclick="autoManualPaste('fullinfo',this)">📥 貼付</button>
+        <button class="btn-copy" onclick="autoManualCk('script',this)">✅ CK</button>
+        <button class="btn-copy" onclick="autoManualVerify('script',this)">🔍 FCCK</button>
+        <button class="btn-copy" onclick="autoManualFix('script',this)">🔧 修正</button>
+      </div>
+      <div class="auto-row">
+        <b style="min-width:7em;">②全情報・③サムネ/X・④スライド文章</b>
+        <button class="btn-copy" onclick="autoManualCopy('rest',this)">📋 作成</button><button class="btn-sm" data-btn="📥 貼付（②〜④）" onclick="autoManualPaste('rest',this)">📥 貼付</button>
         <span style="color:var(--muted)">→</span>
-        <button class="btn-copy" onclick="autoManualCopy('sns',this)">📋 ③サムネ/X</button><button class="btn-sm" data-btn="📥 貼付（③サムネ/X）" onclick="autoManualPaste('sns',this)">📥 貼付</button>
-        <span style="color:var(--muted)">→</span>
-        <button class="btn-copy" onclick="autoManualCopy('slide',this)">📋 ④スライド文章</button><button class="btn-sm" data-btn="📥 貼付（④スライド文章）" onclick="autoManualPaste('slide',this)">📥 貼付</button>
+        <button class="btn-copy" onclick="autoManualCk('rest',this)">✅ CK</button>
+        <button class="btn-copy" onclick="autoManualVerify('rest',this)">🔍 FCCK</button>
+        <button class="btn-copy" onclick="autoManualFix('rest',this)">🔧 修正</button>
       </div>
       <div id="autoManualStatus" style="font-size:11px;color:var(--muted);min-height:16px;margin:4px 0;"></div>
       <button class="btn" id="autoManualFinishBtn" data-btn="② ChatGPT完了（次へ）" onclick="autoManualFinish(this)">ChatGPT完了（次へ）</button>
@@ -2896,26 +2903,73 @@ async function autoRunAll(realBtn){
 // プロンプトをコピーして ChatGPT に貼り、回答を貼り付けて戻す形で行う。
 // ・送る文は API に送るのと同じ組み立て（autoFmtPayload）＋コードブロック指定
 // ・貼り付けた回答は API の結果と同じ後処理（空行除去・前後半分割・ＨＤ略称・プレビュー）を通す
-// ・貼付したら次のプロンプトを自動でコピーする（②ファクトチェックの「貼付→CK」と同じ流れ）
-const AUTO_MANUAL_STEPS=['script','fullinfo','sns','slide'];
-const AUTO_MANUAL_LABEL={script:'①台本', fullinfo:'②全情報', sns:'③サムネ/X', slide:'④スライド文章'};
-const AUTO_MANUAL_SNS_NOTE=`\n\n【出力形式】\n・回答全体を1つのコードブロック（\`\`\`）で囲んで出力してください。\n・コードブロックの外には何も書かないでください。\n・区切りの「===」と末尾の「#ハッシュタグ」はそのまま書き、太字（**）、見出し（#）などのマークダウン記法は使わないでください。`;
-function autoManualPayload(k){
+// ・2026-11-21 すみぽん：①台本 と ②全情報・③サムネ/X・④スライド文章（まとめて1回）の2組にし、それぞれに ✅ CK → 🔍 FCCK → 🔧 修正 をかける
+// ・貼付したら、その組の ✅ CK を自動でコピーする（②ファクトチェックの「貼付→CK」と同じ流れ）。🔧 修正の回答も同じ 📥 貼付で入れる
+const AUTO_MANUAL_STEPS=['script','rest'];
+const AUTO_MANUAL_LABEL={script:'①台本', rest:'②〜④'};
+// ②〜④の返答の区切りの行（この順で1行ずつ）
+const AUTO_MANUAL_REST_MARKS=['■全情報','■サムネ/X','■スライド文章'];
+function autoManualRestPrompt(){
+  return `以下の【作業1】〜【作業3】を順に行い、3つの結果を続けて出力してください。
+・【作業2】は、【作業1】で書いた全情報を材料にしてください。
+・それぞれの作業の指示は、その作業の中だけに当てはめてください。
+・各結果の前に、次の区切りの行を1行だけ書いてください。区切りの行は書き換えないでください。
+${AUTO_MANUAL_REST_MARKS.join('\n')}
+
+【作業1】全情報
+${autoFullInfoPrompt()}
+
+【作業2】サムネ/X
+${autoSnsPrompt()}
+・サムネ案とX投稿文の間の区切りの「===」と、末尾の「#ハッシュタグ」はそのまま書いてください。
+
+【作業3】スライド文章
+${autoSlidePrompt()}`;
+}
+// 作成のプロンプト（出力形式の指定は付けない。✅ CK の「指示」にもこれを使う）
+function autoManualBase(k){
   if(!AutoState.sources) throw new Error('先に①データ取得を実行してください');
-  if(k==='script')   return autoFmtPayload(autoScriptPrompt(), autoBuildResources({noVolume: autoIsFull()})) + AP_CODEBLOCK_NOTE;
-  if(k==='fullinfo') return autoFmtPayload(autoFullInfoPrompt(), autoBuildResources()) + AP_CODEBLOCK_NOTE;
-  if(k==='sns'){
-    const m=((document.getElementById('autoFullInfo')||{}).value||'').trim() || autoSnsMaterial();
-    if(!m) throw new Error('先に②全情報を貼り付けてください（サムネ/Xの材料）');
-    return autoFmtPayload(autoSnsPrompt(), [{label:'本日の東証マーケットのデータ・サマリ', text:m}]) + AUTO_MANUAL_SNS_NOTE;
-  }
-  if(k==='slide')    return autoFmtPayload(autoSlidePrompt(), autoBuildResources()) + AP_CODEBLOCK_NOTE;
+  if(k==='script') return autoFmtPayload(autoScriptPrompt(), autoBuildResources({noVolume: autoIsFull()}));
+  if(k==='rest')   return autoFmtPayload(autoManualRestPrompt(), autoBuildResources());
   throw new Error('不明な工程: '+k);
 }
+function autoManualPayload(k){ return autoManualBase(k) + AP_CODEBLOCK_NOTE; }
 function autoManualCopy(k, btn){
   const st=document.getElementById('autoManualStatus');
   try{ autoClip(autoManualPayload(k), btn); st.textContent=`📋 ${AUTO_MANUAL_LABEL[k]} のプロンプトをコピーしました → ChatGPT に貼り、回答をコピーして 📥 貼付`; }
   catch(e){ st.textContent='❌ '+e.message; }
+}
+// ✅ CK に入れる「レポート」＝いま欄に入っている内容（貼付後に手で直していれば、その内容）
+function autoManualReport(k){
+  const v=id=>((document.getElementById(id)||{}).value||'').trim();
+  if(k==='script') return autoScriptFull();
+  if(k==='rest'){
+    const M=AUTO_MANUAL_REST_MARKS;
+    return `${M[0]}\n${v('autoFullInfo')}\n${M[1]}\n${v('autoSnsThumb')}\n===\n${v('autoSnsX')}\n${M[2]}\n${v('autoSlideText')}`;
+  }
+  return '';
+}
+function autoManualCk(k, btn){
+  const st=document.getElementById('autoManualStatus');
+  try{
+    const report=String(autoManualReport(k)||'').trim();
+    if(!report) throw new Error(`先に ${AUTO_MANUAL_LABEL[k]} の回答を 📥 貼付してください`);
+    const final=`以下のレポートは、以下の指示でAIが生成したものです。\nレポートのファクトチェックを行い、誤っている個所と指示に沿っていない箇所のみを指摘してください。\n指摘は件数が多くても構わないので、すべて指摘してください。\n指摘がある場合には、指摘箇所、指摘内容、修正後内容を記載してください。\nレイアウトや出力形式に関する指摘は不要です。\n\n--指示--\n${autoManualBase(k)}\n\n--レポート--\n\n${report}`;
+    autoClip(final, btn);
+    st.textContent=`✅ ${AUTO_MANUAL_LABEL[k]} の CK をコピーしました → ChatGPT の新しい会話に貼ってください`;
+  }catch(e){ st.textContent='❌ '+e.message; }
+}
+function autoManualVerify(k, btn){ autoClip(AP_VERIFY_PROMPT, btn); }
+function autoManualFix(k, btn){ autoClip(AP_FIX_PROMPT, btn); }
+// ②〜④の返答を区切りの行で3つに分ける。区切りが欠けていたら止める（欄には入れない）
+function autoManualSplitRest(text){
+  const lines=String(text||'').split('\n');
+  const at=AUTO_MANUAL_REST_MARKS.map(m=>lines.findIndex(l=>l.replace(/[*#\s]/g,'')===m.replace(/\s/g,'')));
+  const miss=AUTO_MANUAL_REST_MARKS.filter((m,i)=>at[i]<0);
+  if(miss.length) throw new Error('区切りの行が見つかりません：'+miss.join('・')+'（欄には入れていません）');
+  if(!(at[0]<at[1]&&at[1]<at[2])) throw new Error('区切りの行の順番が違います（欄には入れていません）');
+  const part=(a,b)=>lines.slice(a+1,b).join('\n').trim();
+  return { fullinfo:part(at[0],at[1]), sns:part(at[1],at[2]), slide:part(at[2],lines.length) };
 }
 // ChatGPTの回答からコードブロック（\`\`\`）を外す。{text: 外した文, blocks: 各ブロックの中身}
 // ブロックが無ければそのまま（ChatGPTのコピーボタンで中身だけ写した場合もそのまま通る）
@@ -2934,14 +2988,13 @@ function autoManualApply(k, text, blocks){
     if(e1) e1.value=autoStripBlankLines(text); if(e2) e2.value='';
     autoResplitScript(); updateScriptStats();
     const st=document.getElementById('autoScriptStatus'); if(st) st.textContent='✅ ChatGPTの回答を反映';
-  }else if(k==='fullinfo'){
-    document.getElementById('autoFullInfo').value=text;
-    const st=document.getElementById('autoFullInfoStatus'); if(st) st.textContent='✅ ChatGPTの回答を反映';
-  }else if(k==='sns'){
-    autoApplySnsText(text, blocks);
-    const st=document.getElementById('autoSnsStatus'); if(st) st.textContent='✅ ChatGPTの回答を反映';
-  }else if(k==='slide'){
-    const t=autoApplyRankAbbrev(text);   // ランキングの銘柄名をＨＤ/ＦＧ/Ｇへ確実に変換（APIと同じ）
+  }else if(k==='rest'){
+    const p=autoManualSplitRest(text);   // 区切りが欠けていたらここで止まり、どの欄も変えない
+    document.getElementById('autoFullInfo').value=p.fullinfo;
+    const s1=document.getElementById('autoFullInfoStatus'); if(s1) s1.textContent='✅ ChatGPTの回答を反映';
+    autoApplySnsText(p.sns, []);
+    const s2=document.getElementById('autoSnsStatus'); if(s2) s2.textContent='✅ ChatGPTの回答を反映';
+    const t=autoApplyRankAbbrev(p.slide);   // ランキングの銘柄名をＨＤ/ＦＧ/Ｇへ確実に変換（APIと同じ）
     AutoState.slideText=t;
     document.getElementById('autoSlideText').value=t;
     apSetValue('mainInput', t);
@@ -2960,9 +3013,8 @@ async function autoManualPaste(k, btn){
     autoManualApply(k, text, blocks);
     autoFlash(btn);
     autoPersistState();
-    const next=AUTO_MANUAL_STEPS[AUTO_MANUAL_STEPS.indexOf(k)+1];
-    if(next){ autoClip(autoManualPayload(next), btn); st.textContent=`✅ ${AUTO_MANUAL_LABEL[k]} を反映。続けて ${AUTO_MANUAL_LABEL[next]} のプロンプトをコピーしました → ChatGPT に貼ってください`; }
-    else st.textContent='✅ ④スライド文章 を反映。「ChatGPT完了（次へ）」を押してください';
+    autoManualCk(k, btn);   // 続けて、その組の ✅ CK をコピー
+    st.textContent=`✅ ${AUTO_MANUAL_LABEL[k]} を反映。続けて ✅ CK をコピーしました → ChatGPT の新しい会話に貼ってください（FC が済んだら${k==='script'?' ②〜④ へ':'「ChatGPT完了（次へ）」へ'}）`;
   }catch(e){ st.textContent='❌ '+e.message; }
 }
 // 4つがそろったら「ファクトチェック完了」の残り（全自動版：動画のデータ作成＋冒頭/まとめのAI）を実行し、次の工程へ
@@ -5362,13 +5414,13 @@ wkBoot();
  * 返答は、そのボタンの「📋 貼付」を、返答の文で押したのと同じ処理で入れる（送ったときと同じ日を開いているときだけ）。
  *   ② ChatGPT分析 … 作成の会話。返答は ② の 📋 貼付（レポート）へ
  *   ✅ CK … FC の新しい会話。🔍 FCCK・🔧 修正 はその続き。修正の返答は ② の 📋 貼付へ（全自動・繰り返しは次の周の ✅ CK へ）
- *   ChatGPTで手動 ①台本〜④スライド文章 … それぞれ新しい会話。返答は、その 📥 貼付へ（貼付のあと、次の工程のプロンプトも「準備」になる）
+ *   ChatGPTで手動 ①台本・②〜④ … 作成はそれぞれ新しい会話。返答は、その 📥 貼付へ。✅ CK（FC の新しい会話）・🔍 FCCK・🔧 修正 は ② と同じ。修正の返答もその 📥 貼付へ
  *   米国版 … 東証版と同じ並び（📋 AI収集プロンプト → 📋 貼付、✅ CK・🔍 FCCK・🔧 修正）
  *   📋 ニュース画像 … 画像としてためる。できた画像はニュース画像の欄へ。📋 まとめ画像 … 作るだけ（入れ先の欄が無い）
  */
 (function(){
   if(!window.AiBridge) return;
-  const MLABEL={script:'①台本',fullinfo:'②全情報',sns:'③サムネ/X',slide:'④スライド文章'};
+  const MLABEL={script:'①台本',rest:'②〜④'};
   // 関数の名前 → どの欄のどの段か
   const SPEC={
     autoCopyReasonNews:{sec:'jp',step:'make',paste:'autoPasteFc',label:'② ChatGPT分析'},
@@ -5379,9 +5431,12 @@ wkBoot();
     usCopyFactCheck:{sec:'us',step:'fc',label:'米国 CK'},
     autoCopySummaryImagePrompt:{image:'',label:'まとめ画像'},
   };
-  const manualSpec=k=>({sec:'m-'+k,step:'make',paste:'autoManualPaste',arg:k,label:'手動 '+(MLABEL[k]||k)});
+  const manualSpec=(k,step)=>{
+    step=step||'make';
+    const name={make:'',fc:' CK',ck:' FCCK',fix:' 修正'}[step];
+    return {sec:'m-'+k,step,paste:(step==='make'||step==='fix')?'autoManualPaste':null,arg:k,label:'手動 '+(MLABEL[k]||k)+name};
+  };
   let ctx=null;        // いま動いている ChatGPT 用のボタンの処理
-  let after=null;      // 貼付のあと、続けてコピーされるプロンプト（手動ルートの次の工程）。{spec, at}
   let quiet=0;         // この時刻までは、コピーを拡張に渡さない（全自動の途中の貼付が、続けてコピーするもの）
   const day=()=>{try{return ssgBizDay();}catch(e){return '';}};
 
@@ -5399,7 +5454,7 @@ wkBoot();
       newChat:step==='make'||step==='fc',
       project:step==='make'?'make':'fc',
       step,
-      stepRef:{sec:spec.sec,day:d,fcable:spec.sec==='jp'||spec.sec==='us'},
+      stepRef:{sec:spec.sec,day:d,fcable:spec.sec==='jp'||spec.sec==='us'||String(spec.sec).startsWith('m-')},
       prompt:text,
       label:'東証 '+spec.label+'（'+d+'）',
       extract:'auto',
@@ -5416,12 +5471,14 @@ wkBoot();
   }
   Object.keys(SPEC).forEach(n=>wrap(n,()=>SPEC[n]));
   wrap('autoManualCopy',a=>manualSpec(a[0]));
+  wrap('autoManualCk',a=>manualSpec(a[0],'fc'));
+  wrap('autoManualVerify',a=>manualSpec(a[0],'ck'));
+  wrap('autoManualFix',a=>manualSpec(a[0],'fix'));
   // コピーの口はここ1つ（autoClip）。FCCK・修正は、東証版・米国版とも文で見分ける
   const clip0=window.autoClip;
   if(typeof clip0==='function'){
     window.autoClip=function(text,btn){
       let spec=ctx&&ctx.spec;
-      if(!spec&&after&&Date.now()-after.at<8000){spec=after.spec;after=null;}
       if(!spec&&(text===AP_VERIFY_PROMPT||text===AP_FIX_PROMPT)){
         const us=!!(btn&&btn.closest&&btn.closest('.us-step'));
         spec=text===AP_VERIFY_PROMPT?{sec:us?'us':'jp',step:'ck',label:(us?'米国 ':'② ')+'FCCK'}
@@ -5460,8 +5517,6 @@ wkBoot();
     const fn=window[r.paste];if(typeof fn!=='function')return false;
     if(job.auto)quiet=Date.now()+4000;   // 全自動：貼付が続けてコピーする FC のプロンプトは渡さない（拡張が次の段のボタンを押す）
     if(r.paste==='autoManualPaste'){
-      const i=AUTO_MANUAL_STEPS.indexOf(r.arg),next=AUTO_MANUAL_STEPS[i+1];
-      if(next)after={spec:manualSpec(next),at:Date.now()};
       const btn=document.querySelector('[onclick="autoManualPaste(\''+r.arg+'\',this)"]');
       withClip(String(job.text||''),()=>fn(r.arg,btn));
       return true;
@@ -5475,6 +5530,7 @@ wkBoot();
     jp:{fc:'#autoFcCkBtn',ck:'[onclick^="autoCopyFactCheckVerify"]',fix:'[onclick^="autoCopyFactCheckFix"]'},
     us:{fc:'[onclick^="usCopyFactCheck"]',ck:'.us-step [onclick="autoClip(AP_VERIFY_PROMPT, this)"]',fix:'.us-step [onclick="autoClip(AP_FIX_PROMPT, this)"]'}
   };
+  AUTO_MANUAL_STEPS.forEach(k=>{STEP_BTN['m-'+k]={fc:`[onclick="autoManualCk('${k}',this)"]`,ck:`[onclick="autoManualVerify('${k}',this)"]`,fix:`[onclick="autoManualFix('${k}',this)"]`};});
   function step(ref,st){
     const m=STEP_BTN[ref&&ref.sec];if(!m||!m[st])return false;
     if(ref.day&&ref.day!==day())return '別の日（'+ref.day+'）を開いています。その日を開くと進みます';
