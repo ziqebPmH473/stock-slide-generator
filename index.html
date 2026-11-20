@@ -2974,8 +2974,8 @@ function autoManualApply(k, text, blocks){
     const st=document.getElementById('autoScriptStatus'); if(st) st.textContent='✅ ChatGPTの回答を反映';
   }else if(k==='rest'){
     const p=autoManualSplitRest(text);   // 区切りが欠けていたらここで止まり、どの欄も変えない
-    autoApplySnsText(p.sns, []);
-    const s2=document.getElementById('autoSnsStatus'); if(s2) s2.textContent='✅ ChatGPTの回答を反映';
+    const qn=autoApplySnsText(p.sns, []);
+    const s2=document.getElementById('autoSnsStatus'); if(s2) s2.textContent='✅ ChatGPTの回答を反映'+qn;
     const t=autoApplyRankAbbrev(p.slide);   // ランキングの銘柄名をＨＤ/ＦＧ/Ｇへ確実に変換（APIと同じ）
     AutoState.slideText=t;
     document.getElementById('autoSlideText').value=t;
@@ -3780,11 +3780,16 @@ const AUTO_SNS_PROMPT = `あなたはYouTube「東証マーケット振り返り
 【X投稿文】
 ・その日の市場環境（相場全体を動かした出来事）と、それを受けてどういう銘柄が動いたかを書く。銘柄名は、注目すべきものに絞る。
 ・ランキングや変動率などの数値を細かく記述する必要はない。
-・絵文字を交え、URLとハッシュタグを除いて全角120文字程度。銘柄名を入れて興味を引く。煽り・断定は避ける。
-・見る人が検索しそうな・見たくなる銘柄名やキーワード（出来事・企業・製品・テーマの名前など）が出てきたら、その直前に「#」を付けてハッシュタグ化する。「#」と銘柄名の間は空けず、「#銘柄名」の前と後ろに半角スペースを入れる。銘柄名は正式名称のまま区切らない。
+・絵文字を交え、ハッシュタグも含めて全角110文字程度。銘柄名を入れて興味を引く。煽り・断定は避ける。
+・見る人が検索しそうな・見たくなる銘柄名やキーワード（出来事・企業・製品・テーマの名前など）が出てきたら、その直前に「#」を付けてハッシュタグ化する。「#」と銘柄名の間は空けず、「#銘柄名」の前と後ろに半角スペースを入れる。銘柄名は正式名称のまま区切らない。ただし「ホールディングス」は省き（前の「・」や空白も残さない）、省いて3文字以内になるときは「HD」を付ける。
 ・ハッシュタグが5個に満たないときだけ、同様のルールで選定したハッシュタグを末尾に足し、合わせて5個までにする。本文中のハッシュタグと同じものは書かない。
 ・上記以外の、汎用的な用語（株式投資、日本株 など）のハッシュタグは不要。
 ・社名・銘柄名の前に「米」などの国名を付けない。国を言う必要があるときは「米国」と書く。
+
+【締めの問い】
+・まず、その日の市場で注目すべき点について短くまとめてください。
+・その文章を、問いかけの形式に変換し、全角20文字程度にまとめてください。
+　例：AはBである→AがBになったのはなぜか。　Bは～でAが広がったと思いますか。　など（あくまでも例で形式は問わない）
 
 出力は必ず次の形式（区切り「===」を厳守）:
 🎨サムネ案
@@ -3794,7 +3799,12 @@ const AUTO_SNS_PROMPT = `あなたはYouTube「東証マーケット振り返り
 最有力：①〜③のいずれか（理由）
 ===
 🕊️X投稿文
-（本文・絵文字あり。末尾のハッシュタグは、足すときだけ書く）`;
+（本文・絵文字あり。末尾のハッシュタグは、足すときだけ書く）
+===
+■注目点
+（注目すべき点の短いまとめ）
+■締めの問い
+（問いかけの1文）`;
 // 資料（台本・スライド文章と同じもの）を1つの文にしたもの。ChatGPT に貼るプロンプト（自動版のサムネ/X・まとめ画像）に使う
 function autoResourcesText(){
   if(!AutoState.sources) return '（※先に①データ取得を実行してください）';
@@ -3907,13 +3917,34 @@ function autoAppendFixedHashtags(text){
 }
 // サムネ案・X投稿文の回答テキストを「===」でサムネ／Xに分割して各欄へ（API・ChatGPT手動の両方で使う）
 // blocks: ChatGPTがサムネとXを別々のコードブロックで返したときの中身（「===」が無ければ 1つ目=サムネ、2つ目=X）
+// 返り値：締めの問いが見つからなかったときの注意（見つかれば ''）
 function autoApplySnsText(text, blocks){
   let parts=text.split(/\n?===+\n?/);
-  if(parts.length<2 && blocks && blocks.length>=2) parts=[blocks[0], blocks[1]];
+  if(parts.length<2 && blocks && blocks.length>=2) parts=blocks.slice(0,3);
   const thumb=(parts[0]||'').replace(/^🎨\s*サムネ案\s*/,'').trim();
   const x=(parts[1]||'').replace(/^🕊️?\s*X投稿文\s*/,'').trim();
+  const q=snsCloseQuestion(parts[2]);
   document.getElementById('autoSnsThumb').value = autoStripBlankLines(thumb || text);
-  document.getElementById('autoSnsX').value = autoAppendFixedHashtags(snsShortHoldings(autoStripBlankLines(x)));
+  document.getElementById('autoSnsX').value = autoAppendFixedHashtags(snsShortHoldings(snsJoinQuestion(autoStripBlankLines(x), q)));
+  return q ? '' : '（締めの問いが見つかりません）';
+}
+// 締めの問い（2026-11-21 すみぽん）：返答の3つ目の部分の「■締めの問い」の次の1文。無ければ ''
+function snsCloseQuestion(part){
+  const lines=String(part||'').split('\n').map(l=>l.trim());
+  const i=lines.findIndex(l=>l.replace(/[\s*]/g,'')==='■締めの問い');
+  if(i<0) return '';
+  return lines.slice(i+1).find(l=>l && !l.startsWith('■')) || '';
+}
+// X投稿文の本文の後ろ（末尾のハッシュタグだけの行より前）に、締めの問いをつなげる
+function snsJoinQuestion(x, q){
+  if(!q) return x;
+  const lines=String(x||'').split('\n');
+  let k=lines.length;
+  while(k>0 && (!lines[k-1].trim() || /^([#＃][^\s#＃　]+[\s　]*)+$/.test(lines[k-1].trim()))) k--;
+  if(k===0) return q+(x?'\n'+x:'');
+  const last=lines[k-1].replace(/\s+$/,'');
+  lines[k-1]=last+(/[#＃][^\s#＃　]+$/.test(last)?' ':'')+q;   // 本文がハッシュタグで終わっていたら、タグに続かないよう空ける
+  return lines.join('\n');
 }
 // ⑤ Geminiで直接生成（サムネ／X投稿文を別々の欄へ）
 async function autoGenerateSns(btn){
@@ -3929,9 +3960,9 @@ async function autoGenerateSns(btn){
     });
     const data=await res.json();
     if(!data.ok) throw new Error(data.error||'不明なエラー');
-    autoApplySnsText(data.text);
+    const qn=autoApplySnsText(data.text);
     autoPersistState();
-    st.textContent='✅ 生成完了'+autoModelNote(data);
+    st.textContent='✅ 生成完了'+autoModelNote(data)+qn;
   }catch(e){ st.textContent='❌ '+e.message; }
   finally{ btn.disabled=false; btn.textContent=old; }
 }

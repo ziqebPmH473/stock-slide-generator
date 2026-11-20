@@ -780,11 +780,16 @@ const US_SNS_PROMPT = `あなたはYouTube「米国株マーケット振り返�
 【X投稿文】
 ・その日の市場環境（相場全体を動かした出来事）と、それを受けてどういう銘柄が動いたか、日本市場への影響（日経平均先物・ドル円）の方向を書く。銘柄名は、注目すべきものに絞る。
 ・ランキングや変動率、決算などの数値を細かく記述する必要はない。
-・絵文字を交え、URLとハッシュタグを除いて全角120文字程度。銘柄名を入れて興味を引く。煽り・断定は避ける。
+・絵文字を交え、ハッシュタグも含めて全角110文字程度。銘柄名を入れて興味を引く。煽り・断定は避ける。
 ・見る人が検索しそうな・見たくなる銘柄名やキーワード（出来事・企業・製品・テーマの名前など）が出てきたら、その直前に「#」を付けてハッシュタグ化する。「#」と銘柄名の間は空けず、「#銘柄名」の前と後ろに半角スペースを入れる。
 ・ハッシュタグが5個に満たないときだけ、同様のルールで選定したハッシュタグを末尾に足し、合わせて5個までにする。本文中のハッシュタグと同じものは書かない。
 ・上記以外の、汎用的な用語（米国株、株式投資 など）のハッシュタグは不要。
 ・社名・銘柄名の前に「米」などの国名を付けない。国を言う必要があるときは「米国」と書く。
+
+【締めの問い】
+・まず、その日の市場で注目すべき点について短くまとめてください。
+・その文章を、問いかけの形式に変換し、全角20文字程度にまとめてください。
+　例：AはBである→AがBになったのはなぜか。　Bは～でAが広がったと思いますか。　など（あくまでも例で形式は問わない）
 
 出力は必ず次の形式（区切り「===」を厳守）:
 🎨サムネ案
@@ -794,7 +799,12 @@ const US_SNS_PROMPT = `あなたはYouTube「米国株マーケット振り返�
 最有力：①〜③のいずれか（理由）
 ===
 🕊️X投稿文
-（本文・絵文字あり。末尾のハッシュタグは、足すときだけ書く）`;
+（本文・絵文字あり。末尾のハッシュタグは、足すときだけ書く）
+===
+■注目点
+（注目すべき点の短いまとめ）
+■締めの問い
+（問いかけの1文）`;
 
 async function usAi(prompt, resources, cls){
   const res = await aiFetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, resources, temperature: 0.3, models: autoModelChain(cls || 'high') }) });
@@ -824,9 +834,10 @@ async function usGenSns(btn){
   const r = await usAi(US_SNS_PROMPT, usResources(), 'high');
   const parts = r.text.split(/\n?===+\n?/);
   US.snsThumb = usStripBlank((parts[0] || '').replace(/^🎨\s*サムネ案\s*/, ''));
-  US.snsX = usFixedTags(snsShortHoldings(usStripBlank((parts[1] || '').replace(/^🕊️?\s*X投稿文\s*/, ''))));
+  const q = snsCloseQuestion(parts[2]);   // 締めの問い（2026-11-21 すみぽん）。本文の後ろ・末尾のハッシュタグの前につなげる
+  US.snsX = usFixedTags(snsShortHoldings(snsJoinQuestion(usStripBlank((parts[1] || '').replace(/^🕊️?\s*X投稿文\s*/, '')), q)));
   usPersist(); usRenderAll();
-  usStatus('usSnsStatus', `✅ サムネ案・X投稿文（${r.model}）`, 'ok');
+  usStatus('usSnsStatus', `✅ サムネ案・X投稿文（${r.model}）${q ? '' : '（締めの問いが見つかりません）'}`, 'ok');
 }
 async function usRunAll(btn){
   if(!US.data){ alert('先に①データ取得をしてください'); return; }
