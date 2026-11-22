@@ -1238,6 +1238,8 @@ Appier G|4180|818|+96|+13.30%
       <span id="wkDays" style="font-size:11px;color:var(--muted);"></span>
     </div>
     <div class="auto-row" id="wkThemes"></div>
+    <!-- 表紙の見出し（場面ごと。サーバーに保存して、どの端末でも同じ。2026-11-22） -->
+    <div class="auto-row" id="wkTitles" style="font-size:12px;gap:6px;"></div>
     <div class="auto-row" style="font-size:12px;gap:10px;"><span style="color:var(--muted);">前週末比（週間のページと表紙の週間データ）を出す：</span><label style="display:inline-flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" id="wkWeekly-index" checked>主要株価指数</label><label style="display:inline-flex;align-items:center;gap:3px;cursor:pointer;"><input type="checkbox" id="wkWeekly-sectors" checked>業種別</label></div>
     <div class="auto-row">
       <button class="btn-sm" onclick="wkMake(this)">🖼 画像を作る</button>
@@ -4658,7 +4660,7 @@ function ssgSyncBoot(){
 
 const VID_KEY = SSG_PREFIX + 'video';
 const VID_SCRIPT = 'assets/kessan-viz.js';
-const VID_SCRIPT_VER = '6ce7896eb5';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
+const VID_SCRIPT_VER = 'af45fb61ac';   // 部品の版。kessan-visualizer の npm run to-tse がバンドルの中身から書き換える（変わったときだけブラウザが取り直す）
 let vidHandle = null;
 function vidStatus(msg){ const el=document.getElementById('vidStatus'); if(el) el.textContent=msg||''; }
 function vidLoadSaved(){ try{ return JSON.parse(localStorage.getItem(VID_KEY)||'null'); }catch(e){ return null; } }
@@ -5253,6 +5255,37 @@ function wkWeekChanged(){
 }
 // 場面の一覧（部品の KessanViz.tse.weekThemes と同じ並び。部品は画像を作るときに読むので、欄はここから出す）
 const WK_THEMES=[{id:'index',title:'主要株価指数'},{id:'contrib',title:'日経平均寄与度'},{id:'sectors',title:'業種別変動率'},{id:'rise',title:'値上がり率ランキング'},{id:'fall',title:'値下がり率ランキング'},{id:'trading',title:'売買代金ランキング'}];
+// 表紙の見出し（場面ごと。2026-11-22 すみぽん「ランキング」と書いた表紙は見られにくいので言いかえる）。
+// 画面で変えられる。保存先はサーバー（/api/week-titles。全アカウント共通）なので、端末が変わっても同じ。空にすると既定に戻る
+const WK_TITLE_DEFAULTS={ index:'主要指数の動き', contrib:'日経平均寄与度', sectors:'業種ごとの動き', rise:'急騰銘柄', fall:'急落銘柄', trading:'資金集中銘柄' };
+let wkTitles={};
+const wkTitleOf=id=>(wkTitles[id]||'').trim()||WK_TITLE_DEFAULTS[id]||'';
+function wkRenderTitles(){
+  const el=document.getElementById('wkTitles'); if(!el) return;
+  el.innerHTML='<span style="color:var(--muted);">表紙の見出し：</span>'
+    + WK_CHECK_ORDER.map(id=>WK_THEMES.find(t=>t.id===id)).map(t=>`<label style="display:inline-flex;align-items:center;gap:3px;" title="${autoEsc(t.title)}の表紙の見出し（空にすると「${autoEsc(WK_TITLE_DEFAULTS[t.id])}」）"><span style="color:var(--muted);font-size:11px;">${autoEsc(t.title.replace(/ランキング$/,''))}</span><input id="wkTitle-${t.id}" value="${autoEsc(wkTitleOf(t.id))}" placeholder="${autoEsc(WK_TITLE_DEFAULTS[t.id])}" maxlength="30" style="width:8.5em;font-size:12px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 5px;border-radius:5px;"></label>`).join('')
+    + '<button class="btn-mini" onclick="wkSaveTitles(this)" title="見出しをサーバーに保存（ほかの端末でも同じ見出しになる）">💾 見出しを保存</button><span id="wkTitleStatus" style="font-size:11px;color:var(--muted);"></span>';
+}
+function wkReadTitleInputs(){ const o={}; for(const t of WK_THEMES){ const x=document.getElementById('wkTitle-'+t.id); if(x) o[t.id]=x.value.trim(); } return o; }
+async function wkLoadTitles(){
+  const st=document.getElementById('wkTitleStatus');
+  try{
+    const res=await fetch('/api/week-titles',{cache:'no-store'}); const r=await res.json().catch(()=>({}));
+    if(!res.ok || !r.ok) throw new Error(r.error||`HTTP ${res.status}`);
+    wkTitles=r.titles||{}; wkRenderTitles();
+  }catch(e){ if(st) st.textContent='（保存した見出しを読めませんでした：'+e.message+'。既定の見出しで作ります）'; }
+}
+async function wkSaveTitles(btn){
+  const st=document.getElementById('wkTitleStatus'); btn.disabled=true;
+  try{
+    const res=await fetch('/api/week-titles',{ method:'PUT', headers:{'content-type':'application/json'}, body:JSON.stringify({ titles:wkReadTitleInputs() }) });
+    const r=await res.json().catch(()=>({}));
+    if(!res.ok || !r.ok) throw new Error(r.error||`HTTP ${res.status}`);
+    wkTitles=r.titles||{}; wkRenderTitles();
+    const s2=document.getElementById('wkTitleStatus'); if(s2) s2.textContent='✅ 保存しました';
+  }catch(e){ if(st) st.textContent='❌ 保存できませんでした：'+e.message; }
+  finally{ btn.disabled=false; }
+}
 // チェック欄の並び（投稿する順：土＝指数・値上がり率・寄与度、日＝売買代金・値下がり率・業種別）。欄の並びだけで、画像のファイル名の番号は WK_THEMES のまま
 const WK_CHECK_ORDER=['index','rise','contrib','trading','fall','sectors'];
 function wkRenderThemes(){
@@ -5358,7 +5391,7 @@ async function wkMake(btn){
       // 比べた前週の日（全部の指数で同じ日のときだけ表紙に出す）
       const bd=!withWeek ? null : t.id==='sectors' ? week.baseDate : (week.map(r=>r.baseDate).find(Boolean)||null);
       const sameBd=withWeek && (t.id==='sectors' || week.every(r=>r.baseDate===bd));
-      specs.push({ kind:'weekcover', scene:t.id, dates:ds.map(x=>x.date), weekly:withWeek, weeklyBase:sameBd?bd:null });
+      specs.push({ kind:'weekcover', scene:t.id, title:(wkReadTitleInputs()[t.id]||'')||wkTitleOf(t.id), dates:ds.map(x=>x.date), weekly:withWeek, weeklyBase:sameBd?bd:null });
       for(const x of ds) specs.push({ kind:'scene', scene:t.id, data:x });
       if(withWeek && t.id==='index') specs.push({ kind:'weekindex', dates:ds.map(x=>x.date), rows:week, baseDate:sameBd?bd:null });
       if(withWeek && t.id==='sectors') specs.push({ kind:'weeksector', dates:ds.map(x=>x.date), up:week.up, down:week.down, baseDate:bd });
@@ -5421,7 +5454,7 @@ async function wkZip(btn){
   finally{ btn.disabled=false; }
 }
 // 週の一覧は、サーバー保存の確かめが済んだころに作る
-function wkBoot(){ wkRenderThemes(); let n=0; const t=setInterval(()=>{ if(ssgSyncReady || ssgSyncOff || ++n>20){ clearInterval(t); wkRefresh(); } }, 500); }
+function wkBoot(){ wkRenderThemes(); if(!document.getElementById('wkTitle-index')){ wkRenderTitles(); wkLoadTitles(); } let n=0; const t=setInterval(()=>{ if(ssgSyncReady || ssgSyncOff || ++n>20){ clearInterval(t); wkRefresh(); } }, 500); }
 wkBoot();
 </script>
 <script src="assets/ai-bridge.js"></script>
